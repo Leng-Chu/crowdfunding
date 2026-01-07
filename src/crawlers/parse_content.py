@@ -16,16 +16,36 @@ def _ensure_output_dirs(output_dir):
 
 
 def _extract_video_url(soup, logger=None):
-    """从HTML中提取视频URL，直接搜索以base.mp4结尾的URL"""
+    """从HTML中提取视频URL，只在story-content之前查找以base.mp4结尾的URL"""
     log = logger or print
-    html_content = str(soup)
-    # 查找所有以base.mp4结尾的URL
-    base_mp4_urls = re.findall(r'https?://[^\s"\'<>]*base\.mp4', html_content)
+    
+    # 查找 story-content 元素
+    story_content_element = soup.find("div", class_="story-content")
+    
+    if story_content_element:
+        # 获取整个HTML字符串
+        html_content = str(soup)
+        
+        # 找到story-content元素在HTML中的位置
+        story_content_str = str(story_content_element)
+        story_pos = html_content.find(story_content_str)
+        
+        if story_pos != -1:
+            # 获取story-content之前的部分
+            html_before_story = html_content[:story_pos]
+            # 在 story-content 之前的内容中查找视频URL
+            base_mp4_urls = re.findall(r'https?://[^\s"\'<>]*base\.mp4', html_before_story)
+        else:
+            # 如果没找到确切位置，使用之前的逻辑
+            base_mp4_urls = re.findall(r'https?://[^\s"\'<>]*base\.mp4', str(soup))
+    else:
+        # 如果没有找到 story-content，搜索整个HTML
+        html_content = str(soup)
+        base_mp4_urls = re.findall(r'https?://[^\s"\'<>]*base\.mp4', html_content)
+    
     if base_mp4_urls:
-        log(f"存在封面视频")
         return base_mp4_urls[0]
     else:
-        log("未找到封面视频")
         return None
 
 
@@ -98,7 +118,6 @@ def parse_story_content(
         return result
 
     log = logger or print
-    log(f"正在解析HTML: {html_file_path}")
     
     with open(html_file_path, "r", encoding="utf-8") as f:
         html_content = f.read()

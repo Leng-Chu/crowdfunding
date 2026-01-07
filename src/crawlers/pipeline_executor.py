@@ -8,8 +8,6 @@ import csv
 from datetime import datetime
 from pathlib import Path
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
 
 
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -21,66 +19,129 @@ from parse_content import parse_story_content
 from download_assets import download_assets_from_json
 
 
-# 全局线程池用于下载，所有项目共享
-DOWNLOAD_THREAD_POOL = None
-DOWNLOAD_THREAD_POOL_LOCK = threading.Lock()
-PRINT_LOCK = threading.Lock()
-
-
-def _format_log_prefix(project_id=None, row_index=None, level="INFO"):
+def simple_log(message):
+    """简化日志输出，直接打印时间戳和消息"""
     timestamp = datetime.now().strftime("%H:%M:%S")
-    project_part = f"[{project_id}]" if project_id is not None else "[main]"
-    row_part = f"[{row_index}]" if row_index is not None else ""
-    return f"[{timestamp}]{row_part}{project_part} "
+    print(f"[{timestamp}] {message}", flush=True)
 
 
-def make_logger(project_id=None, row_index=None):
-    def _log(message, level="INFO"):
-        with PRINT_LOCK:
-            print(_format_log_prefix(project_id, row_index, level) + message, flush=True)
-    return _log
+def ensure_success_status_column(csv_path):
+    """确保CSV文件包含success_status列"""
+    rows = []
+    fieldnames = []
+    
+    with open(csv_path, 'r', encoding='utf-8', newline='') as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames
+        rows = list(reader)
+    
+    # 检查是否已有success_status列
+    if 'success_status' not in fieldnames:
+        fieldnames = list(fieldnames) + ['success_status']
+        # 为已有数据添加默认值
+        for row in rows:
+            row['success_status'] = ''
+    
+    # 写回CSV文件
+    with open(csv_path, 'w', encoding='utf-8', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
+def update_csv_with_status(csv_path, project_id, status):
+    """更新CSV文件中的特定项目，添加处理状态"""
+    rows = []
+    fieldnames = []
+    
+    with open(csv_path, 'r', encoding='utf-8', newline='') as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames
+        rows = list(reader)
+    
+    # 更新指定项目的状态
+    for row in rows:
+        if row['project_id'] == project_id:
+            row['success_status'] = status
+            break
+    
+    # 写回CSV文件
+    with open(csv_path, 'w', encoding='utf-8', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
 
-def iter_rows(csv_path):
-    """从CSV文件中逐行读取"""
+
+def main():
+    csv_path = Path("data/metadata/years/2024_31932.csv")
+    output_root = Path("data/projects/2024")
+    overwrite_html = True
+    overwrite_content = True
+    overwrite_assets = False
+    download_assets = False
+    start_row = 1  # 从第几行开始处理（从1开始计数）
+    end_row = None  # 到第几行结束处理，会处理end_row这一行（None表示处理到文件末尾）
+    wait_seconds = 1
+
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    # 确保CSV文件包含success_status列
+    ensure_success_status_column(csv_path)
+
+    args_list = []
+    row_count = 0
+    simple_log(f"开始处理 {csv_path}")
+    
     with csv_path.open("r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
-        for row in reader:
-            yield row
+        for row_idx, row in enumerate(reader):
+            # 检查是否在处理范围内
+            if row_idx < start_row - 1:
+                continue
+            if end_row is not None and row_idx >= end_row:
+                break
 
+            # 只处理未成功的行
+            success_status = row.get('success_status', '')
+            if success_status == 'success':
+                continue  # 跳过已成功的行
 
-def run_pipeline_for_project(project_url, project_id, output_root,
-                             row_index=None,
-                             overwrite_html=False, overwrite_content=False, overwrite_assets=False,
-                             download_assets=True, download_workers=10,
-                             start_minimized=False,
-                             window_position=None, cover_url=None):  # 新增参数：cover_url
-    log = make_logger(project_id, row_index=row_index)
-    project_dir = output_root / project_id
-    project_dir.mkdir(parents=True, exist_ok=True)
-    html_path = project_dir / "page.html"
+            project_id = row.get("project_id")
+            project_url = row.get("project_url")
+            cover_url = row.get("cover_url")
+            
+            args_list.append((
+                project_url, project_id, output_root,
+                row_idx + 1,  # 使用CSV文件中的实际行号
+                overwrite_html, overwrite_content, overwrite_assets,
+                download_assets, 10,  # download_workers 参数保留以保持接口兼容性
+                True, (-32000, -32000), cover_url, row, wait_seconds
+            ))
+            row_count += 1
 
-    # 尝试获取HTML，如果解析失败则重试一次
-    result = None
-    issues = []
-    max_retries = 1
-    retry_count = 0
+    simple_log(f"开始顺序处理 {len(args_list)} 个项目，从第{start_row}行到第{end_row or '末尾'}行")
     
-    while retry_count <= max_retries:
-        # 只有在首次或需要重试时才获取HTML
-        log(f"第 {retry_count+1} 次: 获取HTML")
-        if retry_count>0:
-            tmp_overwrite_html = True
-        else:
-            tmp_overwrite_html = overwrite_html
+    # 顺序处理所有项目
+    for args in args_list:
+        (project_url, project_id, output_root, csv_row_index, overwrite_html,
+         overwrite_content, overwrite_assets, download_assets, download_workers,
+         start_minimized, window_position, cover_url, row, wait_seconds) = args
+
+        simple_log(f"处理项目 {project_id}，行号 {csv_row_index}")
+        # 直接执行项目处理逻辑
+        project_dir = output_root / project_id
+        project_dir.mkdir(parents=True, exist_ok=True)
+        html_path = project_dir / "page.html"
+
+        # 获取HTML
         fetch_html(
             project_url,
             str(html_path),
-            overwrite_html=tmp_overwrite_html,  # 重试时强制覆盖
+            overwrite_html=overwrite_html,
+            wait_seconds=wait_seconds,
             start_minimized=start_minimized,
             window_position=window_position,
-            logger=log,
+            logger=simple_log,
         )
 
         result = parse_story_content(
@@ -89,166 +150,47 @@ def run_pipeline_for_project(project_url, project_id, output_root,
             project_url=project_url,
             cover_url=cover_url,  # 传递封面图片URL参数
             overwrite_content=overwrite_content,
-            logger=log,
+            logger=simple_log,
         )
 
-        # 检查是否有问题，如果有则重试
+        # 检查是否有问题
         issues = []
         if not result or not result.get("cover_image"):
             issues.append("missing_cover_image")
         if not result or not result.get("content_sequence"):
             issues.append("empty_content_sequence")
-            
-        if issues and retry_count < max_retries:
-            log(f"解析结果有问题: {issues}，准备重试...")
-            retry_count += 1
+
+        download_failures = []
+        if download_assets and not issues:
+            content_json_path = project_dir / "content.json"
+            if content_json_path.exists():
+                download_failures = download_assets_from_json(
+                    str(content_json_path),
+                    str(project_dir),
+                    max_workers=download_workers,
+                    overwrite_files=overwrite_assets,
+                    logger=simple_log,
+                )
+                if download_failures:
+                    issues.append("asset_download_failed")
+            else:
+                issues.append("missing_content_json")
+
+        if issues:
+            issue_str = ','.join(issues)
+            simple_log(f"[CSV第{csv_row_index}行][{project_id}] 项目有 {len(issues)} 个问题: {issue_str}")
+            # 更新CSV文件，标记处理失败及原因
+            update_csv_with_status(csv_path, project_id, f"failed: {issue_str}")
+            wait_seconds*=2
         else:
-            # 没有问题或已达到最大重试次数，退出循环
-            break
+            simple_log(f"[CSV第{csv_row_index}行][{project_id}] 项目流水线执行成功")
+            # 更新CSV文件，标记处理成功
+            update_csv_with_status(csv_path, project_id, "success")
+            if wait_seconds>1:
+                wait_seconds/=2
+        simple_log(f"等待时间: {wait_seconds}")
 
-    download_failures = []
-    if download_assets and not issues:
-        content_json_path = project_dir / "content.json"
-        if content_json_path.exists():
-            download_failures = download_assets_from_json(
-                str(content_json_path),
-                str(project_dir),
-                max_workers=download_workers,
-                overwrite_files=overwrite_assets,
-                logger=log,
-            )
-            if download_failures:
-                issues.append("asset_download_failed")
-        else:
-            issues.append("missing_content_json")
-
-    log("项目流水线执行完成")
-
-    return {
-        "project_id": project_id,
-        "project_url": project_url,
-        "issues": issues,
-        "download_failures": download_failures,
-    }
-
-
-def run_pipeline_with_shared_download_pool(args):
-    (project_url, project_id, output_root, row_index, overwrite_html,
-     overwrite_content, overwrite_assets, download_assets, download_workers,
-     start_minimized, window_position, cover_url, row_data) = args
-
-    global DOWNLOAD_THREAD_POOL
-
-    with DOWNLOAD_THREAD_POOL_LOCK:
-        if DOWNLOAD_THREAD_POOL is None:
-            DOWNLOAD_THREAD_POOL = ThreadPoolExecutor(max_workers=download_workers)
-    
-    result = run_pipeline_for_project(
-        project_url, project_id, output_root,
-        row_index,
-        overwrite_html, overwrite_content, overwrite_assets,
-        download_assets, download_workers,
-        start_minimized, window_position,
-        cover_url,  # 传递封面图片URL
-    )
-
-    if row_data is not None:
-        result["row"] = row_data
-
-    return result
-
-
-def main():
-    csv_path = Path("data/metadata/years/2024_31932.csv")
-    output_root = Path("data/projects/2024")
-    overwrite_html = False
-    overwrite_content = True
-    overwrite_assets = False
-    download_assets = False
-    max_rows = None
-    project_workers = 8
-    download_workers = 10
-    start_minimized = True
-    window_position = (-32000, -32000)
-
-    output_root.mkdir(parents=True, exist_ok=True)
-
-    args_list = []
-    row_count = 0
-    log = make_logger()
-    problems_csv = csv_path.with_name(f"{csv_path.stem}_problems.csv")
-    problems_file = None
-    problems_writer = None
-    problems_written = 0
-
-    with csv_path.open("r", encoding="utf-8", newline="") as f:
-        reader = csv.DictReader(f)
-        fieldnames = reader.fieldnames or []
-        for row in reader:
-            if max_rows is not None and row_count >= max_rows:
-                log(f"已达到最大行数限制: {max_rows}", level="WARN")
-                break
-
-            project_id = row.get("project_id")
-            project_url = row.get("project_url")
-            cover_url = row.get("cover_url")
-
-            if not project_id or not project_url:
-                log(f"跳过缺少项目ID或URL的行: {row}", level="WARN")
-                continue
-
-            args_list.append((
-                project_url, project_id, output_root,
-                row_count + 1,
-                overwrite_html, overwrite_content, overwrite_assets,
-                download_assets, download_workers,
-                start_minimized, window_position, cover_url, row
-            ))
-            row_count += 1
-
-    log(f"开始使用 {project_workers} 个工作线程处理 {len(args_list)} 个项目")
-    try:
-        with ThreadPoolExecutor(max_workers=project_workers) as executor:
-            futures = [executor.submit(run_pipeline_with_shared_download_pool, args) for args in args_list]
-
-            for future in as_completed(futures):
-                try:
-                    result = future.result()
-                    if result and result.get("issues"):
-                        if problems_writer is None:
-                            problems_file = problems_csv.open("w", encoding="utf-8", newline="")
-                            extra_fields = ["issues", "download_error_count", "download_error_samples"]
-                            problems_writer = csv.DictWriter(
-                                problems_file,
-                                fieldnames=fieldnames + extra_fields
-                            )
-                            problems_writer.writeheader()
-                        row = dict(result.get("row") or {})
-                        issues = result.get("issues") or []
-                        download_failures = result.get("download_failures") or []
-                        row["issues"] = ";".join(issues)
-                        row["download_error_count"] = str(len(download_failures))
-                        if download_failures:
-                            samples = download_failures[:3]
-                            row["download_error_samples"] = "; ".join(
-                                f"{s.get('url', '')} -> {s.get('path', '')}: {s.get('error', '')}" for s in samples
-                            )
-                        else:
-                            row["download_error_samples"] = ""
-                        problems_writer.writerow(row)
-                        problems_file.flush()
-                        problems_written += 1
-                except Exception as e:
-                    log(f"处理项目时发生错误: {e}", level="ERROR")
-    finally:
-        if problems_file is not None:
-            problems_file.close()
-
-    if problems_written:
-        log(f"已保存问题行CSV: {problems_csv}")
-    else:
-        log("没有发现问题行")
-    log("所有项目处理完成")
+    simple_log("所有项目处理完成")
 
 
 if __name__ == "__main__":
