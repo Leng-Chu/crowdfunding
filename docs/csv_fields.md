@@ -18,8 +18,7 @@
 - usd_goal: 目标金额换算为 USD（goal * static_usd_rate）
 - launched_at: 上线/发起时间（日期）
 - deadline: 截止时间（日期）
-- creator_profile_url: 创建者主页链接（如有）
-- cover_image: 封面图 URL
+- creator_profile_url: 创建者主页 URL
 - project_url: 项目页面 URL
 - backers_count: 支持者数量
 - percent_funded: 完成比例（百分比数值，例如 103.6 表示 103.6%）

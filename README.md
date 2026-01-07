@@ -9,13 +9,14 @@
   - pipelines/ 清洗、切分、对齐等数据流程
   - storage/ 存储读写与统一接口
   - utils/ 通用工具
+  - scipts/ 临时脚本
 - data/ 数据与缓存
   - projects/ 项目数据（一个项目一个文件夹）
     - <project_id>/ 项目目录
-      - cover/ 封面图像
-      - photo/ 图像素材
-      - word/ 文本内容
-      - sequence_index.json 图文顺序标识文件
+      - cover/ 封面图像和视频
+      - photo/ story-content中的图像素材
+      - content.json 项目内容标识文件
+      - page.html 项目html
   - cache/ 训练与特征缓存
     - features/ 特征缓存
     - training/ 训练所需临时数据

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import csv
 import json
@@ -62,7 +62,6 @@ def build_mapping() -> List[Tuple[str, str]]:
         ("launched_at", "data.launched_at"),
         ("deadline", "data.deadline"),
         ("creator_profile_url", "data.creator.urls.web.user"),
-        ("cover_image", "data.photo.full"),
         ("project_url", "data.urls.web.project"),
         ("backers_count", "data.backers_count"),
         ("percent_funded", "data.percent_funded"),
@@ -128,6 +127,10 @@ def main() -> None:
                     yearly_data[year] = []
                 yearly_data[year].append(values)
                 yearly_counters[year] += 1
+
+    # 确保年度目录存在
+    years_dir = Path("data/metadata/years")
+    years_dir.mkdir(parents=True, exist_ok=True)
 
     # 写入每年的数据到对应的CSV文件
     for year, data in yearly_data.items():
