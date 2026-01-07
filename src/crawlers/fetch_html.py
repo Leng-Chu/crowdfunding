@@ -1,31 +1,25 @@
 from pathlib import Path
 import time
 from DrissionPage import ChromiumOptions, ChromiumPage
+from DrissionPage.errors import BrowserConnectError
 
 
-def _build_options(start_minimized=False,
-                   disable_notifications=True,
-                   window_position=None,
-                   window_size=None) -> ChromiumOptions:
+def _build_options() -> ChromiumOptions:
     options = ChromiumOptions()
     options.auto_port()
-    if disable_notifications:
-        options.set_argument("--disable-notifications")
-    if start_minimized:
-        options.set_argument("--start-minimized")
-    if window_position:
-        options.set_argument(f"--window-position={window_position[0]},{window_position[1]}")
-    if window_size:
-        options.set_argument(f"--window-size={window_size[0]},{window_size[1]}")
+    options.set_argument("--disable-notifications")
+    options.set_argument("--start-minimized")
+    options.set_argument("--window-position=-32000,-32000")  # 设置为屏幕外位置
+    # 禁止加载图片
+    options.set_argument("--blink-settings=imagesEnabled=false")
     return options
 
 
 def fetch_html(url: str, output_path: str,
                overwrite_html: bool = False,
                wait_seconds: float = 0,
-               start_minimized: bool = False,
-               window_position=None,
-               logger=None) -> None:
+               logger=None,
+               browser_page=None) -> None:
     """
     抓取网页HTML并保存到文件
     
@@ -34,6 +28,7 @@ def fetch_html(url: str, output_path: str,
         output_path (str): 输出文件路径
         overwrite_html (bool): 是否覆盖已存在的HTML文件，默认为False
         wait_seconds (float): 等待页面加载的时间（秒），默认为0
+        browser_page: 可选的浏览器实例，如果提供则复用该实例，否则创建新的实例
     """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -44,11 +39,15 @@ def fetch_html(url: str, output_path: str,
         log(f"HTML文件已存在，跳过抓取: {output_path}")
         return
     
-    options = _build_options(
-        start_minimized=start_minimized,
-        window_position=window_position,
-    )
-    page = ChromiumPage(options)
+    # 如果没有提供浏览器实例，则创建一个新的
+    should_quit = False
+    if browser_page is None:
+        options = _build_options()
+        page = ChromiumPage(options)
+        should_quit = True
+    else:
+        page = browser_page
+    
     time.sleep(wait_seconds)
     try:
         page.get(url)
@@ -92,8 +91,14 @@ def fetch_html(url: str, output_path: str,
         
         log(f"HTML已保存到: {output_path}")
         
+    except BrowserConnectError as e:
+        log(f"浏览器连接失败: {e}")
+        # 重新抛出异常，让调用方处理
+        raise e
     finally:
-        page.quit()
+        # 只有在函数内部创建了浏览器实例时才退出
+        if should_quit and page:
+            page.quit()
 
 
 if __name__ == "__main__":
@@ -101,4 +106,4 @@ if __name__ == "__main__":
     URL = "https://www.kickstarter.com/projects/capseal/capseal-craft-your-own-flavor-cafe-capsule-at-home"
     OUTPUT_HTML = "data/projects/sample/page.html"
     overwrite_html = True
-    fetch_html(URL, OUTPUT_HTML, overwrite_html, start_minimized=True)
+    fetch_html(URL, OUTPUT_HTML, overwrite_html)

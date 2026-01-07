@@ -17,6 +17,19 @@ if str(CURRENT_DIR) not in sys.path:
 from fetch_html import fetch_html
 from parse_content import parse_story_content
 from download_assets import download_assets_from_json
+from DrissionPage import ChromiumOptions, ChromiumPage
+from DrissionPage.errors import BrowserConnectError
+
+
+def _build_options() -> ChromiumPage:
+    options = ChromiumOptions()
+    options.auto_port()
+    options.set_argument("--disable-notifications")
+    options.set_argument("--start-minimized")
+    options.set_argument("--window-position=-32000,-32000")  # 设置为屏幕外位置
+    # 禁止加载图片
+    options.set_argument("--blink-settings=imagesEnabled=false")
+    return options
 
 
 def simple_log(message):
@@ -115,80 +128,114 @@ def main():
                 row_idx + 1,  # 使用CSV文件中的实际行号
                 overwrite_html, overwrite_content, overwrite_assets,
                 download_assets, 10,  # download_workers 参数保留以保持接口兼容性
-                True, (-32000, -32000), cover_url, row, wait_seconds
+                cover_url, row, wait_seconds
             ))
             row_count += 1
 
-    simple_log(f"开始顺序处理 {len(args_list)} 个项目，从第{start_row}行到第{end_row or '末尾'}行")
+    simple_log(f"开始顺序处理 {len(args_list)} 个项目，从第{start_row}到第{end_row or '末尾'}行")
     
-    # 顺序处理所有项目
-    for args in args_list:
-        (project_url, project_id, output_root, csv_row_index, overwrite_html,
-         overwrite_content, overwrite_assets, download_assets, download_workers,
-         start_minimized, window_position, cover_url, row, wait_seconds) = args
+    # 创建浏览器实例
+    options = _build_options()
+    browser = ChromiumPage(options)
+    
+    try:
+        # 顺序处理所有项目
+        for args in args_list:
+            (project_url, project_id, output_root, csv_row_index, overwrite_html,
+             overwrite_content, overwrite_assets, download_assets, download_workers,
+             cover_url, row, wait_seconds) = args
 
-        simple_log(f"处理项目 {project_id}，行号 {csv_row_index}")
-        # 直接执行项目处理逻辑
-        project_dir = output_root / project_id
-        project_dir.mkdir(parents=True, exist_ok=True)
-        html_path = project_dir / "page.html"
+            simple_log(f"处理项目 {project_id}，行号 {csv_row_index}")
+            # 直接执行项目处理逻辑
+            project_dir = output_root / project_id
+            project_dir.mkdir(parents=True, exist_ok=True)
+            html_path = project_dir / "page.html"
 
-        # 获取HTML
-        fetch_html(
-            project_url,
-            str(html_path),
-            overwrite_html=overwrite_html,
-            wait_seconds=wait_seconds,
-            start_minimized=start_minimized,
-            window_position=window_position,
-            logger=simple_log,
-        )
-
-        result = parse_story_content(
-            str(html_path),
-            str(project_dir),
-            project_url=project_url,
-            cover_url=cover_url,  # 传递封面图片URL参数
-            overwrite_content=overwrite_content,
-            logger=simple_log,
-        )
-
-        # 检查是否有问题
-        issues = []
-        if not result or not result.get("cover_image"):
-            issues.append("missing_cover_image")
-        if not result or not result.get("content_sequence"):
-            issues.append("empty_content_sequence")
-
-        download_failures = []
-        if download_assets and not issues:
-            content_json_path = project_dir / "content.json"
-            if content_json_path.exists():
-                download_failures = download_assets_from_json(
-                    str(content_json_path),
-                    str(project_dir),
-                    max_workers=download_workers,
-                    overwrite_files=overwrite_assets,
+            # 获取HTML（使用复用的浏览器实例）
+            # 如果连接失败，重新创建浏览器实例
+            try:
+                fetch_html(
+                    project_url,
+                    str(html_path),
+                    overwrite_html=overwrite_html,
+                    wait_seconds=wait_seconds,
                     logger=simple_log,
+                    browser_page=browser,  # 传入复用的浏览器实例
                 )
-                if download_failures:
-                    issues.append("asset_download_failed")
-            else:
-                issues.append("missing_content_json")
+            except BrowserConnectError as e:
+                simple_log(f"浏览器连接失败，重新创建浏览器实例: {e}")
+                # 关闭旧的浏览器实例
+                try:
+                    browser.quit()
+                except:
+                    pass  # 忽略关闭时的错误
+                
+                # 创建新的浏览器实例
+                options = _build_options()
+                browser = ChromiumPage(options)
+                
+                # 重新尝试获取HTML
+                fetch_html(
+                    project_url,
+                    str(html_path),
+                    overwrite_html=overwrite_html,
+                    wait_seconds=wait_seconds,
+                    logger=simple_log,
+                    browser_page=browser,
+                )
 
-        if issues:
-            issue_str = ','.join(issues)
-            simple_log(f"[CSV第{csv_row_index}行][{project_id}] 项目有 {len(issues)} 个问题: {issue_str}")
-            # 更新CSV文件，标记处理失败及原因
-            update_csv_with_status(csv_path, project_id, f"failed: {issue_str}")
-            wait_seconds*=2
-        else:
-            simple_log(f"[CSV第{csv_row_index}行][{project_id}] 项目流水线执行成功")
-            # 更新CSV文件，标记处理成功
-            update_csv_with_status(csv_path, project_id, "success")
-            if wait_seconds>1:
-                wait_seconds/=2
-        simple_log(f"等待时间: {wait_seconds}")
+            result = parse_story_content(
+                str(html_path),
+                str(project_dir),
+                project_url=project_url,
+                cover_url=cover_url,  # 传递封面图片URL参数
+                overwrite_content=overwrite_content,
+                logger=simple_log,
+            )
+
+            # 检查是否有问题
+            issues = []
+            if not result or not result.get("cover_image"):
+                issues.append("missing_cover_image")
+            if not result or not result.get("content_sequence"):
+                issues.append("empty_content_sequence")
+
+            download_failures = []
+            if download_assets and not issues:
+                content_json_path = project_dir / "content.json"
+                if content_json_path.exists():
+                    download_failures = download_assets_from_json(
+                        str(content_json_path),
+                        str(project_dir),
+                        max_workers=download_workers,
+                        overwrite_files=overwrite_assets,
+                        logger=simple_log,
+                    )
+                    if download_failures:
+                        issues.append("asset_download_failed")
+                else:
+                    issues.append("missing_content_json")
+
+            if issues:
+                issue_str = ','.join(issues)
+                simple_log(f"[CSV第{csv_row_index}行][{project_id}] 项目有 {len(issues)} 个问题: {issue_str}")
+                # 更新CSV文件，标记处理失败及原因
+                update_csv_with_status(csv_path, project_id, f"failed: {issue_str}")
+                wait_seconds*=2
+            else:
+                simple_log(f"[CSV第{csv_row_index}行][{project_id}] 项目流水线执行成功")
+                # 更新CSV文件，标记处理成功
+                update_csv_with_status(csv_path, project_id, "success")
+                if wait_seconds>1:
+                    wait_seconds/=2
+            simple_log(f"等待时间: {wait_seconds}")
+
+    finally:
+        # 在处理完所有项目后，关闭浏览器实例
+        try:
+            browser.quit()
+        except:
+            pass  # 忽略关闭时的错误
 
     simple_log("所有项目处理完成")
 
