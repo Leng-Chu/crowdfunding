@@ -49,7 +49,10 @@ def iter_rows(path: Path) -> Iterable[Dict[str, Any]]:
 def build_mapping() -> List[Tuple[str, str]]:
     return [
         ("project_id", "data.id"),
+        ("project_url", "data.urls.web.project"),
+        ("cover_url", "data.photo.full"),
         ("creator_id", "data.creator.id"),
+        ("creator_profile_url", "data.creator.urls.web.user"),
         ("title", "data.name"),
         ("blurb", "data.blurb"),
         ("category", "data.category.name"),
@@ -61,8 +64,6 @@ def build_mapping() -> List[Tuple[str, str]]:
         ("usd_goal", "__computed__"),
         ("launched_at", "data.launched_at"),
         ("deadline", "data.deadline"),
-        ("creator_profile_url", "data.creator.urls.web.user"),
-        ("project_url", "data.urls.web.project"),
         ("backers_count", "data.backers_count"),
         ("percent_funded", "data.percent_funded"),
         ("usd_pledged", "data.usd_pledged"),

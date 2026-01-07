@@ -15,35 +15,18 @@ def _ensure_output_dirs(output_dir):
     return cover_dir, photo_dir
 
 
-def _extract_basic_info(soup, logger=None):
-    """提取封面图片和视频信息"""
+def _extract_video_url(soup, logger=None):
+    """从HTML中提取视频URL，直接搜索以base.mp4结尾的URL"""
     log = logger or print
-    cover_image_url = None
-    cover_img = soup.select_one(".project-profile__feature_image img")
-    if not cover_img:
-        cover_img = soup.select_one("img.aspect-ratio--object")
-    if not cover_img:
-        # 如果没有找到直接的封面图片，尝试从视频元素中获取封面图片
-        video_element = soup.find("div", id="video_pitch")
-        if video_element:
-            cover_image_url = video_element.get("data-image")
+    html_content = str(soup)
+    # 查找所有以base.mp4结尾的URL
+    base_mp4_urls = re.findall(r'https?://[^\s"\'<>]*base\.mp4', html_content)
+    if base_mp4_urls:
+        log(f"存在封面视频")
+        return base_mp4_urls[0]
     else:
-        cover_image_url = cover_img.get("src") or cover_img.get("data-src")
-    if not cover_image_url:
-        log("未找到封面图片")
-
-    video_url = None
-    video_element = soup.find("div", id="video_pitch")
-    if video_element:
-        video_data = video_element.get("data-video")
-        if video_data:
-            try:
-                video_data = json.loads(video_data)
-                video_url = video_data.get("base")
-            except json.JSONDecodeError:
-                pass
-
-    return cover_image_url, video_url
+        log("未找到封面视频")
+        return None
 
 
 def _extract_story_content(soup, selectors, include_div=False):
@@ -69,7 +52,7 @@ def _extract_story_content(soup, selectors, include_div=False):
                         or element.get("data-original")
                     )
                     if img_url:
-                        relative_name = f"photo/story_image_{image_counter}.jpg"
+                        relative_name = f"photo/story_image_{image_counter}.wbep"
                         content_sequence.append(
                             {
                                 "type": "image",
@@ -88,10 +71,6 @@ def _extract_story_content(soup, selectors, include_div=False):
                         else:
                             content_sequence.append({"type": "text", "content": text})
                             last_item_was_text = True
-                # 对于其他元素
-                #else:
-                    #if element.name:
-                        #print(f"未知元素: {element.name}")
         break
 
     return content_sequence
@@ -101,6 +80,7 @@ def parse_story_content(
     html_file_path,
     output_dir,
     project_url=None,
+    cover_url=None,
     overwrite_content=False,
     logger=None,
 ):
@@ -124,7 +104,12 @@ def parse_story_content(
         html_content = f.read()
 
     soup = BeautifulSoup(html_content, "html.parser")
-    cover_image_url, video_url = _extract_basic_info(soup, logger=log)
+    
+    # 现在封面图片URL直接从参数传入，不再从HTML中提取
+    cover_image_url = cover_url
+    
+    # 从HTML中提取视频URL
+    video_url = _extract_video_url(soup, logger=log)
     selectors = [
         "div.story-content",
         'div[data-element="rich_text_content"]',
@@ -149,14 +134,15 @@ if __name__ == "__main__":
     # 使用示例（配置区域）
     html_file_path = "data/projects/sample/page.html"  # HTML文件路径
     output_dir = "data/projects/sample"  # 输出目录
-    project_url = "https://www.kickstarter.com/projects/sample"  # 项目URL
-    overwrite_content = False  # 是否覆盖已存在的content.json
-
+    project_url = "https://www.kickstarter.com/projects/capseal/capseal-craft-your-own-flavor-cafe-capsule-at-home"  # 项目URL
+    overwrite_content = True  # 是否覆盖已存在的content.json
+    cover_url = "https://i.kickstarter.com/assets/041/738/680/ab09ef0d9617617b6baa03e36632a46f_original.jpeg?anim=false&fit=cover&gravity=auto&height=873&origin=ugc&q=92&v=1690365942&width=1552&sig=Finaoze44%2B%2Bk%2FEMMT28MubZnmHqXu%2F9qeHj%2B2lWXPoc%3D"
     if os.path.exists(html_file_path):
         result = parse_story_content(
             html_file_path,
             output_dir,
             project_url=project_url,
+            cover_url=cover_url,
             overwrite_content=overwrite_content,
         )
         print("解析完成")
