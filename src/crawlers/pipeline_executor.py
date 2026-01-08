@@ -56,8 +56,8 @@ def update_csv_with_status(csv_path, project_id, status):
 
 
 def main():
-    csv_path = Path("data/metadata/years/2025_45005.csv")
-    output_root = Path("data/projects/2025")
+    csv_path = Path("data/metadata/years/2024_31932.csv")
+    output_root = Path("data/projects/2024")
     overwrite_html = True
     overwrite_content = True
     overwrite_assets = False
@@ -118,38 +118,14 @@ def main():
             html_path = project_dir / "page.html"
 
             # 获取HTML（使用复用的浏览器实例）
-            # 如果连接失败，重新创建浏览器实例
-            try:
-                fetch_html(
-                    project_url,
-                    str(html_path),
-                    overwrite_html=overwrite_html,
-                    wait_seconds=wait_seconds,
-                    logger=simple_log,
-                    browser_page=browser,  # 传入复用的浏览器实例
-                )
-            except BrowserConnectError as e:
-                simple_log(f"浏览器连接失败，重新创建浏览器实例: {e}")
-                # 关闭旧的浏览器实例
-                try:
-                    browser.quit()
-                except:
-                    pass  # 忽略关闭时的错误
-                
-                # 创建新的浏览器实例
-                options = _build_options()
-                browser = ChromiumPage(options)
-                
-                # 重新尝试获取HTML
-                fetch_html(
-                    project_url,
-                    str(html_path),
-                    overwrite_html=overwrite_html,
-                    wait_seconds=wait_seconds,
-                    logger=simple_log,
-                    browser_page=browser,
-                )
-
+            fetch_html(
+                project_url,
+                str(html_path),
+                overwrite_html=overwrite_html,
+                wait_seconds=wait_seconds,
+                logger=simple_log,
+                browser_page=browser,  # 传入复用的浏览器实例
+            )
             result = parse_story_content(
                 str(html_path),
                 str(project_dir),
