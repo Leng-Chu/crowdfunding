@@ -51,44 +51,19 @@ def fetch_html(url: str, output_path: str,
     time.sleep(wait_seconds)
     try:
         page.get(url)
-        # 首先等待页面基本结构加载
+        # 等待页面基本结构加载
         page.wait.doc_loaded()
-        
-        # 等待关键元素出现
-        try:
-            # 等待 story-content 区域出现
-            page.wait.eles_loaded('.story-content', timeout=10)
-            
-            # 检查story-content是否有实际内容，如果没有则继续等待
-            max_attempts = 10
-            attempt = 0
-            while attempt < max_attempts:
-                story_content_ele = page.ele('.story-content', timeout=2)
-                if story_content_ele and story_content_ele.html and len(story_content_ele.html.strip()) > 50:
-                    # 如果story-content中有足够的内容，则认为已经加载完成
-                    break
-                else:
-                    # 否则再等待1秒
-                    time.sleep(1)
-                    attempt += 1
-                    log(f"等待story-content内容加载... 尝试 {attempt}/{max_attempts}")
-        
-        except Exception as e:
-            log(f"等待story-content元素加载时出错: {e}")
-        
+        # 等待 story-content 区域出现
+        page.wait.eles_loaded('.story-content', timeout=10)
         # 滚动到页面底部，触发懒加载内容
         page.scroll.to_bottom()
         time.sleep(1)
-        
         # 滚动到顶部
         page.scroll.to_top()
-        
         # 获取完整的HTML内容
         html = page.html
-        
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(html)
-        
         log(f"HTML已保存到: {output_path}")
         
     except BrowserConnectError as e:
