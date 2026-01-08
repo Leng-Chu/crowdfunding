@@ -49,11 +49,19 @@ def _extract_video_url(soup, logger=None):
         return None
 
 
+def _is_leaf_text_div(element, block_tags):
+    """Return True when a div is acting like a text paragraph."""
+    if element.find(block_tags + ["div"], recursive=False):
+        return False
+    return True
+
+
 def _extract_story_content(soup, selectors, include_div=False):
     """提取故事内容中的图像和文本序列"""
     content_sequence = []
     image_counter = 1
-    text_tags = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote"]
+    block_tags = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote"]
+    text_tags = list(block_tags)
     if include_div:
         text_tags.append("div")
 
@@ -83,6 +91,8 @@ def _extract_story_content(soup, selectors, include_div=False):
                         image_counter += 1
                         last_item_was_text = False  # 重置文本标记
                 elif element.name in text_tags:
+                    if element.name == "div" and not _is_leaf_text_div(element, block_tags):
+                        continue
                     text = element.get_text(strip=True)
                     if text:
                         # 如果上一项也是文本，则合并到上一项
@@ -132,8 +142,11 @@ def parse_story_content(
     selectors = [
         "div.story-content",
         'div[data-element="rich_text_content"]',
+        "div.rte__content"
     ]
     content_sequence = _extract_story_content(soup, selectors, include_div=False)
+    if not content_sequence:
+        content_sequence = _extract_story_content(soup, selectors, include_div=True)
 
     result = {
         "project_url": project_url,  # 添加项目URL
@@ -145,7 +158,7 @@ def parse_story_content(
     with open(result_file, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
 
-    log(f"解析完成，结果已保存到: {result_file}，共找到 {len(content_sequence)} 个内容元素")
+    log(f"解析完成，结果已保存到: {result_file} ，共找到 {len(content_sequence)} 个内容元素")
     return result
 
 
