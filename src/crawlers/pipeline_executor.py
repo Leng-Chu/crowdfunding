@@ -52,14 +52,12 @@ def update_csv_with_status(csv_path, project_id, status):
         df.loc[mask, "success_status"] = status
 
     df = df.fillna("")
-    
-    # 直接写入原文件（在锁的保护下）
     df.to_csv(csv_path, index=False, encoding="utf-8")
 
 
 def main():
-    csv_path = Path("data/metadata/years/2024_31932.csv")
-    output_root = Path("data/projects/2024")
+    csv_path = Path("data/metadata/years/2025_45005.csv")
+    output_root = Path("data/projects/2025")
     overwrite_html = True
     overwrite_content = True
     overwrite_assets = False
@@ -192,7 +190,7 @@ def main():
                 simple_log(f"[CSV第{csv_row_index}行][{project_id}] 项目有 {len(issues)} 个问题: {issue_str}")
             else:
                 update_csv_with_status(csv_path, project_id, "success")
-                wait_seconds = max(1, wait_seconds // 2)  # 成功后等待时间减半，但不低于1秒
+                wait_seconds = 1
                 simple_log(f"[CSV第{csv_row_index}行][{project_id}] 项目流水线执行成功")
             simple_log(f"等待时间: {wait_seconds}")
 
