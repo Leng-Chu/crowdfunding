@@ -4,7 +4,7 @@
 3. 下载资源文件
 """
 
-import csv
+import pandas as pd
 from datetime import datetime
 from pathlib import Path
 import sys
@@ -38,51 +38,23 @@ def simple_log(message):
     print(f"[{timestamp}] {message}", flush=True)
 
 
-def ensure_success_status_column(csv_path):
-    """确保CSV文件包含success_status列"""
-    rows = []
-    fieldnames = []
-    
-    with open(csv_path, 'r', encoding='utf-8', newline='') as f:
-        reader = csv.DictReader(f)
-        fieldnames = reader.fieldnames
-        rows = list(reader)
-    
-    # 检查是否已有success_status列
-    if 'success_status' not in fieldnames:
-        fieldnames = list(fieldnames) + ['success_status']
-        # 为已有数据添加默认值
-        for row in rows:
-            row['success_status'] = ''
-    
-    # 写回CSV文件
-    with open(csv_path, 'w', encoding='utf-8', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-
-
 def update_csv_with_status(csv_path, project_id, status):
-    """更新CSV文件中的特定项目，添加处理状态"""
-    rows = []
-    fieldnames = []
+    # 读取当前CSV文件
+    df = pd.read_csv(csv_path, dtype=str, keep_default_na=False)
     
-    with open(csv_path, 'r', encoding='utf-8', newline='') as f:
-        reader = csv.DictReader(f)
-        fieldnames = reader.fieldnames
-        rows = list(reader)
+    if "success_status" not in df.columns:
+        df["success_status"] = ""
+    if "project_id" not in df.columns:
+        df["project_id"] = ""
+
+    mask = df["project_id"].astype(str) == str(project_id)
+    if mask.any():
+        df.loc[mask, "success_status"] = status
+
+    df = df.fillna("")
     
-    # 更新指定项目的状态
-    for row in rows:
-        if row['project_id'] == project_id:
-            row['success_status'] = status
-            break
-    
-    # 写回CSV文件
-    with open(csv_path, 'w', encoding='utf-8', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
+    # 直接写入原文件（在锁的保护下）
+    df.to_csv(csv_path, index=False, encoding="utf-8")
 
 
 def main():
@@ -98,39 +70,35 @@ def main():
 
     output_root.mkdir(parents=True, exist_ok=True)
 
-    # 确保CSV文件包含success_status列
-    ensure_success_status_column(csv_path)
-
     args_list = []
     row_count = 0
     simple_log(f"开始处理 {csv_path}")
     
-    with csv_path.open("r", encoding="utf-8", newline="") as f:
-        reader = csv.DictReader(f)
-        for row_idx, row in enumerate(reader):
-            # 检查是否在处理范围内
-            if row_idx < start_row - 1:
-                continue
-            if end_row is not None and row_idx >= end_row:
-                break
+    df = pd.read_csv(csv_path, dtype=str, keep_default_na=False)
+    for row_idx, row in df.iterrows():
+        # Filter by requested row range
+        if row_idx < start_row - 1:
+            continue
+        if end_row is not None and row_idx >= end_row:
+            break
 
-            # 只处理未成功的行
-            success_status = row.get('success_status', '')
-            if success_status == 'success':
-                continue  # 跳过已成功的行
+        # Only process rows not marked as success
+        success_status = row.get('success_status', '')
+        if success_status == 'success':
+            continue  # Skip rows already marked as success
 
-            project_id = row.get("project_id")
-            project_url = row.get("project_url")
-            cover_url = row.get("cover_url")
-            
-            args_list.append((
-                project_url, project_id, output_root,
-                row_idx + 1,  # 使用CSV文件中的实际行号
-                overwrite_html, overwrite_content, overwrite_assets,
-                download_assets, 10,  # download_workers 参数保留以保持接口兼容性
-                cover_url, row
-            ))
-            row_count += 1
+        project_id = row.get("project_id")
+        project_url = row.get("project_url")
+        cover_url = row.get("cover_url")
+
+        args_list.append((
+            project_url, project_id, output_root,
+            row_idx + 1,  # Use 1-based CSV row number
+            overwrite_html, overwrite_content, overwrite_assets,
+            download_assets, 10,  # download_workers kept for interface compatibility
+            cover_url, row.to_dict()
+        ))
+        row_count += 1
 
     simple_log(f"开始顺序处理 {len(args_list)} 个项目，从第{start_row}到第{end_row or '末尾'}行")
     
