@@ -94,7 +94,7 @@ def main():
     download_assets = False
     start_row = 1  # 从第几行开始处理（从1开始计数）
     end_row = None  # 到第几行结束处理，会处理end_row这一行（None表示处理到文件末尾）
-    wait_seconds = 1
+    wait_seconds = 1 # 等待时间，指数退避
 
     output_root.mkdir(parents=True, exist_ok=True)
 
@@ -128,7 +128,7 @@ def main():
                 row_idx + 1,  # 使用CSV文件中的实际行号
                 overwrite_html, overwrite_content, overwrite_assets,
                 download_assets, 10,  # download_workers 参数保留以保持接口兼容性
-                cover_url, row, wait_seconds
+                cover_url, row
             ))
             row_count += 1
 
@@ -143,7 +143,7 @@ def main():
         for args in args_list:
             (project_url, project_id, output_root, csv_row_index, overwrite_html,
              overwrite_content, overwrite_assets, download_assets, download_workers,
-             cover_url, row, wait_seconds) = args
+             cover_url, row) = args
 
             simple_log(f"处理项目 {project_id}，行号 {csv_row_index}")
             # 直接执行项目处理逻辑
@@ -218,16 +218,14 @@ def main():
 
             if issues:
                 issue_str = ','.join(issues)
-                simple_log(f"[CSV第{csv_row_index}行][{project_id}] 项目有 {len(issues)} 个问题: {issue_str}")
                 # 更新CSV文件，标记处理失败及原因
                 update_csv_with_status(csv_path, project_id, f"failed: {issue_str}")
-                wait_seconds*=2
+                wait_seconds *= 2  # 失败后等待时间翻倍
+                simple_log(f"[CSV第{csv_row_index}行][{project_id}] 项目有 {len(issues)} 个问题: {issue_str}")
             else:
-                simple_log(f"[CSV第{csv_row_index}行][{project_id}] 项目流水线执行成功")
-                # 更新CSV文件，标记处理成功
                 update_csv_with_status(csv_path, project_id, "success")
-                if wait_seconds>1:
-                    wait_seconds/=2
+                wait_seconds = max(1, wait_seconds // 2)  # 成功后等待时间减半，但不低于1秒
+                simple_log(f"[CSV第{csv_row_index}行][{project_id}] 项目流水线执行成功")
             simple_log(f"等待时间: {wait_seconds}")
 
     finally:
@@ -242,11 +240,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    # run_pipeline_for_project(
-    #     project_url="https://www.kickstarter.com/projects/bigmellon/a-bed-system-and-legit-blackout-blinds-for-the-tesla-model-y",
-    #     project_id="1682927218", output_root=Path("data/projects"),
-    #     overwrite_html=False, overwrite_content=True, overwrite_assets=False,
-    #     download_assets=True, download_workers=10,
-    #     start_minimized=True,
-    #     cover_url="https://example.com/cover_image.jpg"  # 添加cover_url参数示例
-    # )
