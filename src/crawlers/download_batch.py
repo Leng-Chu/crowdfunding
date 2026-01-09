@@ -6,6 +6,9 @@ import pandas as pd
 from datetime import datetime
 from pathlib import Path
 import sys
+import threading
+import math
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -15,10 +18,19 @@ if str(CURRENT_DIR) not in sys.path:
 from download_assets import download_assets_from_json
 
 
-def simple_log(message):
-    """简化日志输出，直接打印时间戳和消息"""
+def _format_prefix(csv_row_index: int, project_id: str) -> str:
+    return f"[CSV第{csv_row_index}行][{project_id}]"
+
+
+def simple_log(message, csv_row_index=None, project_id=None):
+    """简化日志输出，直接打印时间戳和消息，支持CSV行数和项目ID前缀"""
     timestamp = datetime.now().strftime("%H:%M:%S")
-    print(f"[{timestamp}] {message}", flush=True)
+    
+    if csv_row_index is not None and project_id is not None:
+        prefix = _format_prefix(csv_row_index, project_id)
+        print(f"[{timestamp}] {prefix} {message}", flush=True)
+    else:
+        print(f"[{timestamp}] {message}", flush=True)
 
 
 def update_csv_with_download_status(csv_path, project_id, status):
@@ -86,17 +98,16 @@ def download_for_success_rows(csv_path, output_root, overwrite_assets=False, dow
 
     for row_idx, row in target_rows.iterrows():
         project_id = row.get("project_id")
-        csv_row_index = row_idx + 2  # 转换为1基索引，并且跳过标题行
+        csv_row_index = row_idx + 1  
 
         project_dir = output_root / project_id
         content_json_path = project_dir / "content.json"
 
         if not content_json_path.exists():
-            log(f"[CSV第{csv_row_index}行][{project_id}] content.json不存在，跳过下载: {content_json_path}")
+            log(f"content.json不存在，跳过下载: {content_json_path}", csv_row_index=csv_row_index, project_id=project_id)
             update_csv_with_download_status(csv_path, project_id, "failed: missing content.json")
             continue
-
-        log(f"[CSV第{csv_row_index}行][{project_id}] 开始下载资源")
+        log(f"开始下载资源", csv_row_index=csv_row_index, project_id=project_id)
 
         try:
             download_failures = download_assets_from_json(
@@ -104,7 +115,7 @@ def download_for_success_rows(csv_path, output_root, overwrite_assets=False, dow
                 str(project_dir),
                 max_workers=download_workers,
                 overwrite_files=overwrite_assets,
-                logger=log,
+                logger=lambda msg: log(msg, csv_row_index=csv_row_index, project_id=project_id),
             )
 
             if download_failures:
@@ -121,8 +132,8 @@ def download_for_success_rows(csv_path, output_root, overwrite_assets=False, dow
 
 
 def main():
-    csv_path = Path("data/metadata/years/2024_31932.csv")  # 修改为实际的CSV文件路径
-    output_root = Path("data/projects/2024")  # 修改为实际的输出目录路径
+    csv_path = Path("data/metadata/years/2024 copy.csv")  # 修改为实际的CSV文件路径
+    output_root = Path("data/projects/2024_1_5000")  # 修改为实际的输出目录路径
     overwrite_assets = True  # 是否覆盖已存在的资源
     download_workers = 10  # 并行下载线程数
     start_row = 1  # 开始处理的行号（从1开始计数）

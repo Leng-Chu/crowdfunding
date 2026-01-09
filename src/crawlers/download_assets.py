@@ -131,8 +131,14 @@ def _download_file(url, path, max_retries=0, logger=None):
     return False, last_error
 
 
-def download_from_content(content, output_dir, max_workers=6, overwrite_files=False, logger=None):
+
+def download_assets_from_json(content_json_path, output_dir=None, max_workers=6, overwrite_files=False, logger=None):
     log = logger or print
+    with open(content_json_path, 'r', encoding='utf-8') as f:
+        content = json.load(f)
+
+    if output_dir is None:
+        output_dir = Path(content_json_path).parent
     cover_dir, _ = _ensure_output_dirs(output_dir)
 
     tasks = []
@@ -145,10 +151,11 @@ def download_from_content(content, output_dir, max_workers=6, overwrite_files=Fa
             tasks.append((cover_image_url, str(img_path)))
         #else:
             #log(f"封面图片已存在，跳过下载: {img_path}")
-    if video_url:
-        video_path = cover_dir / 'project_video.mp4'
-        if overwrite_files or not video_path.exists():
-            tasks.append((video_url, str(video_path)))
+            
+    # if video_url:
+    #     video_path = cover_dir / 'project_video.mp4'
+    #     if overwrite_files or not video_path.exists():
+    #         tasks.append((video_url, str(video_path)))
         #else:
             #log(f"视频文件已存在，跳过下载: {video_path}")
 
@@ -186,14 +193,14 @@ def download_from_content(content, output_dir, max_workers=6, overwrite_files=Fa
     log(f"资源下载完成，成功 {len(tasks)-len(failures)} 个，失败 {len(failures)} 个")
     return failures
 
-def download_assets_from_json(content_json_path, output_dir=None, max_workers=6, overwrite_files=False, logger=None):
-    log = logger or print
-    with open(content_json_path, 'r', encoding='utf-8') as f:
-        content = json.load(f)
-
-    if output_dir is None:
-        output_dir = Path(content_json_path).parent
-
-    effective_workers = max(1, max_workers)
-    return download_from_content(content, output_dir, effective_workers, overwrite_files, logger=log)
-
+if __name__ == '__main__':
+    content_json_path = "data/projects/sample/content.json"
+    output_dir = "data/projects/sample"
+    max_workers=10
+    overwrite_files=True
+    download_assets_from_json(
+        content_json_path,
+        output_dir,
+        max_workers=max_workers,
+        overwrite_files=overwrite_files
+    )
