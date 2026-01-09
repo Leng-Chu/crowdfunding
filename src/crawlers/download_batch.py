@@ -61,6 +61,7 @@ def download_for_success_rows(
     output_root,
     overwrite_assets=False,
     download_workers=10,
+    download_video=False,
     start_row=None,
     end_row=None,
     logger=None,
@@ -155,6 +156,7 @@ def download_for_success_rows(
                 str(project_dir),
                 max_workers=download_workers,
                 overwrite_files=overwrite_assets,
+                download_video=download_video,
                 logger=lambda msg: log(
                     msg, csv_row_index=csv_row_index, project_id=project_id
                 ),
@@ -198,6 +200,7 @@ def main():
     overwrite_assets = False
     skip_success = True
     download_workers = 3
+    download_video = False
     project_workers = 10
     start_row = 1001
     end_row = 2000
@@ -207,6 +210,7 @@ def main():
         output_root=output_root,
         overwrite_assets=overwrite_assets,
         download_workers=download_workers,
+        download_video=download_video,
         project_workers=project_workers,
         start_row=start_row,
         end_row=end_row,

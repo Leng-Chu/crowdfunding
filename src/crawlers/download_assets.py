@@ -135,6 +135,7 @@ def download_assets_from_json(
     output_dir=None,
     max_workers=6,
     overwrite_files=False,
+    download_video=False,
     logger=None,
     max_retries=DEFAULT_MAX_RETRIES,
     timeout=DEFAULT_TIMEOUT,
@@ -159,10 +160,10 @@ def download_assets_from_json(
         # else:
         #     log(f"封面图片已存在，跳过下载: {img_path}")
 
-    # if video_url:
-    #     video_path = cover_dir / "project_video.mp4"
-    #     if overwrite_files or not video_path.exists():
-    #         tasks.append((video_url, str(video_path)))
+    if download_video and video_url:
+        video_path = cover_dir / "project_video.mp4"
+        if overwrite_files or not video_path.exists():
+            tasks.append((video_url, str(video_path)))
         # else:
         #     log(f"视频文件已存在，跳过下载: {video_path}")
 
@@ -213,9 +214,11 @@ if __name__ == "__main__":
     output_dir = "data/projects/sample"
     max_workers = 10
     overwrite_files = True
+    download_video=False
     download_assets_from_json(
         content_json_path,
         output_dir,
         max_workers=max_workers,
         overwrite_files=overwrite_files,
+        download_video=download_video
     )
