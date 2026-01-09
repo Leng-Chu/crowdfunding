@@ -83,6 +83,9 @@ def main() -> None:
     # 按年份分组存储数据
     yearly_data = {}
     yearly_counters = Counter()
+    
+    # 用于跟踪已处理的project_id，确保去重
+    seen_project_ids = set()
 
     # 打开all.csv文件
     with all_out_path.open("w", encoding="utf-8", newline="") as all_f:
@@ -103,6 +106,18 @@ def main() -> None:
                 if int(year) <= 2014:
                     continue
                     
+                # 获取project_id
+                project_id = get_by_path(row, "data.id", "")
+                if not project_id:  # 如果没有project_id，则跳过
+                    continue
+                    
+                # 检查是否已经处理过此project_id
+                if project_id in seen_project_ids:
+                    continue
+                    
+                # 添加到已处理集合中
+                seen_project_ids.add(project_id)
+
                 # 构建行数据
                 row_map: Dict[str, Any] = {}
                 for name, path in mapping:
@@ -148,6 +163,7 @@ def main() -> None:
         print(f"已创建文件: {filename}，包含 {count} 个项目")
 
     print(f"已创建 all.csv 文件，包含 {sum(yearly_counters.values())} 个项目")
+    print(f"总共处理了 {len(seen_project_ids)} 个不重复的项目")
     print("处理完成！")
 
 
