@@ -47,7 +47,7 @@ def fetch_html(url: str, output_path: str,
         should_quit = True
     else:
         page = browser_page
-    
+    time.sleep(1)
     time.sleep(wait_seconds)
     try:
         page.get(url)
@@ -57,7 +57,7 @@ def fetch_html(url: str, output_path: str,
         page.wait.eles_loaded('.story-content', timeout=10)
         # 滚动到页面底部，触发懒加载内容
         page.scroll.to_bottom()
-        time.sleep(1)
+        
         # 滚动到顶部
         page.scroll.to_top()
         # 获取完整的HTML内容
@@ -68,7 +68,8 @@ def fetch_html(url: str, output_path: str,
         
     except BrowserConnectError as e:
         log(f"浏览器连接失败: {e}")
-        # 重新抛出异常，让调用方处理
+        if should_quit and page:
+            page.quit()
         raise e
     finally:
         # 只有在函数内部创建了浏览器实例时才退出
