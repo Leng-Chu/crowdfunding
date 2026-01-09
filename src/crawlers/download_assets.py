@@ -4,7 +4,6 @@ from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urljoin, urlparse
 import json
 from pathlib import Path
-import time
 
 
 BASE_URL = "https://www.kickstarter.com/"
@@ -101,7 +100,7 @@ def _download_file(url, path, max_retries=0, logger=None):
         log(f"下载失败 {url}: {e}")
 
     # 使用备用请求头重试一次
-    log(f"尝试使用不同的请求头下载 {url}")
+    log(f"尝试使用不同的请求头下载")
     alt_headers = {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': '*/*',
@@ -184,10 +183,7 @@ def download_from_content(content, output_dir, max_workers=6, overwrite_files=Fa
     with ThreadPoolExecutor(max_workers=effective_workers) as executor:
         results = list(executor.map(_download_task, tasks))
     failures = [item for item in results if item]
-    if failures:
-        log(f"资源下载完成，失败 {len(failures)} 个")
-    else:
-        log("资源下载完成")
+    log(f"资源下载完成，成功 {len(tasks)-len(failures)} 个，失败 {len(failures)} 个")
     return failures
 
 def download_assets_from_json(content_json_path, output_dir=None, max_workers=6, overwrite_files=False, logger=None):
