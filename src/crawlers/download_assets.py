@@ -17,6 +17,12 @@ DEFAULT_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
     "Referer": BASE_URL,
 }
+alt_headers = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': '*/*',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Referer': 'https://www.kickstarter.com/',
+}
 
 
 def _ensure_output_dirs(output_dir):
@@ -29,16 +35,12 @@ def _ensure_output_dirs(output_dir):
     return cover_dir, photo_dir
 
 
-def _download_file(url, path, max_retries=0, logger=None):
+def _download_file(url, path, logger=None):
     log = logger or print
     if not url:
         return False, 'empty_url'
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-
-    if path.exists():
-        #log(f"文件已存在，跳过下载: {path}")
-        return True, None
 
     parsed_url = urlparse(url)
     if parsed_url.scheme and parsed_url.netloc:
@@ -84,7 +86,7 @@ def _download_file(url, path, max_retries=0, logger=None):
                         )
 
             part_path.replace(path)
-            #log(f"已下载: {path}")
+            # log(f"已下载: {path}")
             return True, None
 
         last_error = f'status_code:{response.status_code}'
@@ -101,12 +103,6 @@ def _download_file(url, path, max_retries=0, logger=None):
 
     # 使用备用请求头重试一次
     log(f"尝试使用不同的请求头下载")
-    alt_headers = {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': '*/*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Referer': 'https://www.kickstarter.com/',
-    }
 
     try:
         existing_size = part_path.stat().st_size if part_path.exists() else 0
@@ -119,7 +115,7 @@ def _download_file(url, path, max_retries=0, logger=None):
                     if chunk:
                         f.write(chunk)
             part_path.replace(path)
-            #log(f"已下载: {path}")
+            log(f"已下载: {path}")
             return True, None
         else:
             last_error = f'status_code:{response.status_code}'
@@ -129,8 +125,6 @@ def _download_file(url, path, max_retries=0, logger=None):
         log(f"使用备用请求头下载失败 {url}: {e}")
 
     return False, last_error
-
-
 
 def download_assets_from_json(content_json_path, output_dir=None, max_workers=6, overwrite_files=False, logger=None):
     log = logger or print
@@ -196,7 +190,7 @@ def download_assets_from_json(content_json_path, output_dir=None, max_workers=6,
 if __name__ == '__main__':
     content_json_path = "data/projects/sample/content.json"
     output_dir = "data/projects/sample"
-    max_workers=10
+    max_workers = 10
     overwrite_files=True
     download_assets_from_json(
         content_json_path,
