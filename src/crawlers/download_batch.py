@@ -57,7 +57,7 @@ def update_csv_with_download_status(csv_path, project_id, status, lock=None):
             _write()
 
 
-def download_for_success_rows(csv_path, output_root, overwrite_assets=False, download_workers=10, start_row=None, end_row=None, logger=None, project_workers=None):
+def download_for_success_rows(csv_path, output_root, overwrite_assets=False, download_workers=10, start_row=None, end_row=None, logger=None, project_workers=None, skip_success=False):
     """
     仅处理CSV中content_status为"success"的行，从content.json下载资源文件
     :param csv_path: CSV文件路径
@@ -68,6 +68,7 @@ def download_for_success_rows(csv_path, output_root, overwrite_assets=False, dow
     :param end_row: 结束处理的行号（从1开始计数），None表示处理至文件末尾
     :param logger: 日志记录器
     :param project_workers: 项目级并发线程数，None表示自动设置
+    :param skip_success: 是否跳过download_status为"success"的行
     """
     log = logger or simple_log
     
@@ -84,32 +85,34 @@ def download_for_success_rows(csv_path, output_root, overwrite_assets=False, dow
         log("CSV文件中没有content_status列，无法筛选成功项目")
         return
 
+    # 应用start_row和end_row参数来限定处理范围
+    if start_row is not None or end_row is not None:
+        # 将从1开始的索引转换为从0开始的索引
+        start_idx = start_row - 1 if start_row is not None else 0
+        end_idx = end_row - 1 if end_row is not None else len(df) - 1
+        
+        # 确保索引在有效范围内
+        start_idx = max(0, start_idx)
+        end_idx = min(len(df) - 1, end_idx)
+        
+        # 限制df到指定范围
+        df = df.iloc[start_idx:end_idx+1]
+
     # 筛选出content_status为"success"的行
     success_mask = df["content_status"].astype(str) == "success"
     target_rows = df[success_mask]
 
-    # 应用start_row和end_row参数
-    if start_row is not None or end_row is not None:
-        # 将从1开始的索引转换为从0开始的索引
-        start_idx = start_row - 1 if start_row is not None else 0
-        end_idx = end_row - 1 if end_row is not None else len(target_rows) - 1
-        
-        # 确保索引在有效范围内
-        start_idx = max(0, start_idx)
-        end_idx = min(len(target_rows) - 1, end_idx)
-        
-        # 获取实际的行索引
-        actual_indices = target_rows.index[start_idx:end_idx+1]
-        target_rows = target_rows.loc[actual_indices]
+    # 如果skip_success为True，排除download_status为"success"的行
+    if skip_success:
+        skip_mask = target_rows["download_status"].astype(str) != "success"
+        target_rows = target_rows[skip_mask]
 
-    log(f"总共找到 {len(df[success_mask])} 个成功状态的项目，将处理其中的 {start_row}-{end_row} 行，实际处理 {len(target_rows)} 个项目")
+    log(f"总共找到 {len(df[df['content_status'].astype(str) == 'success'])} 个成功状态的项目，{'排除download_status为success的项目后，' if skip_success else ''}将处理 {len(target_rows)} 个项目")
 
     if target_rows.empty:
         log("没有需要处理的项目")
         return
 
-    if project_workers is None:
-        project_workers = min(6, len(target_rows))
     project_workers = max(1, project_workers)
     effective_project_workers = min(project_workers, len(target_rows))
     csv_lock = threading.Lock()
@@ -158,13 +161,17 @@ def download_for_success_rows(csv_path, output_root, overwrite_assets=False, dow
 
 
 def main():
-    csv_path = Path("data/metadata/years/2024 copy.csv")  # 修改为实际的CSV文件路径
-    output_root = Path("data/projects/2024_1_5000")  # 修改为实际的输出目录路径
-    overwrite_assets = True  # 是否覆盖已存在的资源
-    download_workers = 5  # 并行下载线程数
-    project_workers = 4  # 项目并发线程数
+    # csv_path = Path("data/metadata/years/2024 copy.csv")  # 修改为实际的CSV文件路径
+    # output_root = Path("data/projects/2024_1_5000")  # 修改为实际的输出目录路径
+    csv_path = Path("data/metadata/years/2023_6612.csv")  # 修改为实际的CSV文件路径
+    output_root = Path("data/projects/2023")  # 修改为实际的输出目录路径
+    overwrite_assets = False  # 是否覆盖已存在的资源
+    skip_success = True  # 是否跳过已经成功下载的项目
+    download_workers = 2  # 并行下载线程数
+    project_workers = 10  # 项目并发线程数
     start_row = 1  # 开始处理的行号（从1开始计数）
-    end_row = 10  # 结束处理的行号（从1开始计数）
+    end_row = 500  # 结束处理的行号（从1开始计数）
+    
 
     download_for_success_rows(
         csv_path=csv_path,
@@ -173,7 +180,8 @@ def main():
         download_workers=download_workers,
         project_workers=project_workers,
         start_row=start_row,
-        end_row=end_row
+        end_row=end_row,
+        skip_success=skip_success
     )
 
 

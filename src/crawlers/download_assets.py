@@ -115,7 +115,7 @@ def _download_file(url, path, logger=None):
                     if chunk:
                         f.write(chunk)
             part_path.replace(path)
-            log(f"已下载: {path}")
+            # log(f"已下载: {path}")
             return True, None
         else:
             last_error = f'status_code:{response.status_code}'
