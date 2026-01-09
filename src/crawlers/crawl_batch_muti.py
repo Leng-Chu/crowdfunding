@@ -107,12 +107,12 @@ def process_project(args, csv_path: Path, csv_lock: threading.Lock) -> None:
 
 
 def main() -> None:
-    csv_path = Path("data/metadata/years/2024_20760.csv")
-    output_root = Path("data/projects/2024")
+    csv_path = Path("data/metadata/years/2024_20752.csv")
+    output_root = Path("data/projects/2024_5001_10000")
     overwrite_html = True
     overwrite_content = True
-    start_row = 1  # 从第几行开始处理（从1开始计数）
-    end_row = 5000  # 处理到第几行（None表示处理到文件末尾）
+    start_row = 5001  # 从第几行开始处理（从1开始计数）
+    end_row = 10000  # 处理到第几行（None表示处理到文件末尾）
     max_workers = 6 # 并发线程数
 
     output_root.mkdir(parents=True, exist_ok=True)

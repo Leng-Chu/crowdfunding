@@ -11,8 +11,8 @@ def delete_unsuccessful_projects(start_row=1, end_row=5000):
     START_ROW = start_row  # 起点行号（包含），从1开始
     END_ROW = end_row      # 终点行号（包含），从1开始
     
-    csv_path = "data/metadata/years/2024_20760.csv"
-    projects_base_path = "data/projects/2024"
+    csv_path = "data/metadata/years/2023_10844.csv"
+    projects_base_path = "data/projects/2023"
     
     # 检查文件是否存在
     if not os.path.exists(csv_path):
@@ -103,6 +103,6 @@ def delete_unsuccessful_projects(start_row=1, end_row=5000):
 if __name__ == "__main__":
     # 可以通过修改这两个参数来定义处理的起点和终点（从1开始计数的闭区间）
     START_ROW = 1    # 定义起点（从1开始计数）
-    END_ROW = 5000   # 定义终点（从1开始计数）
+    END_ROW = 11000   # 定义终点（从1开始计数）
     
     delete_unsuccessful_projects(START_ROW, END_ROW)

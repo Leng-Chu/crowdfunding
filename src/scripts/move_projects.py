@@ -4,10 +4,11 @@ import shutil
 
 def move_projects_from_later_rows():
     # 定义路径
-    csv_file_path = "data/metadata/years/2024_20752.csv"
-    source_folder = "data/projects/2024"
-    target_folder = "data/projects/2024_5001"
-    begin = 5001
+    csv_file_path = "data/metadata/years/2023_6612.csv"
+    source_folder = "data/projects/2023"
+    target_folder = "data/projects/2023_501_1000"
+    begin = 501
+    end = 1000
     
     # 创建目标文件夹（如果不存在）
     os.makedirs(target_folder, exist_ok=True)
@@ -20,12 +21,14 @@ def move_projects_from_later_rows():
         row_num = 0
         for row in reader:
             row_num += 1
+            if row_num > end:
+                break
             # 如果行号大于begin，则记录project_id
             if row_num >= begin:
                 project_id = row['project_id']
                 project_ids.add(project_id)
     
-    print(f"Found {len(project_ids)} unique project IDs from rows >= begin:")
+    print(f"Found {len(project_ids)} unique project IDs")
     for pid in list(project_ids)[:10]:  # 只显示前10个作为示例
         print(f"  - {pid}")
     if len(project_ids) > 10:
@@ -46,7 +49,7 @@ def move_projects_from_later_rows():
                 moved_count += 1
     
     print(f"\nSuccessfully moved {moved_count} directories.")
-    print(f"Total unique project IDs from rows >= begin: {len(project_ids)}")
+    print(f"Total unique project IDs :{len(project_ids)}")
 
 if __name__ == "__main__":
     move_projects_from_later_rows()
