@@ -1,5 +1,6 @@
 from pathlib import Path
 import time
+import threading
 from DrissionPage import ChromiumOptions, ChromiumPage
 from DrissionPage.errors import BrowserConnectError
 
@@ -14,7 +15,7 @@ def _build_options() -> ChromiumOptions:
     options.set_argument("--blink-settings=imagesEnabled=false")
     return options
 
-
+_BROWSER_START_LOCK = threading.Lock()
 def fetch_html(url: str, output_path: str,
                overwrite_html: bool = False,
                wait_seconds: float = 0,
@@ -42,12 +43,12 @@ def fetch_html(url: str, output_path: str,
     # 如果没有提供浏览器实例，则创建一个新的
     should_quit = False
     if browser_page is None:
-        options = _build_options()
-        page = ChromiumPage(options)
+        with _BROWSER_START_LOCK:
+            options = _build_options()
+            page = ChromiumPage(options)
         should_quit = True
     else:
         page = browser_page
-    time.sleep(1)
     time.sleep(wait_seconds)
     try:
         page.get(url)

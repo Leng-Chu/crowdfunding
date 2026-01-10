@@ -1,108 +1,90 @@
 import pandas as pd
-import os
-import shutil
 from pathlib import Path
+import shutil
 
-def delete_unsuccessful_projects(start_row=1, end_row=5000):
+
+def clean_projects(csv_path, projects_base_path, check_download_status=True, remove_csv_rows=True):
     """
-    删除content_status不为success的项目的文件夹，并从CSV中移除对应行
+    根据CSV中的数据清理项目文件夹
+    
+    :param csv_path: CSV文件路径
+    :param projects_base_path: 项目基础路径
+    :param check_download_status: 是否检查download_status
+    :param remove_csv_rows: 是否从CSV中删除对应的行
     """
-    # 可修改的起点和终点变量（从1开始计数的闭区间）
-    START_ROW = start_row  # 起点行号（包含），从1开始
-    END_ROW = end_row      # 终点行号（包含），从1开始
+    # 读取CSV文件
+    df = pd.read_csv(csv_path)
     
-    csv_path = "data/metadata/years/2023_10844.csv"
-    projects_base_path = "data/projects/2023"
+    # 创建备份副本以便后续操作
+    original_len = len(df)
     
-    # 检查文件是否存在
-    if not os.path.exists(csv_path):
-        print(f"CSV文件 {csv_path} 不存在")
-        return
-    
-    if not os.path.exists(projects_base_path):
-        print(f"项目文件夹 {projects_base_path} 不存在")
-        return
-    
-    # 循环处理，直到指定范围内的content_status均为success
-    while True:
-        # 读取CSV文件
-        df = pd.read_csv(csv_path)
+    # 遍历每一行
+    rows_to_remove = []
+    for idx, row in df.iterrows():
+        project_id = str(row.get('project_id', ''))  # 确保project_id为字符串
         
-        # 将从1开始的行号转换为从0开始的索引（pandas DataFrame使用从0开始的索引）
-        start_idx = START_ROW - 1  # 从1开始的行号转为从0开始的索引
-        end_idx = min(END_ROW, len(df))  # 确保不超过DataFrame长度
-        end_idx -= 1  # 转换为从0开始的索引（包含原来END_ROW位置的数据）
-        
-        # 获取指定范围内的数据
-        if start_idx < len(df):
-            if end_idx < len(df):
-                range_df = df.iloc[start_idx:end_idx+1]  # +1 因为iloc右边界不包含
-            else:
-                range_df = df.iloc[start_idx:]
+        # 检查是否存在project_id对应的子文件夹
+        project_folder = Path(projects_base_path) / project_id
+        if not project_folder.exists():
+            # 如果项目文件夹不存在，标记此行需要删除
+            if remove_csv_rows:
+                print(f"项目文件夹不存在，将从CSV中删除该行 [CSV第{idx+1}行] (项目ID: {project_id})")
+            rows_to_remove.append(idx)
         else:
-            print(f"起始行号 {START_ROW} 超出数据范围，处理完成")
-            break
-        
-        if range_df.empty:
-            print(f"指定范围({START_ROW}到{END_ROW})内没有数据，处理完成")
-            break
-        
-        # 查找content_status不为success的行
-        non_success_rows = range_df[range_df.get('content_status', pd.Series()) != 'success']
-        
-        if len(non_success_rows) == 0:
-            print(f"第{START_ROW}到{END_ROW}行的content_status均为success，处理完成")
-            break
-        
-        print(f"发现 {len(non_success_rows)} 个content_status不为success的项目")
-        
-        # 遍历所有content_status不为success的项目
-        for index, row in non_success_rows.iterrows():
-            project_id = row.get('project_id')
+            # 检查content_status和download_status
+            content_status = row.get('content_status', '')
+            download_status = row.get('download_status', '')
             
-            if pd.isna(project_id):
-                continue
+            # 判断是否需要删除文件夹
+            should_delete_folder = (
+                content_status != 'success' or 
+                (check_download_status and download_status != 'success')
+            )
+            
+            if should_delete_folder:
+                print(f"删除项目文件夹 {project_folder} [CSV第{idx+1}行] (项目ID: {project_id}, "
+                      f"content_status: {content_status}, download_status: {download_status})")
                 
-            project_folder_path = os.path.join(projects_base_path, str(project_id))
-            
-            # 检查项目文件夹是否存在
-            if os.path.exists(project_folder_path):
-                try:
-                    # 删除项目文件夹
-                    shutil.rmtree(project_folder_path)
-                    print(f"已删除项目文件夹: {project_folder_path}")
-                except Exception as e:
-                    print(f"删除项目文件夹失败 {project_folder_path}: {str(e)}")
-            else:
-                print(f"项目文件夹不存在: {project_folder_path}")
+                # 删除文件夹
+                shutil.rmtree(project_folder)
+                rows_to_remove.append(idx)
+
+
+    # 如果需要删除CSV中的行
+    if remove_csv_rows and rows_to_remove:
+        print(f"从CSV中删除 {len(rows_to_remove)} 行")
+        df = df.drop(rows_to_remove).reset_index(drop=True)
         
-        # 从DataFrame中删除content_status不为success的行
-        df = df.drop(non_success_rows.index)
+        # 保存更新后的CSV
+        csv_path_obj = Path(csv_path)
+        stem = csv_path_obj.stem
+        suffix = csv_path_obj.suffix
         
-        # 保存更新后的CSV文件
-        df.to_csv(csv_path, index=False)
-        print(f"已更新CSV文件，删除了 {len(non_success_rows)} 行")
+        # 检查原始文件名是否包含下划线后的数字，并替换为当前行数
+        parts = stem.split('_')
+        if len(parts) > 1 and parts[-1].isdigit():
+            # 替换最后一个部分为当前行数
+            new_stem = '_'.join(parts[:-1]) + f"_{len(df)}"
+        else:
+            # 如果没有下划线数字，添加行数
+            new_stem = f"{stem}_{len(df)}"
+        
+        new_csv_path = csv_path_obj.parent / f"{new_stem}{suffix}"
+        df.to_csv(new_csv_path, index=False)
+        print(f"已保存更新后的CSV到 {new_csv_path}")
     
-    # 根据实际项目数重命名CSV文件
-    final_row_count = len(df)
-    original_dir = os.path.dirname(csv_path)
-    original_filename = os.path.basename(csv_path)
-    year = original_filename.split('_')[0]  # 提取年份，如"2024"
-    
-    # 创建新文件名
-    new_filename = f"{year}_{final_row_count}.csv"
-    new_csv_path = os.path.join(original_dir, new_filename)
-    
-    # 重命名CSV文件
-    os.rename(csv_path, new_csv_path)
-    print(f"CSV文件已重命名为: {new_filename} (项目数: {final_row_count})")
-    
-    print("所有操作已完成")
+    print(f"处理完成，原始行数: {original_len}, 现在行数: {len(df)}")
 
 
 if __name__ == "__main__":
-    # 可以通过修改这两个参数来定义处理的起点和终点（从1开始计数的闭区间）
-    START_ROW = 1    # 定义起点（从1开始计数）
-    END_ROW = 11000   # 定义终点（从1开始计数）
+    CSV_PATH = "data/metadata/years/2024_10642.csv"
+    PROJECTS_BASE_PATH = "data/projects/2024"
+    CHECK_DOWNLOAD_STATUS = False   # 控制是否要判断download_status不为success
+    REMOVE_CSV_ROWS = True         # 控制是否要从csv中删掉这一行
     
-    delete_unsuccessful_projects(START_ROW, END_ROW)
+    clean_projects(
+        csv_path=CSV_PATH,
+        projects_base_path=PROJECTS_BASE_PATH,
+        check_download_status=CHECK_DOWNLOAD_STATUS,
+        remove_csv_rows=REMOVE_CSV_ROWS
+    )
