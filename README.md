@@ -6,7 +6,7 @@
 
 - src/ 代码入口
   - crawlers/ 爬虫
-  - pipelines/ 清洗、切分、对齐等数据流程
+  - data_process/ 数据预处理流程
   - storage/ 存储读写与统一接口
   - utils/ 通用工具
   - scipts/ 临时脚本
