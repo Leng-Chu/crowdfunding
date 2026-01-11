@@ -80,7 +80,7 @@ def _extract_story_content(soup, selectors, include_div=False):
                         or element.get("data-original")
                     )
                     if img_url:
-                        relative_name = f"photo/story_image_{image_counter}.wbep"
+                        relative_name = f"photo/story_image_{image_counter}.jpeg"
                         content_sequence.append(
                             {
                                 "type": "image",
