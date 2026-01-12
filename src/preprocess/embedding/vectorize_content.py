@@ -6,6 +6,7 @@ import dashscope
 from typing import List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import embedding_clip, embedding_qwen, embedding_bge
+from datetime import datetime
 
 def _get_vectors_filename(model: str, vector_type: str = "text") -> str:
     """根据后端和向量类型生成文件名"""
@@ -58,10 +59,18 @@ def get_image_backend(image_model: str) -> str:
 def process_single_project(project_folder: Path, 
                            text_model: str, image_model: str, 
                            enable_text_vector: bool = True, 
-                           enable_image_vector: bool = True) -> bool:
+                           enable_image_vector: bool = True,
+                           project_index: int = None) -> bool:
     """处理单个项目"""
     content_json_path = project_folder / "content.json"
-    print(f"正在处理项目: {project_folder.name}")
+    
+    # 获取当前时间
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # 输出处理信息，包含时间、项目序号和项目ID
+    if project_index is not None:
+        print(f"[{current_time}] 正在处理第 {project_index + 1} 个项目: {project_folder.name}")
+    else:
+        print(f"[{current_time}] 正在处理项目: {project_folder.name}")
 
     try:
         # 读取content.json文件
@@ -84,30 +93,40 @@ def process_single_project(project_folder: Path,
         if enable_text_vector:
             text_contents = [item["content"] for item in content_sequence if item.get("type") == "text"]
             if text_contents:
-                text_backend = get_text_backend(text_model)
-                text_vector_list = text_backend(content_sequence = text_contents, vector_type = "text")
-                if text_vector_list:
-                    text_vectors_path = project_folder / _get_vectors_filename(text_model, "text")
-                    text_vectors_matrix = np.stack(text_vector_list)
-                    np.save(text_vectors_path, text_vectors_matrix)
-                    # print(f"文本向量已保存到 {text_vectors_path}")
+                text_vectors_path = project_folder / _get_vectors_filename(text_model, "text")
+                
+                # 检查文本向量文件是否已经存在
+                if text_vectors_path.exists():
+                    print(f"文本向量文件已存在，跳过文本向量化: {text_vectors_path}")
                 else:
-                    text_success = False
+                    text_backend = get_text_backend(text_model)
+                    text_vector_list = text_backend(content_sequence = text_contents, vector_type = "text")
+                    if text_vector_list:
+                        text_vectors_matrix = np.stack(text_vector_list)
+                        np.save(text_vectors_path, text_vectors_matrix)
+                        # print(f"文本向量已保存到 {text_vectors_path}")
+                    else:
+                        text_success = False
         
         if enable_image_vector:
             # 提取图像内容并转换为完整路径
             image_paths = [(project_folder / Path(item["filename"])).resolve() 
                                 for item in content_sequence if item.get("type") == "image"]
-            image_backend = get_image_backend(image_model)
             if image_paths:
-                image_vector_list = image_backend(content_sequence = image_paths, vector_type = "image")
-                if image_vector_list:
-                    image_vectors_path = project_folder / _get_vectors_filename(image_model, "image")
-                    image_vectors_matrix = np.stack(image_vector_list)
-                    np.save(image_vectors_path, image_vectors_matrix)
-                    # print(f"图像向量已保存到 {image_vectors_path}")
+                image_vectors_path = project_folder / _get_vectors_filename(image_model, "image")
+                
+                # 检查图像向量文件是否已经存在
+                if image_vectors_path.exists():
+                    print(f"图像向量文件已存在，跳过图像向量化: {image_vectors_path}")
                 else:
-                    image_success = False
+                    image_backend = get_image_backend(image_model)
+                    image_vector_list = image_backend(content_sequence = image_paths, vector_type = "image")
+                    if image_vector_list:
+                        image_vectors_matrix = np.stack(image_vector_list)
+                        np.save(image_vectors_path, image_vectors_matrix)
+                        # print(f"图像向量已保存到 {image_vectors_path}")
+                    else:
+                        image_success = False
         
         # 开启的开关都必须成功才算整体成功
         success = (not enable_text_vector or text_success) and (not enable_image_vector or image_success)
@@ -160,7 +179,8 @@ def main():
             # 提交所有任务
             future_to_project = {
                 executor.submit(process_single_project, project_folder, text_model, image_model,
-                               enable_text_vector, enable_image_vector): project_folder 
+                               enable_text_vector, enable_image_vector, 
+                               project_folders.index(project_folder)): project_folder 
                 for project_folder in project_folders
             }
             
@@ -177,10 +197,10 @@ def main():
                     print(f"处理项目 {project_folder.name} 时发生异常: {str(e)}")
                     error_count += 1
     else:
-        for project_folder in project_folders:
+        for idx, project_folder in enumerate(project_folders):
             try:
                 success = process_single_project(project_folder, text_model, image_model,
-                                           enable_text_vector, enable_image_vector)
+                                           enable_text_vector, enable_image_vector, idx)
                 if success:
                     processed_count += 1
                 else:
