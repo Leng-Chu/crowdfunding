@@ -8,49 +8,18 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import embedding_clip as embedding_clip
 import embedding_qwen as embedding_qwen
 
-
-def _get_vector_backend() -> str:
-    return os.getenv("VECTORIZE_BACKEND", "qwen").strip().lower()
-
-
 def _get_vectors_filename(backend: str) -> str:
-    if backend in {"qwen", "qwen2.5-vl-embedding", "qwen2.5-vl"}:
+    if "qwen" in backend:
         return "vectors_qwen.npy"
-    if backend == "clip":
+    if "clip" in backend:
         return "vectors_clip.npy"
-    if backend == "clip-text":
-        return "vectors_clip_text.npy"
-    if backend == "clip-image":
-        return "vectors_clip_image.npy"
     return "vectors.npy"
 
-
-def vectorize_content_sequence(project_folder, content_sequence: List[Dict[str, Any]]) -> List[np.ndarray]:
-    """根据可选后端对 content_sequence 进行向量化。"""
-    backend = _get_vector_backend()
-    if backend in {"qwen", "qwen2.5-vl-embedding", "qwen2.5-vl"}:
-        return embedding_qwen.vectorize_sequence(project_folder, content_sequence)
-    if backend in {"clip", "clip-text", "clip-image"}:
-        return embedding_clip.vectorize_sequence(project_folder, content_sequence)
-    print(f"未知的向量化后端: {backend}。")
-    return []
-
-
-def process_single_project(project_folder: Path) -> bool:
+def process_single_project(project_folder: Path, backend: str) -> bool:
     """处理单个项目"""
-    backend = _get_vector_backend()
     vectors_filename = _get_vectors_filename(backend)
     content_json_path = project_folder / "content.json"
     vectors_path = project_folder / vectors_filename
-    
-    # 检查是否已经存在向量文件
-    if vectors_path.exists():
-        print(f"跳过 {project_folder.name}, 因为 {vectors_path} 已存在")
-        return True
-    
-    if not content_json_path.exists():
-        print(f"跳过 {project_folder.name}, 因为 content.json 不存在")
-        return False
     
     print(f"正在处理项目: {project_folder.name}")
     
@@ -67,7 +36,13 @@ def process_single_project(project_folder: Path) -> bool:
             return False
         
         # 对content_sequence进行向量化
-        vector_list = vectorize_content_sequence(project_folder, content_sequence)
+        if "qwen" in backend:
+            vector_list = embedding_qwen.vectorize_sequence(project_folder, content_sequence)
+        elif "clip" in backend:
+            vector_list = embedding_clip.vectorize_sequence(project_folder, content_sequence)
+        else:
+            print(f"未知的向量化后端: {backend}")
+            return False
         
         # 只有当所有元素都成功向量化时才保存文件
         if vector_list:  # 如果向量化成功且有结果
@@ -86,14 +61,11 @@ def process_single_project(project_folder: Path) -> bool:
 
 
 def main():
-    """主函数，遍历data/projects/2025中的所有项目文件夹，使用多线程处理"""
-    # 设置dashscope API key
+    """主函数，遍历projects_root中的所有子文件夹，使用多线程处理"""
     dashscope.api_key = "xxx"
-    # 配置并发参数
-    max_workers = 2  
-    backend = _get_vector_backend()
+    max_workers = 1  
+    backend = "clip"
     vectors_filename = _get_vectors_filename(backend)
-    # 遍历projects_root中的所有子文件夹
     projects_root = Path("data/projects/test")
     
     if not projects_root.exists():
@@ -112,27 +84,39 @@ def main():
                 project_folders.append(project_folder)
     
     if not project_folders:
-        print(f"没有找到需要处理的项目（没有{vectors_filename}文件的项目）")
+        print(f"没有找到需要处理的项目")
         return
     
     print(f"开始使用 {max_workers} 个线程处理 {len(project_folders)} 个项目")
     
     processed_count = 0
     error_count = 0
-    
-    # 使用线程池处理项目
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # 提交所有任务
-        future_to_project = {
-            executor.submit(process_single_project, project_folder): project_folder 
-            for project_folder in project_folders
-        }
-        
-        # 等待所有任务完成
-        for future in as_completed(future_to_project):
-            project_folder = future_to_project[future]
+
+    if max_workers > 1:
+        # 使用线程池处理项目
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 提交所有任务
+            future_to_project = {
+                executor.submit(process_single_project, project_folder, backend): project_folder 
+                for project_folder in project_folders
+            }
+            
+            # 等待所有任务完成
+            for future in as_completed(future_to_project):
+                project_folder = future_to_project[future]
+                try:
+                    success = future.result()
+                    if success:
+                        processed_count += 1
+                    else:
+                        error_count += 1
+                except Exception as e:
+                    print(f"处理项目 {project_folder.name} 时发生异常: {str(e)}")
+                    error_count += 1
+    else:
+        for project_folder in project_folders:
             try:
-                success = future.result()
+                success = process_single_project(project_folder, backend)
                 if success:
                     processed_count += 1
                 else:
