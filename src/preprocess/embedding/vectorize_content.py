@@ -5,9 +5,8 @@ from pathlib import Path
 import dashscope
 from typing import List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
-import data_preprocess.embedding.embedding_clip as embedding_clip
-import data_preprocess.embedding.embedding_qwen as embedding_qwen
+import embedding_clip as embedding_clip
+import embedding_qwen as embedding_qwen
 
 
 def _get_vector_backend() -> str:
@@ -89,7 +88,7 @@ def process_single_project(project_folder: Path) -> bool:
 def main():
     """主函数，遍历data/projects/2025中的所有项目文件夹，使用多线程处理"""
     # 设置dashscope API key
-    dashscope.api_key = "sk-9744aae8ea1e4ca88d2307c6c7e84600"
+    dashscope.api_key = "xxx"
     # 配置并发参数
     max_workers = 2  
     backend = _get_vector_backend()
