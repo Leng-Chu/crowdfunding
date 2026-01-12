@@ -3,9 +3,9 @@ import json
 import numpy as np
 from pathlib import Path
 import dashscope
-from typing import List, Dict, Any
+from typing import Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import embedding_clip, embedding_qwen, embedding_bge
+import embedding_clip, embedding_qwen3, embedding_bge, embedding_siglip
 from datetime import datetime
 
 def _get_vectors_filename(model: str, vector_type: str = "text") -> str:
@@ -37,11 +37,13 @@ def validate_content_item(item: Dict[str, Any], project_folder: Path) -> bool:
 def get_text_backend(text_model: str) -> str:
     """根据模型名称返回对应的后端"""
     if "qwen" in text_model:
-        return embedding_qwen.vectorize_sequence
+        return embedding_qwen3.vectorize_sequence
     elif "clip" in text_model:
         return embedding_clip.vectorize_sequence
     elif "bge" in text_model:
         return embedding_bge.vectorize_sequence
+    elif "siglip" in text_model:
+        return embedding_siglip.vectorize_sequence
     else:
         print(f"未知的文本向量化后端: {text_model}")
         return None
@@ -49,9 +51,11 @@ def get_text_backend(text_model: str) -> str:
 def get_image_backend(image_model: str) -> str:
     """根据模型名称返回对应的后端"""
     if "qwen" in image_model:
-        return embedding_qwen.vectorize_sequence
+        return embedding_qwen3.vectorize_sequence
     elif "clip" in image_model:
         return embedding_clip.vectorize_sequence
+    elif "siglip" in image_model:
+        return embedding_siglip.vectorize_sequence
     else:
         print(f"未知的图像向量化后端: {image_model}")
         return None
@@ -150,8 +154,8 @@ def main():
     # 添加开关控制
     enable_text_vector = True  # 控制是否生成文本向量
     enable_image_vector = True  # 控制是否生成图像向量
-    text_model = "bge"
-    image_model = "clip"
+    text_model = "siglip"
+    image_model = "siglip"
 
     projects_root = Path("data/projects/test")
     
