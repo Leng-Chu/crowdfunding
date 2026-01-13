@@ -7,77 +7,76 @@ from PIL import Image
 
 @torch.no_grad()
 def clip_text_embeddings(processor, model, texts, device):
-    """
-    texts: list[str]
-    return: torch.FloatTensor [N, D]
-    自动处理超过 CLIP 最大长度的文本：滑窗切块 -> 块向量平均 -> 归一化
-    """
     tok = processor.tokenizer
-    max_len = tok.model_max_length  # CLIP 通常是 77
-    stride = 32  # 固定滑窗重叠步长（不新增参数，写死在函数内部）
 
-    # 先判定哪些是长文本
-    is_long = []
-    input_ids_list = []
+    # 用模型的硬上限更可靠（CLIP=77）
+    max_len = int(getattr(model.config, "max_position_embeddings", tok.model_max_length))
+    # 给 BOS/EOS 留位置
+    content_max = max_len - 2
+    stride = 32
+    stride = min(stride, content_max - 1)  # 防止 stride 太大导致死循环
+
+    # 拿 special token id（不同实现命名可能不同）
+    bos_id = tok.bos_token_id
+    eos_id = tok.eos_token_id
+    if bos_id is None or eos_id is None:
+        # CLIP tokenizer 通常有
+        raise ValueError("Tokenizer missing BOS/EOS token id; cannot safely chunk for CLIP.")
+
+    out_feats = [None] * len(texts)
+
+    # 短文本批处理（用 truncation=True 保证不越界）
+    # 这里用 tokenizer 先判断长度：不加 special 更直观
+    lengths = []
+    content_ids_list = []
     for t in texts:
-        ids = tok(t, truncation=False, add_special_tokens=True)["input_ids"]
-        input_ids_list.append(ids)
-        is_long.append(len(ids) > max_len)
+        content_ids = tok(t, truncation=False, add_special_tokens=False, verbose=False)["input_ids"]
+        content_ids_list.append(content_ids)
+        lengths.append(len(content_ids))
 
-    # 1) 短文本：保持你原来的批处理路径（快）
-    short_idx = [i for i, flag in enumerate(is_long) if not flag]
-    short_feats = {}
+    short_idx = [i for i, L in enumerate(lengths) if L <= content_max]
     if short_idx:
         short_texts = [texts[i] for i in short_idx]
         inputs = processor(text=short_texts, return_tensors="pt",
-                           padding=True, truncation=True).to(device)
-        feats = model.get_text_features(**inputs)  # [Ns, D]
+                           padding=True, truncation=True, max_length=max_len).to(device)
+        feats = model.get_text_features(**inputs)
         feats = feats / feats.norm(dim=-1, keepdim=True).clamp(min=1e-12)
         feats = feats.cpu()
         for k, i in enumerate(short_idx):
-            short_feats[i] = feats[k]
+            out_feats[i] = feats[k]
 
-    # 2) 长文本：逐条滑窗切块 -> 块向量平均（稳）
-    long_feats = {}
-    for i, flag in enumerate(is_long):
-        if not flag:
-            continue
+    # 长文本逐条切块（对 content_ids 切）
+    long_idx = [i for i in range(len(texts)) if i not in short_idx]
+    for i in long_idx:
+        content_ids = content_ids_list[i]
 
-        ids = input_ids_list[i]
-        # 生成滑窗 chunks（token id）
-        chunks = []
-        start = 0
-        while start < len(ids):
-            end = min(start + max_len, len(ids))
-            chunk_ids = torch.tensor(ids[start:end], dtype=torch.long).unsqueeze(0)  # [1, L]
-            attn = torch.ones_like(chunk_ids)
-            chunks.append((chunk_ids, attn))
-            if end == len(ids):
-                break
-            start += max_len - stride
-
-        # 逐块求 embedding
         feats_list = []
-        for chunk_ids, attn in chunks:
-            chunk_ids = chunk_ids.to(device)
-            attn = attn.to(device)
-            f = model.get_text_features(input_ids=chunk_ids, attention_mask=attn)  # [1, D]
+        start = 0
+        while start < len(content_ids):
+            end = min(start + content_max, len(content_ids))
+            chunk_content = content_ids[start:end]
+            # 手动加 BOS/EOS，保证总长<=max_len
+            chunk_ids = [bos_id] + chunk_content + [eos_id]
+            # 保险：再截一次
+            chunk_ids = chunk_ids[:max_len]
+
+            chunk_ids = torch.tensor(chunk_ids, dtype=torch.long).unsqueeze(0).to(device)
+            attn = torch.ones_like(chunk_ids)
+            f = model.get_text_features(input_ids=chunk_ids, attention_mask=attn)
             f = f / f.norm(dim=-1, keepdim=True).clamp(min=1e-12)
             feats_list.append(f[0])
 
-        feats_stack = torch.stack(feats_list, dim=0)         # [K, D]
-        f = feats_stack.mean(dim=0, keepdim=True)            # [1, D]
-        f = f / f.norm(dim=-1, keepdim=True).clamp(min=1e-12)
-        long_feats[i] = f[0].cpu()
+            if end == len(content_ids):
+                break
+            start += (content_max - stride)
 
-    # 3) 按原输入顺序组装输出 [N, D]
-    out = []
-    for i in range(len(texts)):
-        if i in short_feats:
-            out.append(short_feats[i])
-        else:
-            out.append(long_feats[i])
-    return torch.stack(out, dim=0)
+        feats_stack = torch.stack(feats_list, dim=0)
+        f = feats_stack.mean(dim=0, keepdim=True)
+        f = f / f.norm(dim=-1, keepdim=True).clamp(min=1e-12)
+        out_feats[i] = f[0].cpu()
+
+    return torch.stack(out_feats, dim=0)
+
 
 @torch.no_grad()
 def clip_image_embeddings(processor, model, image_paths, device):
