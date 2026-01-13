@@ -5,9 +5,9 @@ from pathlib import Path
 import dashscope
 from typing import Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import embedding_clip, embedding_qwen3, embedding_bge, embedding_siglip
 from datetime import datetime
 import argparse
+from backends import get_text_backend, get_image_backend 
 
 def _get_vectors_filename(model: str, vector_type: str = "text") -> str:
     """根据后端和向量类型生成文件名"""
@@ -35,31 +35,6 @@ def validate_content_item(item: Dict[str, Any], project_folder: Path) -> bool:
     
     return True
 
-def get_text_backend(text_model: str) -> str:
-    """根据模型名称返回对应的后端"""
-    if "qwen" in text_model:
-        return embedding_qwen3.vectorize_sequence
-    elif "clip" in text_model:
-        return embedding_clip.vectorize_sequence
-    elif "bge" in text_model:
-        return embedding_bge.vectorize_sequence
-    elif "siglip" in text_model:
-        return embedding_siglip.vectorize_sequence
-    else:
-        print(f"未知的文本向量化后端: {text_model}")
-        return None
-    
-def get_image_backend(image_model: str) -> str:
-    """根据模型名称返回对应的后端"""
-    if "qwen" in image_model:
-        return embedding_qwen3.vectorize_sequence
-    elif "clip" in image_model:
-        return embedding_clip.vectorize_sequence
-    elif "siglip" in image_model:
-        return embedding_siglip.vectorize_sequence
-    else:
-        print(f"未知的图像向量化后端: {image_model}")
-        return None
 
 def process_single_project(project_folder: Path, 
                            text_model: str, image_model: str, 
