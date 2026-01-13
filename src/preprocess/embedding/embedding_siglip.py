@@ -20,7 +20,7 @@ def siglip_text_embeddings(processor, model, texts, device):
     is_long = []
     input_ids_list = []
     for t in texts:
-        ids = tok(t, truncation=False, add_special_tokens=True)["input_ids"]
+        ids = tok(t, truncation=False, add_special_tokens=False, verbose=False)["input_ids"]
         input_ids_list.append(ids)
         is_long.append(len(ids) > max_len)
 

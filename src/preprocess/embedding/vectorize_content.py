@@ -7,6 +7,7 @@ from typing import Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import embedding_clip, embedding_qwen3, embedding_bge, embedding_siglip
 from datetime import datetime
+import argparse
 
 def _get_vectors_filename(model: str, vector_type: str = "text") -> str:
     """根据后端和向量类型生成文件名"""
@@ -148,16 +149,23 @@ def process_single_project(project_folder: Path,
 
 def main():
     """主函数，遍历projects_root中的所有子文件夹，使用多线程处理"""
+    parser = argparse.ArgumentParser(description='向量化项目内容')
+    parser.add_argument('--dataset', type=str, default='test', help='数据集名称，默认为 test')
+    parser.add_argument('--text-model', type=str, default='siglip', help='文本模型名称，默认为 siglip')
+    parser.add_argument('--image-model', type=str, default='siglip', help='图像模型名称，默认为 siglip')
+    
+    args = parser.parse_args()
+    
     dashscope.api_key = "xxx"
     max_workers = 1  
     
     # 添加开关控制
     enable_text_vector = True  # 控制是否生成文本向量
     enable_image_vector = True  # 控制是否生成图像向量
-    text_model = "siglip"
-    image_model = "siglip"
+    text_model = args.text_model
+    image_model = args.image_model
 
-    projects_root = Path("data/projects/test")
+    projects_root = Path(f"data/projects/{args.dataset}")
     
     if not projects_root.exists():
         print(f"错误: 目录 {projects_root} 不存在")
