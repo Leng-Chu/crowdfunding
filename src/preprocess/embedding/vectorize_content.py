@@ -36,11 +36,13 @@ def validate_content_item(item: Dict[str, Any], project_folder: Path) -> bool:
     return True
 
 
-def process_single_project(project_folder: Path, 
-                           text_model: str, image_model: str, 
-                           enable_text_vector: bool = True, 
-                           enable_image_vector: bool = True,
-                           project_index: int = None) -> bool:
+text_model = "bge"
+image_model = "clip"
+text_backend = None
+image_backend = None
+enable_text_vector = True  # 控制是否生成文本向量
+enable_image_vector = True  # 控制是否生成图像向量
+def process_single_project(project_folder: Path, project_index: int = None) -> bool:
     """处理单个项目"""
     content_json_path = project_folder / "content.json"
     
@@ -79,7 +81,6 @@ def process_single_project(project_folder: Path,
                 if text_vectors_path.exists():
                     print(f"文本向量文件已存在，跳过文本向量化: {text_vectors_path}")
                 else:
-                    text_backend = get_text_backend(text_model)
                     text_vector_list = text_backend(content_sequence = text_contents, vector_type = "text")
                     if text_vector_list:
                         text_vectors_matrix = np.stack(text_vector_list)
@@ -99,7 +100,6 @@ def process_single_project(project_folder: Path,
                 if image_vectors_path.exists():
                     print(f"图像向量文件已存在，跳过图像向量化: {image_vectors_path}")
                 else:
-                    image_backend = get_image_backend(image_model)
                     image_vector_list = image_backend(content_sequence = image_paths, vector_type = "image")
                     if image_vector_list:
                         image_vectors_matrix = np.stack(image_vector_list)
@@ -128,15 +128,14 @@ def main():
     parser.add_argument('--dataset', type=str, default='test', help='数据集名称，默认为 test')
     parser.add_argument('--text-model', type=str, default='siglip', help='文本模型名称，默认为 siglip')
     parser.add_argument('--image-model', type=str, default='siglip', help='图像模型名称，默认为 siglip')
-    # CUDA_VISIBLE_DEVICES=2 python /home/zlc/crowdfunding/src/preprocess/embedding/vectorize_content.py --dataset 2025 --text-model bge --image-model clip
+    # CUDA_VISIBLE_DEVICES=2 TRANSFORMERS_OFFLINE=1 python /home/zlc/crowdfunding/src/preprocess/embedding/vectorize_content.py --dataset 2025 --text-model bge --image-model clip
     args = parser.parse_args()
     
     dashscope.api_key = "xxx"
     max_workers = 1  
     
-    # 添加开关控制
-    enable_text_vector = True  # 控制是否生成文本向量
-    enable_image_vector = True  # 控制是否生成图像向量
+    # 使用 global 关键字修改全局变量
+    global text_model, image_model, text_backend, image_backend
     text_model = args.text_model
     image_model = args.image_model
 
@@ -153,6 +152,12 @@ def main():
         print(f"没有找到需要处理的项目")
         return
     
+    # 预先加载模型，只加载一次
+    print("正在加载模型...")
+    text_backend = get_text_backend(text_model) if enable_text_vector else None
+    image_backend = get_image_backend(image_model) if enable_image_vector else None
+    print("模型加载完成")
+    
     print(f"开始使用 {max_workers} 个线程处理 {len(project_folders)} 个项目")
     print(f"文本向量生成: {'开启' if enable_text_vector else '关闭'}, "
           f"图像向量生成: {'开启' if enable_image_vector else '关闭'}")
@@ -165,8 +170,7 @@ def main():
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # 提交所有任务
             future_to_project = {
-                executor.submit(process_single_project, project_folder, text_model, image_model,
-                               enable_text_vector, enable_image_vector, 
+                executor.submit(process_single_project, project_folder, 
                                project_folders.index(project_folder)): project_folder 
                 for project_folder in project_folders
             }
@@ -186,8 +190,7 @@ def main():
     else:
         for idx, project_folder in enumerate(project_folders):
             try:
-                success = process_single_project(project_folder, text_model, image_model,
-                                           enable_text_vector, enable_image_vector, idx)
+                success = process_single_project(project_folder, idx)
                 if success:
                     processed_count += 1
                 else:

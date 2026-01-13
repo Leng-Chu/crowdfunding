@@ -23,44 +23,52 @@ def _encode_image_to_base64(image_path: str) -> str:
     return f"data:image/{image_format};base64,{base64_image}"
 
 
-def vectorize_sequence(
-    content_sequence: List[str],
-    model_name: str = "qwen2.5-vl-embedding",
-    vector_type: str = "text"
-) -> List[np.ndarray]:
-    vector_list: List[np.ndarray] = []
+class EmbeddingModel:
+    def __init__(self, model_name: str = "qwen2.5-vl-embedding"):
+        self.model_name = model_name
 
-    if vector_type == "text":
+    def embed_text(self, content_sequence: List[str]) -> List[np.ndarray]:
         input_data = [{"text": text_content} for text_content in content_sequence]
-        
-    elif vector_type == "image":
+        return self._make_request(input_data)
+
+    def embed_image(self, image_paths: List[str]) -> List[np.ndarray]:
         input_data = []
-        for img_path in content_sequence:
+        for img_path in image_paths:
             image_data = _encode_image_to_base64(str(img_path))
             input_data.append({"image": image_data})
-    
-    else:
-        print(f"未知的向量类型 '{vector_type}'，停止处理整个项目。")
-        return []
+        return self._make_request(input_data)
 
-    try:
-        response = dashscope.MultiModalEmbedding.call(
-            model=model_name,
-            input=input_data,
-            parameters={"dimension": 1024},
-        )
-        if response.status_code == HTTPStatus.OK:
-            embeddings = response.output["embeddings"]
-            for emb in embeddings:
-                vector_list.append(np.array(emb["embedding"], dtype=np.float32))
-        else:
-            print(
-                "向量化失败，状态码: "
-                f"{response.status_code}，错误信息: {getattr(response, 'message', '')}"
+    def _make_request(self, input_data):
+        vector_list: List[np.ndarray] = []
+        
+        try:
+            response = dashscope.MultiModalEmbedding.call(
+                model=self.model_name,
+                input=input_data,
+                parameters={"dimension": 1024},
             )
+            if response.status_code == HTTPStatus.OK:
+                embeddings = response.output["embeddings"]
+                for emb in embeddings:
+                    vector_list.append(np.array(emb["embedding"], dtype=np.float32))
+            else:
+                print(
+                    "向量化失败，状态码: "
+                    f"{response.status_code}，错误信息: {getattr(response, 'message', '')}"
+                )
+                return []
+        except Exception as exc:
+            print(f"向量化过程发生错误: {exc}")
             return []
-    except Exception as exc:
-        print(f"向量化过程发生错误: {exc}")
-        return []
 
-    return vector_list
+        return vector_list
+
+    def __call__(self, content_sequence: List[str], vector_type: str = "text") -> List[np.ndarray]:
+        if vector_type == "text":
+            return self.embed_text(content_sequence)
+        elif vector_type == "image":
+            return self.embed_image(content_sequence)
+        else:
+            print(f"未知的向量类型 '{vector_type}'，停止处理整个项目。")
+            return []
+

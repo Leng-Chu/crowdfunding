@@ -52,32 +52,37 @@ def qwen3_vl_image_embeddings(processor, model, image_paths, device):
     return feats.cpu()
 
 
-def vectorize_sequence(
-    content_sequence: List[str],
-    model_name: str = "Qwen/Qwen3-VL-Embedding-2B",
-    vector_type: str = "text"
-) -> List[np.ndarray]:
+class EmbeddingModel:
+    def __init__(self, model_name: str = "Qwen/Qwen3-VL-Embedding-2B"):
+        self.model_name = model_name
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model = AutoModel.from_pretrained(
+            model_name,
+            trust_remote_code=True
+        ).to(self.device).eval()
 
-    model = AutoModel.from_pretrained(
-        model_name,
-        trust_remote_code=True
-    ).to(device).eval()
+        self.processor = AutoProcessor.from_pretrained(
+            model_name,
+            trust_remote_code=True
+        )
 
-    processor = AutoProcessor.from_pretrained(
-        model_name,
-        trust_remote_code=True
-    )
-
-    if vector_type == "text":
-        embs = qwen3_vl_text_embeddings(processor, model, content_sequence, device)
+    @torch.no_grad()
+    def embed_text(self, content_sequence: List[str]) -> List[np.ndarray]:
+        embs = qwen3_vl_text_embeddings(self.processor, self.model, content_sequence, self.device)
         return [e.numpy() for e in embs]
 
-    elif vector_type == "image":
-        embs = qwen3_vl_image_embeddings(processor, model, content_sequence, device)
+    @torch.no_grad()
+    def embed_image(self, image_paths: List[str]) -> List[np.ndarray]:
+        embs = qwen3_vl_image_embeddings(self.processor, self.model, image_paths, self.device)
         return [e.numpy() for e in embs]
 
-    else:
-        print(f"未知的向量类型 '{vector_type}'，停止处理整个项目。")
-        return []
+    def __call__(self, content_sequence: List[str], vector_type: str = "text") -> List[np.ndarray]:
+        if vector_type == "text":
+            return self.embed_text(content_sequence)
+        elif vector_type == "image":
+            return self.embed_image(content_sequence)
+        else:
+            print(f"未知的向量类型 '{vector_type}'，停止处理整个项目。")
+            return []
+

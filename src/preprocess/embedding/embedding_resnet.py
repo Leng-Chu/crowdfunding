@@ -17,28 +17,30 @@ def resnet_image_embeddings(processor, model, image_paths, device):
 
     # HuggingFace ResNetModel 一般会给 pooler_output: [N, 2048]
     if hasattr(outputs, "pooler_output") and outputs.pooler_output is not None:
-        feats = outputs.pooler_output
+        feats = outputs.pooler_output.flatten(1)   # [N,2048]
     else:
-        # 兜底：last_hidden_state 通常是 [N, C, H, W]，做全局平均池化
-        x = outputs.last_hidden_state
-        feats = x.mean(dim=(-2, -1))
+        x = outputs.last_hidden_state              # [N,2048,H,W]
+        feats = x.mean(dim=(-2, -1))               # [N,2048]
 
     feats = feats / feats.norm(dim=-1, keepdim=True).clamp(min=1e-12)
     return feats.cpu()
 
-def vectorize_sequence(
-    content_sequence: List[str],
-    model_name: str = "microsoft/resnet-50",
-    vector_type: str = "image"
-) -> List[np.ndarray]:
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = AutoModel.from_pretrained(model_name).to(device).eval()
-    processor = AutoImageProcessor.from_pretrained(model_name, use_fast=True)
+class EmbeddingModel:
+    def __init__(self, model_name: str = "microsoft/resnet-50"):
+        self.model_name = model_name
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model = AutoModel.from_pretrained(model_name).to(self.device).eval()
+        self.processor = AutoImageProcessor.from_pretrained(model_name, use_fast=True)
 
-    if vector_type == "image":
-        image_embeddings = resnet_image_embeddings(processor, model, content_sequence, device)
+    @torch.no_grad()
+    def embed_image(self, image_paths: List[str]) -> List[np.ndarray]:
+        image_embeddings = resnet_image_embeddings(self.processor, self.model, image_paths, self.device)
         return [emb.numpy() for emb in image_embeddings]
-    else:
-        print(f"未知的向量类型 '{vector_type}'，停止处理整个项目。")
-        return []
+
+    def __call__(self, content_sequence: List[str], vector_type: str = "image") -> List[np.ndarray]:
+        if vector_type == "image":
+            return self.embed_image(content_sequence)
+        else:
+            print(f"未知的向量类型 '{vector_type}'，停止处理整个项目。")
+            return []

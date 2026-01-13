@@ -31,23 +31,32 @@ def bge_m3_text_embeddings(tokenizer, model, texts, device):
     return feats.cpu()
 
 
-def vectorize_sequence(
-    content_sequence: List[str],
-    model_name: str = "BAAI/bge-m3",
-    vector_type: str = "text"
-) -> List[np.ndarray]:
+class EmbeddingModel:
+    def __init__(self, model_name: str = "BAAI/bge-m3"):
+        self.model_name = model_name
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        SNAP = "/home/zlc/.cache/huggingface/hub/models--BAAI--bge-m3/snapshots/5617a9f61b028005a4858fdac845db406aefb181"
 
-    if vector_type != "text":
-        print("vector_type must be 'text'")
-        return []
-        
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModel.from_pretrained(model_name).to(device).eval()
+        # 添加use_local参数以支持离线模式
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(SNAP, local_files_only=True)
+            self.model = AutoModel.from_pretrained(SNAP, local_files_only=True).to(self.device).eval()
+        except OSError:
+            # 如果本地没有模型，则尝试在线下载
+            input(f"本地未找到模型 {model_name}，正在尝试在线获取...")
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            self.model = AutoModel.from_pretrained(model_name).to(self.device).eval()
 
-    text_embeddings = bge_m3_text_embeddings(
-        tokenizer, model, content_sequence, device
-    )
-    
-    return [emb.numpy() for emb in text_embeddings]
+    @torch.no_grad()
+    def embed_text(self, content_sequence: List[str]) -> List[np.ndarray]:
+        text_embeddings = bge_m3_text_embeddings(
+            self.tokenizer, self.model, content_sequence, self.device
+        )
+        return [emb.numpy() for emb in text_embeddings]
+
+    def __call__(self, content_sequence: List[str], vector_type: str = "text") -> List[np.ndarray]:
+        if vector_type != "text":
+            print("vector_type must be 'text'")
+            return []
+        return self.embed_text(content_sequence)
+

@@ -124,22 +124,28 @@ def siglip_image_embeddings(processor, model, image_paths, device):
     return feats.cpu()
 
 
-def vectorize_sequence(
-    content_sequence: List[str],
-    model_name: str = "google/siglip-base-patch16-224",
-    vector_type: str = "text"
-) -> List[np.ndarray]:
+class EmbeddingModel:
+    def __init__(self, model_name: str = "google/siglip-base-patch16-224"):
+        self.model_name = model_name
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model = SiglipModel.from_pretrained(model_name).to(self.device).eval()
+        self.processor = AutoProcessor.from_pretrained(model_name, use_fast=True)
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = SiglipModel.from_pretrained(model_name).to(device).eval()
-    processor = AutoProcessor.from_pretrained(model_name, use_fast=True)
-
-    if vector_type == "text":
-        text_embeddings = siglip_text_embeddings(processor, model, content_sequence, device)
+    @torch.no_grad()
+    def embed_text(self, content_sequence: List[str]) -> List[np.ndarray]:
+        text_embeddings = siglip_text_embeddings(self.processor, self.model, content_sequence, self.device)
         return [emb.numpy() for emb in text_embeddings]
-    elif vector_type == "image":
-        image_embeddings = siglip_image_embeddings(processor, model, content_sequence, device)
+
+    @torch.no_grad()
+    def embed_image(self, image_paths: List[str]) -> List[np.ndarray]:
+        image_embeddings = siglip_image_embeddings(self.processor, self.model, image_paths, self.device)
         return [emb.numpy() for emb in image_embeddings]
-    else:
-        print(f"未知的向量类型 '{vector_type}'，停止处理整个项目。")
-        return []
+
+    def __call__(self, content_sequence: List[str], vector_type: str = "text") -> List[np.ndarray]:
+        if vector_type == "text":
+            return self.embed_text(content_sequence)
+        elif vector_type == "image":
+            return self.embed_image(content_sequence)
+        else:
+            print(f"未知的向量类型 '{vector_type}'，停止处理整个项目。")
+            return []
