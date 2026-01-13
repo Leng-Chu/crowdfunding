@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import argparse
+from datetime import datetime
 from backends import get_text_backend, get_image_backend 
 
 def _get_vectors_filename(model: str, vector_type: str = "text") -> str:
@@ -61,7 +62,7 @@ def process_single_row(
                     if text_vector_list:
                         text_vectors_matrix = np.stack(text_vector_list)
                         np.save(text_vectors_path, text_vectors_matrix)
-                        print(f"标题和摘要向量已保存到 {text_vectors_path}")
+                        # print(f"标题和摘要向量已保存到 {text_vectors_path}")
                     else:
                         text_success = False
                         print(f"标题和摘要向量化失败: {project_id}")
@@ -79,7 +80,7 @@ def process_single_row(
                 if image_vector_list:
                     image_vectors_matrix = np.stack(image_vector_list)
                     np.save(image_vectors_path, image_vectors_matrix)
-                    print(f"封面图片向量已保存到 {image_vectors_path}")
+                    # print(f"封面图片向量已保存到 {image_vectors_path}")
                 else:
                     image_success = False
                     print(f"封面图片向量化失败: {project_id}")
@@ -87,7 +88,7 @@ def process_single_row(
         # 开启的开关都必须成功才算整体成功
         success = text_success and image_success
         if success:
-            print(f"完成项目 {project_id} 的向量化")
+            # print(f"完成项目 {project_id} 的向量化")
             return True
         else:
             print(f"项目 {project_id} 向量化失败")
@@ -103,12 +104,12 @@ def main():
     parser.add_argument('--dataset', type=str, default='test', help='数据集名称，默认为 test')
     parser.add_argument('--text-model', type=str, default='siglip', help='文本模型名称，默认为 siglip')
     parser.add_argument('--image-model', type=str, default='siglip', help='图像模型名称，默认为 siglip')
-    
+    # CUDA_VISIBLE_DEVICES=3 python /home/zlc/crowdfunding/src/preprocess/embedding/vectorize_csv_data.py --dataset 2023 --text-model bge --image-model clip
     args = parser.parse_args()
     
     # 读取CSV文件
-    projects_root = Path(f"data/projects/{args.dataset}")
-    csv_path = Path(f"data/metadata/{args.dataset}.csv")
+    projects_root = Path(f"/home/zlc/crowdfunding/data/projects/{args.dataset}")
+    csv_path = Path(f"/home/zlc/crowdfunding/data/metadata/{args.dataset}.csv")
     if not csv_path.exists():
         print(f"错误: CSV文件 {csv_path} 不存在")
         return
@@ -122,7 +123,6 @@ def main():
             print(f"错误: CSV文件缺少必要列 {col}")
             return
     
-    projects_root = Path(args.projects_root)
     if not projects_root.exists():
         print(f"错误: 数据根目录 {projects_root} 不存在")
         return
@@ -142,8 +142,7 @@ def main():
 
     # 顺序处理每个项目
     for idx, (project_id, title, blurb) in enumerate(projects_to_process):
-        print(f"正在处理第 {idx + 1}/{len(projects_to_process)} 个项目: {project_id}")
-        
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 正在处理第 {idx + 1}/{len(projects_to_process)} 个项目: {project_id}")        
         try:
             success = process_single_row(
                 project_id=project_id,

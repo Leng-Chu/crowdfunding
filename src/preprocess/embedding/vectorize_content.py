@@ -128,7 +128,7 @@ def main():
     parser.add_argument('--dataset', type=str, default='test', help='数据集名称，默认为 test')
     parser.add_argument('--text-model', type=str, default='siglip', help='文本模型名称，默认为 siglip')
     parser.add_argument('--image-model', type=str, default='siglip', help='图像模型名称，默认为 siglip')
-    
+    # CUDA_VISIBLE_DEVICES=2 python /home/zlc/crowdfunding/src/preprocess/embedding/vectorize_content.py --dataset 2025 --text-model bge --image-model clip
     args = parser.parse_args()
     
     dashscope.api_key = "xxx"
@@ -140,7 +140,7 @@ def main():
     text_model = args.text_model
     image_model = args.image_model
 
-    projects_root = Path(f"data/projects/{args.dataset}")
+    projects_root = Path(f"/home/zlc/crowdfunding/data/projects/{args.dataset}")
     
     if not projects_root.exists():
         print(f"错误: 目录 {projects_root} 不存在")
