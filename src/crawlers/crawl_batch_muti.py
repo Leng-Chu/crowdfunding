@@ -16,7 +16,7 @@ CURRENT_DIR = Path(__file__).resolve().parent
 if str(CURRENT_DIR) not in sys.path:
     sys.path.insert(0, str(CURRENT_DIR))
 
-from fetch_html import fetch_html
+from fetch_html import fetch_html, clear_drissionpage_auto_port_data
 from parse_content import parse_story_content
 
 def simple_log(message: str) -> None:
@@ -107,12 +107,12 @@ def process_project(args, csv_path: Path, csv_lock: threading.Lock) -> None:
 
 
 def main() -> None:
-    csv_path = Path("data/metadata/years/2024_20752.csv")
-    output_root = Path("data/projects/2024_5001_10000")
+    csv_path = Path("data/metadata/add.csv")
+    output_root = Path("data/projects/add")
     overwrite_html = True
     overwrite_content = True
-    start_row = 5001  # 从第几行开始处理（从1开始计数）
-    end_row = 10000  # 处理到第几行（None表示处理到文件末尾）
+    start_row = 1  # 从第几行开始处理（从1开始计数）
+    end_row = None  # 处理到第几行（None表示处理到文件末尾）
     max_workers = 6 # 并发线程数
 
     output_root.mkdir(parents=True, exist_ok=True)
@@ -156,6 +156,7 @@ def main() -> None:
             if exc:
                 simple_log(f"线程任务异常: {exc}")
 
+    clear_drissionpage_auto_port_data(logger=simple_log)
     simple_log("所有项目处理完成")
 
 
