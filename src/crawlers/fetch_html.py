@@ -1,4 +1,6 @@
 from pathlib import Path
+import shutil
+import tempfile
 import time
 import threading
 from DrissionPage import ChromiumOptions, ChromiumPage
@@ -42,9 +44,15 @@ def fetch_html(url: str, output_path: str,
     
     # 如果没有提供浏览器实例，则创建一个新的
     should_quit = False
+    cache_dir = None
+    user_data_dir = None
     if browser_page is None:
         with _BROWSER_START_LOCK:
             options = _build_options()
+            user_data_dir = Path(tempfile.mkdtemp(prefix="drission_user_data_"))
+            cache_dir = Path(tempfile.mkdtemp(prefix="drission_cache_"))
+            options.set_user_data_path(user_data_dir)
+            options.set_cache_path(cache_dir)
             page = ChromiumPage(options)
         should_quit = True
     else:
@@ -75,7 +83,12 @@ def fetch_html(url: str, output_path: str,
     finally:
         # 只有在函数内部创建了浏览器实例时才退出
         if should_quit and page:
+            page.clear_cache()
             page.quit()
+        if cache_dir:
+            shutil.rmtree(cache_dir, ignore_errors=True)
+        if user_data_dir:
+            shutil.rmtree(user_data_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":
