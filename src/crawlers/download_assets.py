@@ -210,8 +210,8 @@ def download_assets_from_json(
 
 
 if __name__ == "__main__":
-    content_json_path = "data/projects/sample/content.json"
-    output_dir = "data/projects/sample"
+    content_json_path = "data/projects/test/sample/content.json"
+    output_dir = "data/projects/test/sample"
     max_workers = 10
     overwrite_files = True
     download_video=False

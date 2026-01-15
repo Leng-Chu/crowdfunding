@@ -104,7 +104,7 @@ def main():
     parser.add_argument('--dataset', type=str, default='test', help='数据集名称，默认为 test')
     parser.add_argument('--text-model', type=str, default='siglip', help='文本模型名称，默认为 siglip')
     parser.add_argument('--image-model', type=str, default='siglip', help='图像模型名称，默认为 siglip')
-    # CUDA_VISIBLE_DEVICES=3 python /home/zlc/crowdfunding/src/preprocess/embedding/vectorize_csv_data.py --dataset 2023 --text-model bge --image-model clip
+    # CUDA_VISIBLE_DEVICES=3 TRANSFORMERS_OFFLINE=1 python /home/zlc/crowdfunding/src/preprocess/embedding/vectorize_csv_data.py --dataset 2023 --text-model bge --image-model clip
     args = parser.parse_args()
     
     # 读取CSV文件

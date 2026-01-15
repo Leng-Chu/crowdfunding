@@ -125,8 +125,8 @@ def update_status(csv_path, projects_base_path, update_content_status=True, upda
 
 
 if __name__ == "__main__":
-    CSV_PATH = "data/metadata/2023_6610.csv"
-    PROJECTS_BASE_PATH = "data/projects/2023"
+    CSV_PATH = "/home/zlc/crowdfunding/data/metadata/add_8266.csv"
+    PROJECTS_BASE_PATH = "/home/zlc/crowdfunding/data/projects/add"
     UPDATE_CONTENT_STATUS = True      # 控制是否更新content_status
     UPDATE_DOWNLOAD_STATUS = True     # 控制是否更新download_status
     DOWNLOAD_VIDEO = False            # 控制检查下载状态时是否包括视频

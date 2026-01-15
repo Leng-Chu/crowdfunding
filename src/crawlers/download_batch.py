@@ -195,15 +195,15 @@ def download_for_success_rows(
 
 
 def main():
-    csv_path = Path("data/metadata/years/2023_6612.csv")
-    output_root = Path("data/projects/2023")
+    csv_path = Path("/home/zlc/crowdfunding/data/metadata/add_3071.csv")
+    output_root = Path("/home/zlc/crowdfunding/data/projects/tmp")
     overwrite_assets = False
     skip_success = True
     download_workers = 3
     download_video = False
     project_workers = 10
-    start_row = 1001
-    end_row = 2000
+    start_row = 1
+    end_row = 99999
 
     download_for_success_rows(
         csv_path=csv_path,
