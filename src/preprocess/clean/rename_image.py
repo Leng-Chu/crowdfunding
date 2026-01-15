@@ -159,7 +159,7 @@ def rename_image_in_json(projects_base_path):
 
 
 def main():
-    projects_base_path = "/home/zlc/crowdfunding/data/projects/2025"
+    projects_base_path = "/home/zlc/crowdfunding/data/projects/add"
     rename_image_in_json(projects_base_path)
 
 
