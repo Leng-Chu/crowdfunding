@@ -1,0 +1,47 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report
+
+# 读取csv文件
+df = pd.read_csv('/home/zlc/crowdfunding/data/metadata/now_processed.csv')
+
+# 提取特征和标签
+X = df.drop(['state', 'project_id'], axis=1)  # 删除标签列和不需要的列
+y = df['state']  # 标签列
+print(X.columns)
+
+# 手动指定数值特征和类别特征
+numerical_cols = ['duration_days', 'log_usd_goal']  # 例如：你认为这些是数值型特征
+categorical_cols = ['category', 'currency', 'country']  # 你可以手动指定所有的类别特征
+
+# 对类别特征进行 one-hot 编码
+X = pd.get_dummies(X, columns=categorical_cols, drop_first=True)  # one-hot 编码
+
+# 对数值特征进行标准化
+scaler = StandardScaler()
+X[numerical_cols] = scaler.fit_transform(X[numerical_cols])
+
+# 分割数据集为训练集和测试集
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# 定义多个机器学习算法
+models = {
+    "Logistic Regression": LogisticRegression(),
+    "Decision Tree": DecisionTreeClassifier(),
+    "Random Forest": RandomForestClassifier()
+}
+
+# 训练模型并评估
+for name, model in models.items():
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    
+    # 输出模型性能
+    print(f"Model: {name}")
+    print(f"Accuracy: {accuracy_score(y_test, y_pred)}")
+    print(f"Classification Report:\n{classification_report(y_test, y_pred, digits=6)}")
+    print("-" * 50)
