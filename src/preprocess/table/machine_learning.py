@@ -1,4 +1,5 @@
 import pandas as pd
+import os
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
@@ -35,13 +36,37 @@ models = {
     "Random Forest": RandomForestClassifier()
 }
 
+# 结果保存目录
+output_dir = '/home/zlc/crowdfunding/experiments/meta_ml'
+os.makedirs(output_dir, exist_ok=True)
+
+# 创建结果报告
+results_report = []
+
 # 训练模型并评估
 for name, model in models.items():
     model.fit(X_train, y_train)
     y_pred = model.predict(X_test)
     
+    # 计算模型性能
+    accuracy = accuracy_score(y_test, y_pred)
+    class_report = classification_report(y_test, y_pred, digits=6)
+    
     # 输出模型性能
     print(f"Model: {name}")
-    print(f"Accuracy: {accuracy_score(y_test, y_pred)}")
-    print(f"Classification Report:\n{classification_report(y_test, y_pred, digits=6)}")
+    print(f"Accuracy: {accuracy}")
+    print(f"Classification Report:\n{class_report}")
     print("-" * 50)
+    
+    # 添加到结果报告
+    results_report.append(f"Model: {name}")
+    results_report.append(f"Accuracy: {accuracy}")
+    results_report.append(f"Classification Report:\n{class_report}")
+    results_report.append("-" * 50)
+
+# 保存结果到文件
+output_path = os.path.join(output_dir, 'ml_results_report.txt')
+with open(output_path, 'w') as f:
+    f.write('\n'.join(results_report))
+
+print(f"Results saved to {output_path}")

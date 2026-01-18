@@ -9,6 +9,7 @@
   - preprocess/ 数据预处理流程
     - clean/ 清理爬虫得到的数据
     - embedding/ 文本、图片向量化
+    - table/ 表格数据处理与特征工程
   - scipts/ 临时脚本
 - data/ 数据与缓存
   - projects/ 项目数据（一个项目一个文件夹）
@@ -18,17 +19,8 @@
       - content.json 项目内容标识文件
       - page.html 项目html
   - metadata/ 元数据
-  - - years/ 按年存储
-    - all.json 来自webrobots.io/kickstarter-datasets，2025-12-18
-    - all.csv 筛选字段后的总数据
 - experiments/ 实验管理
-  - runs/ 实验运行产物
-  - logs/ 实验日志
-- models/ 模型产物
-  - checkpoints/ 训练中断点
-  - exports/ 导出模型
-- artifacts/ 其他产物
-  - reports/ 报告
-  - figures/ 可视化图表
+  - <experiment_name>/ 实验名
+    - model/ 实验运行产物
+    - log/ 实验日志
 - docs/ 文档
-- scripts/ 脚本

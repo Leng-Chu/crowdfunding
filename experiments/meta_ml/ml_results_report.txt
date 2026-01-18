@@ -1,0 +1,39 @@
+Model: Logistic Regression
+Accuracy: 0.7421652421652422
+Classification Report:
+              precision    recall  f1-score   support
+
+           0   0.732970  0.764205  0.748261      3168
+           1   0.752239  0.720000  0.735766      3150
+
+    accuracy                       0.742165      6318
+   macro avg   0.742604  0.742102  0.742014      6318
+weighted avg   0.742577  0.742165  0.742032      6318
+
+--------------------------------------------------
+Model: Decision Tree
+Accuracy: 0.7019626464070908
+Classification Report:
+              precision    recall  f1-score   support
+
+           0   0.699596  0.710859  0.705182      3168
+           1   0.704421  0.693016  0.698672      3150
+
+    accuracy                       0.701963      6318
+   macro avg   0.702008  0.701937  0.701927      6318
+weighted avg   0.702002  0.701963  0.701936      6318
+
+--------------------------------------------------
+Model: Random Forest
+Accuracy: 0.7435897435897436
+Classification Report:
+              precision    recall  f1-score   support
+
+           0   0.744318  0.744318  0.744318      3168
+           1   0.742857  0.742857  0.742857      3150
+
+    accuracy                       0.743590      6318
+   macro avg   0.743588  0.743588  0.743588      6318
+weighted avg   0.743590  0.743590  0.743590      6318
+
+--------------------------------------------------
