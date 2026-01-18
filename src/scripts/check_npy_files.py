@@ -8,6 +8,7 @@ import os
 import sys
 import numpy as np
 from pathlib import Path
+import random
 
 
 def check_embedding_matrix(data, name="array"):
@@ -126,27 +127,38 @@ def check_npy_directory(directory_path, recursive=False):
         check_npy_file(f)
 
 
+def check_random_subdirs(base_directory, num_dirs=5):
+    base_path = Path(base_directory)
+    
+    if not base_path.exists():
+        print(f"错误: 目录 {base_path} 不存在")
+        return
+    
+    # 获取所有子目录
+    subdirs = [d for d in base_path.iterdir() if d.is_dir()]
+    
+    if not subdirs:
+        print(f"目录 {base_path} 下没有子目录")
+        return
+    
+    # 随机选择最多5个子目录
+    selected_dirs = random.sample(subdirs, min(num_dirs, len(subdirs)))
+    
+    print(f"从 {len(subdirs)} 个子目录中随机选择了 {len(selected_dirs)} 个进行检查:")
+    for d in selected_dirs:
+        print(f"  - {d.name}")
+    print()
+    
+    # 检查每个选中的子目录中的npy文件
+    for subdir in selected_dirs:
+        print(f">>> 正在检查子目录: {subdir}")
+        check_npy_directory(subdir, recursive=True)
+
+
 def main():
-    """
-    主函数，处理命令行参数并执行相应的检查
-    """
-    #  python /home/zlc/crowdfunding/src/scripts/check_npy_files.py /home/zlc/crowdfunding/data/projects/2023/2119930
-    if len(sys.argv) < 2:
-        print("用法:")
-        print("  检查单个文件: python check_npy_files.py <file_path>")
-        print("  检查目录:     python check_npy_files.py <directory_path> [-r]")
-        print("  递归检查目录: python check_npy_files.py <directory_path> -r")
-        sys.exit(1)
-    
-    target_path = sys.argv[1]
-    
-    # 检查是否是目录
-    if Path(target_path).is_dir():
-        recursive = '-r' in sys.argv or '--recursive' in sys.argv
-        check_npy_directory(target_path, recursive)
-    else:
-        # 检查单个文件
-        check_npy_file(target_path)
+    # 默认检查 /home/zlc/crowdfunding/data/projects/now 目录下的随机5个子文件夹
+    target_path = "/home/zlc/crowdfunding/data/projects/now"
+    check_random_subdirs(target_path, 5)
 
 
 if __name__ == "__main__":

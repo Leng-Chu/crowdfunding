@@ -10,6 +10,7 @@
     - clean/ 清理爬虫得到的数据
     - embedding/ 文本、图片向量化
     - table/ 表格数据处理与特征工程
+  - dl/ 深度学习代码
   - scipts/ 临时脚本
 - data/ 数据与缓存
   - projects/ 项目数据（一个项目一个文件夹）
