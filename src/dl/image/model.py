@@ -28,6 +28,8 @@ class ImageCNNBinaryClassifier(nn.Module):
         embedding_dim: int,
         conv_channels: int = 256,
         conv_kernel_size: int = 3,
+        fc_hidden_dim: int = 0,
+        input_dropout: float = 0.0,
         dropout: float = 0.5,
         use_batch_norm: bool = False,
     ) -> None:
@@ -39,10 +41,15 @@ class ImageCNNBinaryClassifier(nn.Module):
             raise ValueError(f"conv_channels 需要 > 0，当前为 {conv_channels}")
         if conv_kernel_size <= 0 or conv_kernel_size % 2 == 0:
             raise ValueError("conv_kernel_size 需要为正奇数（便于 same padding）")
+        if input_dropout < 0.0 or input_dropout >= 1.0:
+            raise ValueError("input_dropout 需要在 [0, 1) 之间")
         if dropout < 0.0 or dropout >= 1.0:
             raise ValueError("dropout 需要在 [0, 1) 之间")
 
         pad = int(conv_kernel_size // 2)
+        fc_dim = int(fc_hidden_dim) if int(fc_hidden_dim) > 0 else int(conv_channels)
+
+        self.input_drop = nn.Dropout(p=float(input_dropout))
 
         self.conv1 = nn.Conv1d(
             in_channels=int(embedding_dim),
@@ -66,9 +73,9 @@ class ImageCNNBinaryClassifier(nn.Module):
         self.pool2 = nn.MaxPool1d(kernel_size=2, stride=2, ceil_mode=True)
         self.drop2 = nn.Dropout(p=float(dropout))
 
-        self.fc = nn.Linear(int(conv_channels), int(conv_channels))
+        self.fc = nn.Linear(int(conv_channels), int(fc_dim))
         self.fc_drop = nn.Dropout(p=float(dropout))
-        self.head = nn.Linear(int(conv_channels), 1)
+        self.head = nn.Linear(int(fc_dim), 1)
         self._init_weights()
 
     def _init_weights(self) -> None:
@@ -98,6 +105,7 @@ class ImageCNNBinaryClassifier(nn.Module):
 
         # (B, L, D) -> (B, D, L)
         z = x.transpose(1, 2).contiguous()
+        z = self.input_drop(z)
 
         z = self.conv1(z)
         if self.bn1 is not None:
@@ -134,6 +142,8 @@ def build_cnn(cfg: ImageDLConfig, embedding_dim: int) -> ImageCNNBinaryClassifie
         embedding_dim=int(embedding_dim),
         conv_channels=int(getattr(cfg, "conv_channels", 256)),
         conv_kernel_size=int(getattr(cfg, "conv_kernel_size", 3)),
+        fc_hidden_dim=int(getattr(cfg, "fc_hidden_dim", 0)),
+        input_dropout=float(getattr(cfg, "input_dropout", 0.0)),
         dropout=float(getattr(cfg, "dropout", 0.5)),
         use_batch_norm=bool(getattr(cfg, "use_batch_norm", False)),
     )

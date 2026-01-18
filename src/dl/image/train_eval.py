@@ -85,7 +85,7 @@ def train_with_early_stopping(
     )
 
     criterion = nn.BCEWithLogitsLoss()
-    optimizer = torch.optim.Adam(
+    optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=float(cfg.learning_rate_init),
         weight_decay=float(cfg.alpha),

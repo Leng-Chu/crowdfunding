@@ -13,6 +13,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -20,6 +22,8 @@ import numpy as np
 import pandas as pd
 
 from config import ImageDLConfig
+
+_CACHE_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -111,6 +115,12 @@ def _as_2d_embedding(arr: np.ndarray, name: str) -> np.ndarray:
     return x.astype(np.float32, copy=False)
 
 
+def _stable_hash_int(text: str) -> int:
+    """把字符串稳定地映射为 int（用于可复现的抽样）。"""
+    digest = hashlib.md5(text.encode("utf-8")).hexdigest()[:8]
+    return int(digest, 16)
+
+
 def _load_image_embedding_stack(
     project_dir: Path, cfg: ImageDLConfig
 ) -> Tuple[Optional[np.ndarray], int, int]:
@@ -144,6 +154,20 @@ def _load_image_embedding_stack(
     missing_image = 0
     if image_path.exists():
         image = _as_2d_embedding(np.load(image_path), image_path.name)
+        # 可选：限制每个项目使用的 image 向量数量，降低过拟合并减少 padding
+        max_vec = int(getattr(cfg, "max_image_vectors", 0))
+        if max_vec > 0 and int(image.shape[0]) > max_vec:
+            strategy = str(getattr(cfg, "image_select_strategy", "first")).strip().lower()
+            if strategy == "first":
+                image = image[:max_vec]
+            elif strategy == "random":
+                seed = int(getattr(cfg, "random_seed", 42)) + _stable_hash_int(str(project_dir.name))
+                rng = np.random.default_rng(seed)
+                idx = rng.choice(int(image.shape[0]), size=max_vec, replace=False)
+                idx = np.sort(idx)
+                image = image[idx]
+            else:
+                raise ValueError(f"不支持的 image_select_strategy={strategy!r}，可选：first/random")
         if int(image.shape[0]) > 0:
             if int(image.shape[1]) != int(cover.shape[1]):
                 raise ValueError(
@@ -158,6 +182,91 @@ def _load_image_embedding_stack(
         missing_image = 1
 
     return seq, missing_image, 0
+
+
+def _make_cache_key(csv_path: Path, projects_root: Path, cfg: ImageDLConfig) -> str:
+    """根据数据与关键配置生成缓存 key（用于命名 .npz 文件）。"""
+    stat = csv_path.stat()
+    payload = {
+        "cache_version": _CACHE_VERSION,
+        "data_csv": str(csv_path.as_posix()),
+        "csv_mtime": float(stat.st_mtime),
+        "csv_size": int(stat.st_size),
+        "projects_root": str(projects_root.as_posix()),
+        "embedding_type": str(getattr(cfg, "embedding_type", "")),
+        "missing_strategy": str(getattr(cfg, "missing_strategy", "")),
+        "train_ratio": float(getattr(cfg, "train_ratio", 0.7)),
+        "val_ratio": float(getattr(cfg, "val_ratio", 0.15)),
+        "test_ratio": float(getattr(cfg, "test_ratio", 0.15)),
+        "shuffle_before_split": bool(getattr(cfg, "shuffle_before_split", False)),
+        "random_seed": int(getattr(cfg, "random_seed", 42)),
+        "max_image_vectors": int(getattr(cfg, "max_image_vectors", 0)),
+        "image_select_strategy": str(getattr(cfg, "image_select_strategy", "first")),
+    }
+    s = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    h = hashlib.sha1(s.encode("utf-8")).hexdigest()[:16]
+    return f"image_dl_{h}"
+
+
+def _load_cache(cache_path: Path) -> PreparedImageData:
+    """从 .npz 缓存加载 PreparedImageData。"""
+    with np.load(cache_path, allow_pickle=False) as z:
+        stats_json = z.get("stats_json", np.array("{}", dtype=str)).item()
+        stats = json.loads(stats_json) if isinstance(stats_json, str) else {}
+
+        return PreparedImageData(
+            X_train=z["X_train"].astype(np.float32, copy=False),
+            len_train=z["len_train"].astype(np.int64, copy=False),
+            y_train=z["y_train"].astype(np.int64, copy=False),
+            train_project_ids=z["train_project_ids"].astype(str).tolist(),
+            X_val=z["X_val"].astype(np.float32, copy=False),
+            len_val=z["len_val"].astype(np.int64, copy=False),
+            y_val=z["y_val"].astype(np.int64, copy=False),
+            val_project_ids=z["val_project_ids"].astype(str).tolist(),
+            X_test=z["X_test"].astype(np.float32, copy=False),
+            len_test=z["len_test"].astype(np.int64, copy=False),
+            y_test=z["y_test"].astype(np.int64, copy=False),
+            test_project_ids=z["test_project_ids"].astype(str).tolist(),
+            embedding_dim=int(z["embedding_dim"].item()),
+            max_seq_len=int(z["max_seq_len"].item()),
+            stats={k: int(v) for k, v in dict(stats).items()},
+        )
+
+
+def _save_cache(cache_path: Path, prepared: PreparedImageData, meta: Dict[str, Any], compress: bool) -> None:
+    """保存 PreparedImageData 到 .npz 缓存。"""
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    stats_json = json.dumps(prepared.stats, ensure_ascii=False)
+    meta_json = json.dumps(meta, ensure_ascii=False, sort_keys=True)
+
+    arrays = {
+        "X_train": prepared.X_train.astype(np.float32, copy=False),
+        "len_train": prepared.len_train.astype(np.int64, copy=False),
+        "y_train": prepared.y_train.astype(np.int64, copy=False),
+        "train_project_ids": np.asarray(prepared.train_project_ids, dtype=str),
+        "X_val": prepared.X_val.astype(np.float32, copy=False),
+        "len_val": prepared.len_val.astype(np.int64, copy=False),
+        "y_val": prepared.y_val.astype(np.int64, copy=False),
+        "val_project_ids": np.asarray(prepared.val_project_ids, dtype=str),
+        "X_test": prepared.X_test.astype(np.float32, copy=False),
+        "len_test": prepared.len_test.astype(np.int64, copy=False),
+        "y_test": prepared.y_test.astype(np.int64, copy=False),
+        "test_project_ids": np.asarray(prepared.test_project_ids, dtype=str),
+        "embedding_dim": np.asarray(int(prepared.embedding_dim), dtype=np.int64),
+        "max_seq_len": np.asarray(int(prepared.max_seq_len), dtype=np.int64),
+        "stats_json": np.asarray(stats_json, dtype=str),
+        "meta_json": np.asarray(meta_json, dtype=str),
+    }
+
+    # numpy.savez 会在路径不以 ".npz" 结尾时自动追加后缀，导致临时文件名错位；
+    # 这里用文件句柄写入，保证临时文件路径可控。
+    tmp_path = cache_path.with_name(cache_path.name + ".tmp")
+    with tmp_path.open("wb") as f:
+        if compress:
+            np.savez_compressed(f, **arrays)
+        else:
+            np.savez(f, **arrays)
+    tmp_path.replace(cache_path)
 
 
 def _build_features_for_split(
@@ -224,8 +333,34 @@ def _build_features_for_split(
     return X, len_arr, y, kept_ids, stats, int(embedding_dim), int(max_seq_len)
 
 
-def prepare_data(csv_path: Path, projects_root: Path, cfg: ImageDLConfig) -> PreparedImageData:
-    """一站式：读 CSV -> 切分 -> 构建图片嵌入特征 -> 返回 numpy 数组。"""
+def prepare_data(
+    csv_path: Path,
+    projects_root: Path,
+    cfg: ImageDLConfig,
+    cache_dir: Path | None = None,
+    logger=None,
+) -> PreparedImageData:
+    """一站式：读 CSV -> 切分 -> 构建图片嵌入特征 -> 返回 numpy 数组。支持缓存。"""
+    use_cache = bool(getattr(cfg, "use_cache", False)) and cache_dir is not None
+    refresh_cache = bool(getattr(cfg, "refresh_cache", False))
+    compress = bool(getattr(cfg, "cache_compress", False))
+
+    cache_path: Path | None = None
+    cache_key: str | None = None
+    if use_cache:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_key = _make_cache_key(csv_path, projects_root, cfg)
+        cache_path = cache_dir / f"{cache_key}.npz"
+        if cache_path.exists() and not refresh_cache:
+            try:
+                prepared = _load_cache(cache_path)
+                if logger is not None:
+                    logger.info("使用数据缓存：%s", str(cache_path))
+                return prepared
+            except Exception as e:
+                if logger is not None:
+                    logger.warning("读取缓存失败，将重新构建：%s", e)
+
     raw_df = load_labels(csv_path, cfg)
     train_df, val_df, test_df = split_by_ratio(raw_df, cfg)
 
@@ -247,7 +382,7 @@ def prepare_data(csv_path: Path, projects_root: Path, cfg: ImageDLConfig) -> Pre
         for k, v in s.items():
             stats[k] = int(stats.get(k, 0) + int(v))
 
-    return PreparedImageData(
+    prepared = PreparedImageData(
         X_train=X_train,
         len_train=len_train,
         y_train=y_train,
@@ -264,3 +399,21 @@ def prepare_data(csv_path: Path, projects_root: Path, cfg: ImageDLConfig) -> Pre
         max_seq_len=int(max(max_len_train, max_len_val, max_len_test)),
         stats=stats,
     )
+
+    if use_cache and cache_path is not None:
+        try:
+            meta = {
+                "cache_version": _CACHE_VERSION,
+                "cache_key": cache_key,
+                "csv_path": str(csv_path.as_posix()),
+                "projects_root": str(projects_root.as_posix()),
+                "config": cfg.to_dict(),
+            }
+            _save_cache(cache_path, prepared, meta=meta, compress=compress)
+            if logger is not None:
+                logger.info("已写入数据缓存：%s", str(cache_path))
+        except Exception as e:
+            if logger is not None:
+                logger.warning("写入缓存失败：%s", e)
+
+    return prepared

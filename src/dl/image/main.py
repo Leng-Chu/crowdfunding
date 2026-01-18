@@ -58,6 +58,7 @@ def main() -> int:
     projects_root = project_root / cfg.projects_root
     experiment_root = project_root / cfg.experiment_root
     experiment_root.mkdir(parents=True, exist_ok=True)
+    cache_dir = project_root / cfg.cache_dir
 
     run_id, artifacts_dir, reports_dir, plots_dir = make_run_dirs(experiment_root, run_name=cfg.run_name)
     run_dir = reports_dir.parent
@@ -68,12 +69,19 @@ def main() -> int:
     logger.info("data_csv=%s", str(csv_path))
     logger.info("projects_root=%s", str(projects_root))
     logger.info("embedding_type=%s | missing_strategy=%s", cfg.embedding_type, cfg.missing_strategy)
+    logger.info(
+        "缓存：use_cache=%s refresh_cache=%s compress=%s | cache_dir=%s",
+        bool(getattr(cfg, "use_cache", False)),
+        bool(getattr(cfg, "refresh_cache", False)),
+        bool(getattr(cfg, "cache_compress", False)),
+        str(cache_dir),
+    )
 
     save_json({"run_id": run_id, **cfg.to_dict()}, reports_dir / "config.json")
     set_global_seed(cfg.random_seed)
 
     # 1) 数据准备
-    prepared = prepare_data(csv_path=csv_path, projects_root=projects_root, cfg=cfg)
+    prepared = prepare_data(csv_path=csv_path, projects_root=projects_root, cfg=cfg, cache_dir=cache_dir, logger=logger)
     logger.info(
         "数据集：train=%s val=%s test=%s | embedding_dim=%d | max_seq_len=%d",
         prepared.X_train.shape,
@@ -143,6 +151,8 @@ def main() -> int:
             "missing_strategy": str(cfg.missing_strategy),
             "conv_channels": int(getattr(cfg, "conv_channels", 256)),
             "conv_kernel_size": int(getattr(cfg, "conv_kernel_size", 3)),
+            "fc_hidden_dim": int(getattr(cfg, "fc_hidden_dim", 0)),
+            "input_dropout": float(getattr(cfg, "input_dropout", 0.0)),
             "dropout": cfg.dropout,
             "use_batch_norm": cfg.use_batch_norm,
         },

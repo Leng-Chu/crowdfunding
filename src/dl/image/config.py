@@ -48,10 +48,26 @@ class ImageDLConfig:
     # -----------------------------
     # 可选：clip / siglip / resnet
     embedding_type: str = "clip"
+    # image_{type}.npy 最多使用多少个向量（不含 cover），<=0 表示全部使用
+    # 适当限制可以降低过拟合，并显著减少 padding 与训练显存/内存占用
+    max_image_vectors: int = 12
+    # 当 image 向量数量 > max_image_vectors 时的截取策略：first / random
+    # random 会基于 random_seed + project_id 做“可复现”的抽样
+    image_select_strategy: str = "first"
     # 当必须文件缺失时的处理策略（例如：项目目录缺失 / cover_image 缺失）：
     # - skip：跳过该样本
     # - error：直接报错
     missing_strategy: str = "error"
+
+    # -----------------------------
+    # 数据缓存（加速：避免每次都逐个 np.load）
+    # -----------------------------
+    use_cache: bool = True
+    cache_dir: str = "experiments/image_dl/_cache"
+    # True：忽略缓存并强制重建
+    refresh_cache: bool = False
+    # True：np.savez_compressed（更省空间但更慢）；False：np.savez（更快）
+    cache_compress: bool = False
 
     # -----------------------------
     # 划分策略
@@ -64,26 +80,32 @@ class ImageDLConfig:
     # -----------------------------
     # 模型（PyTorch 1D CNN）超参
     # -----------------------------
-    conv_channels: int = 256
+    # 减小通道数、加大 dropout/weight_decay 通常能缓解过拟合
+    conv_channels: int = 128
     conv_kernel_size: int = 3
-    dropout: float = 0.5
-    use_batch_norm: bool = False
+    # GlobalMaxPool 之后的全连接隐藏层维度（<=0 表示等于 conv_channels）
+    fc_hidden_dim: int = 128
+    # 输入层 dropout（对 embedding 做 dropout，进一步正则化）
+    input_dropout: float = 0.1
+    dropout: float = 0.6
+    use_batch_norm: bool = True
 
-    alpha: float = 1e-4  # Adam 的 weight_decay（L2）
-    learning_rate_init: float = 5e-4
+    alpha: float = 5e-4  # weight_decay（L2）
+    learning_rate_init: float = 3e-4
     batch_size: int = 256
 
     max_epochs: int = 50
-    early_stop_patience: int = 10
-    early_stop_min_epochs: int = 5
-    metric_for_best: str = "val_accuracy"  # val_accuracy / val_auc / val_loss
+    early_stop_patience: int = 5
+    early_stop_min_epochs: int = 3
+    # 过拟合时 val_accuracy 可能不敏感，优先用 val_loss
+    metric_for_best: str = "val_loss"  # val_accuracy / val_auc / val_loss
 
     # 学习率自适应
     use_lr_scheduler: bool = True
-    lr_scheduler_patience: int = 3
+    lr_scheduler_patience: int = 2
     lr_scheduler_factor: float = 0.5
     lr_scheduler_min_lr: float = 1e-6
-    reset_early_stop_on_lr_change: bool = True
+    reset_early_stop_on_lr_change: bool = False
 
     # 训练稳定性
     max_grad_norm: float = 0.0
