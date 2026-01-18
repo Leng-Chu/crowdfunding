@@ -161,6 +161,48 @@ def _auc_trapz(x: np.ndarray, y: np.ndarray) -> float:
     return float(np.trapz(y, x))
 
 
+def _roc_auc_rank(y_true: np.ndarray, y_score: np.ndarray) -> float:
+    """
+    用“秩统计”(Mann–Whitney U) 计算 ROC-AUC（不依赖 ROC 曲线）。
+
+    优点：实现更稳健；当 _roc_curve 因输入异常/NaN 等失败时可作为兜底。
+    要求：必须同时包含正负样本；y_true 需为 0/1。
+    """
+    y_true = np.asarray(y_true).astype(int).reshape(-1)
+    y_score = np.asarray(y_score).astype(float).reshape(-1)
+    if y_true.shape != y_score.shape:
+        raise ValueError(f"y_true/y_score 形状不一致：{y_true.shape} vs {y_score.shape}")
+
+    n_pos = int(np.sum(y_true == 1))
+    n_neg = int(np.sum(y_true == 0))
+    if n_pos == 0 or n_neg == 0:
+        raise ValueError("ROC-AUC 需要同时包含正类与负类样本")
+
+    # 对 score 升序排序后计算带“并列平均”的秩
+    order = np.argsort(y_score, kind="mergesort")
+    scores_sorted = y_score[order]
+    y_sorted = y_true[order]
+
+    n = int(scores_sorted.size)
+    ranks = np.empty(n, dtype=np.float64)
+    i = 0
+    rank = 1  # 1-based rank
+    while i < n:
+        j = i
+        # 处理并列（注意：NaN 与任何值都不相等，这里会被当作单独一组）
+        while j + 1 < n and scores_sorted[j + 1] == scores_sorted[i]:
+            j += 1
+        # 平均秩：rank..(rank+(j-i))
+        avg_rank = 0.5 * (rank + (rank + (j - i)))
+        ranks[i : j + 1] = avg_rank
+        rank += (j - i + 1)
+        i = j + 1
+
+    sum_pos_ranks = float(np.sum(ranks[y_sorted == 1]))
+    auc = (sum_pos_ranks - (n_pos * (n_pos + 1) / 2.0)) / (n_pos * n_neg)
+    return float(auc)
+
+
 def compute_binary_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: float = 0.5) -> Dict[str, Any]:
     """二分类指标：acc/precision/recall/f1/auc/logloss/confusion。"""
     y_true = np.asarray(y_true).astype(int)
@@ -189,10 +231,25 @@ def compute_binary_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: fl
     try:
         fpr, tpr, _ = _roc_curve(y_true_1d, y_prob_1d)
         roc_auc = _auc_trapz(fpr, tpr)
-    except Exception:
+        roc_auc_error: Optional[str] = None
+    except Exception as e:
         roc_auc = None
+        roc_auc_error = f"{type(e).__name__}: {e}"
+        # 兜底：用秩统计方式计算 AUC（只要同时有正负样本就能算）
+        try:
+            # 过滤非有限值，避免极端情况下的异常
+            mask = np.isfinite(y_prob_1d)
+            if int(np.sum(mask)) < int(y_prob_1d.size):
+                roc_auc = _roc_auc_rank(y_true_1d[mask], y_prob_1d[mask])
+            else:
+                roc_auc = _roc_auc_rank(y_true_1d, y_prob_1d)
+            roc_auc_error = None
+        except Exception as e2:
+            roc_auc = None
+            if roc_auc_error is None:
+                roc_auc_error = f"{type(e2).__name__}: {e2}"
 
-    return {
+    out = {
         "accuracy": float(accuracy),
         "precision": float(precision),
         "recall": float(recall),
@@ -205,6 +262,10 @@ def compute_binary_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: fl
         "fn": int(fn),
         "tp": int(tp),
     }
+    if roc_auc is None and roc_auc_error:
+        # 便于排查：为什么 AUC 算不出来（例如只有单一类别 / 输入包含异常值）
+        out["roc_auc_error"] = str(roc_auc_error)
+    return out
 
 
 def plot_history(history: List[Dict[str, Any]], save_path: Path) -> None:
@@ -249,7 +310,8 @@ def plot_history(history: List[Dict[str, Any]], save_path: Path) -> None:
     axes[1].set_title("ROC-AUC")
     axes[1].set_xlabel("Epoch")
     axes[1].grid(True, alpha=0.3)
-    axes[1].legend()
+    if axes[1].lines:
+        axes[1].legend()
 
     save_path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
