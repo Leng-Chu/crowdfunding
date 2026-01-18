@@ -33,8 +33,8 @@ class ImageDLConfig:
     # -----------------------------
     # 数据与路径
     # -----------------------------
-    data_csv: str = "data/metadata/test.csv"
-    projects_root: str = "data/projects/test"
+    data_csv: str = "data/metadata/now_processed.csv"
+    projects_root: str = "data/projects/now"
     experiment_root: str = "experiments/image_dl"
 
     # -----------------------------
@@ -50,7 +50,7 @@ class ImageDLConfig:
     embedding_type: str = "clip"
     # image_{type}.npy 最多使用多少个向量（不含 cover），<=0 表示全部使用
     # 适当限制可以降低过拟合，并显著减少 padding 与训练显存/内存占用
-    max_image_vectors: int = 12
+    max_image_vectors: int = 20
     # 当 image 向量数量 > max_image_vectors 时的截取策略：first / random
     # random 会基于 random_seed + project_id 做“可复现”的抽样
     image_select_strategy: str = "first"
@@ -94,11 +94,11 @@ class ImageDLConfig:
     learning_rate_init: float = 3e-4
     batch_size: int = 256
 
-    max_epochs: int = 50
-    early_stop_patience: int = 5
-    early_stop_min_epochs: int = 3
+    max_epochs: int = 100
+    early_stop_patience: int = 10
+    early_stop_min_epochs: int = 5
     # 过拟合时 val_accuracy 可能不敏感，优先用 val_loss
-    metric_for_best: str = "val_loss"  # val_accuracy / val_auc / val_loss
+    metric_for_best: str = "val_accuracy"  # val_accuracy / val_auc / val_loss
 
     # 学习率自适应
     use_lr_scheduler: bool = True

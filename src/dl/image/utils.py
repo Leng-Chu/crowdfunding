@@ -34,29 +34,6 @@ def set_global_seed(seed: int) -> None:
         pass
 
 
-def _setup_matplotlib_chinese() -> None:
-    """
-    尝试为 matplotlib 设置中文字体，避免中文标题/坐标轴出现方块或缺字警告。
-    - Windows 通常有 Microsoft YaHei/SimHei
-    - Linux 若安装了 Noto Sans CJK，也可命中
-    """
-    try:
-        import matplotlib
-
-        matplotlib.rcParams["font.sans-serif"] = [
-            "Microsoft YaHei",
-            "SimHei",
-            "SimSun",
-            "NSimSun",
-            "Noto Sans CJK SC",
-            "Arial Unicode MS",
-            "DejaVu Sans",
-        ]
-        matplotlib.rcParams["axes.unicode_minus"] = False
-    except Exception:
-        pass
-
-
 def _sanitize_name(name: str) -> str:
     """把 run_name 处理成适合当文件夹名的形式。"""
     name = name.strip()
@@ -235,32 +212,42 @@ def plot_history(history: List[Dict[str, Any]], save_path: Path) -> None:
     if not history:
         return
 
-    import pandas as pd
     import matplotlib.pyplot as plt
 
-    _setup_matplotlib_chinese()
-
-    df = pd.DataFrame(history)
-    if "epoch" not in df.columns:
-        return
+    def _extract_xy(metric_key: str) -> Tuple[List[float], List[float]]:
+        xs: List[float] = []
+        ys: List[float] = []
+        for row in history:
+            if "epoch" not in row:
+                continue
+            y = row.get(metric_key)
+            if y is None:
+                continue
+            xs.append(float(row["epoch"]))
+            ys.append(float(y))
+        return xs, ys
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 
-    if "train_log_loss" in df.columns:
-        axes[0].plot(df["epoch"], df["train_log_loss"], label="训练")
-    if "val_log_loss" in df.columns:
-        axes[0].plot(df["epoch"], df["val_log_loss"], label="验证")
-    axes[0].set_title("对数损失")
-    axes[0].set_xlabel("轮次")
+    train_x, train_y = _extract_xy("train_log_loss")
+    val_x, val_y = _extract_xy("val_log_loss")
+    if train_y:
+        axes[0].plot(train_x, train_y, label="train")
+    if val_y:
+        axes[0].plot(val_x, val_y, label="val")
+    axes[0].set_title("Log Loss")
+    axes[0].set_xlabel("Epoch")
     axes[0].grid(True, alpha=0.3)
     axes[0].legend()
 
-    if "train_roc_auc" in df.columns:
-        axes[1].plot(df["epoch"], df["train_roc_auc"], label="训练")
-    if "val_roc_auc" in df.columns:
-        axes[1].plot(df["epoch"], df["val_roc_auc"], label="验证")
+    train_x, train_y = _extract_xy("train_roc_auc")
+    val_x, val_y = _extract_xy("val_roc_auc")
+    if train_y:
+        axes[1].plot(train_x, train_y, label="train")
+    if val_y:
+        axes[1].plot(val_x, val_y, label="val")
     axes[1].set_title("ROC-AUC")
-    axes[1].set_xlabel("轮次")
+    axes[1].set_xlabel("Epoch")
     axes[1].grid(True, alpha=0.3)
     axes[1].legend()
 
@@ -274,8 +261,6 @@ def plot_roc(y_true: np.ndarray, y_prob: np.ndarray, save_path: Path) -> None:
     """绘制 ROC 曲线。"""
     import matplotlib.pyplot as plt
 
-    _setup_matplotlib_chinese()
-
     y_true = np.asarray(y_true).astype(int)
     y_prob = np.asarray(y_prob).astype(float)
     try:
@@ -287,9 +272,9 @@ def plot_roc(y_true: np.ndarray, y_prob: np.ndarray, save_path: Path) -> None:
     fig = plt.figure(figsize=(5, 5))
     plt.plot(fpr, tpr, label=f"AUC={roc_auc:.4f}")
     plt.plot([0, 1], [0, 1], linestyle="--", color="gray")
-    plt.xlabel("假正例率（FPR）")
-    plt.ylabel("真正例率（TPR）")
-    plt.title("ROC 曲线")
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title("ROC Curve")
     plt.grid(True, alpha=0.3)
     plt.legend()
 

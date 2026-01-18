@@ -228,30 +228,42 @@ def plot_history(history: List[Dict[str, Any]], save_path: Path) -> None:
     if not history:
         return
 
-    import pandas as pd
     import matplotlib.pyplot as plt
 
-    df = pd.DataFrame(history)
-    if "epoch" not in df.columns:
-        return
+    def _extract_xy(metric_key: str) -> Tuple[List[float], List[float]]:
+        xs: List[float] = []
+        ys: List[float] = []
+        for row in history:
+            if "epoch" not in row:
+                continue
+            y = row.get(metric_key)
+            if y is None:
+                continue
+            xs.append(float(row["epoch"]))
+            ys.append(float(y))
+        return xs, ys
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 
     # loss
-    if "train_log_loss" in df.columns:
-        axes[0].plot(df["epoch"], df["train_log_loss"], label="train")
-    if "val_log_loss" in df.columns:
-        axes[0].plot(df["epoch"], df["val_log_loss"], label="val")
+    train_x, train_y = _extract_xy("train_log_loss")
+    val_x, val_y = _extract_xy("val_log_loss")
+    if train_y:
+        axes[0].plot(train_x, train_y, label="train")
+    if val_y:
+        axes[0].plot(val_x, val_y, label="val")
     axes[0].set_title("Log Loss")
     axes[0].set_xlabel("Epoch")
     axes[0].grid(True, alpha=0.3)
     axes[0].legend()
 
     # auc
-    if "train_roc_auc" in df.columns:
-        axes[1].plot(df["epoch"], df["train_roc_auc"], label="train")
-    if "val_roc_auc" in df.columns:
-        axes[1].plot(df["epoch"], df["val_roc_auc"], label="val")
+    train_x, train_y = _extract_xy("train_roc_auc")
+    val_x, val_y = _extract_xy("val_roc_auc")
+    if train_y:
+        axes[1].plot(train_x, train_y, label="train")
+    if val_y:
+        axes[1].plot(val_x, val_y, label="val")
     axes[1].set_title("ROC-AUC")
     axes[1].set_xlabel("Epoch")
     axes[1].grid(True, alpha=0.3)
