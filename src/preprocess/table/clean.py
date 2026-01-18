@@ -7,8 +7,11 @@ df = pd.read_csv(csv_path)
 # ===== 1. 提取需要保留的列 =====
 df_original = pd.read_csv(csv_path)  # 重新加载以获取完整的原始数据
 df_original['launched_at'] = pd.to_datetime(df_original['launched_at'], utc=True)
+# 格式化launched_at为只包含年-月-日
 project_info = df_original[['project_id', 'launched_at']].copy()
-project_info['year'] = df_original['launched_at'].dt.year
+project_info['launched_at'] = project_info['launched_at'].dt.strftime('%Y-%m-%d')
+# 将launched_at重命名为time
+project_info.rename(columns={'launched_at': 'time'}, inplace=True)
 
 # ===== 2. 删除不需要的列 =====
 drop_cols = [
@@ -50,13 +53,15 @@ X["log_usd_goal"] = np.log1p(X["usd_goal"])
 X.drop(columns=["usd_goal"], inplace=True)
 
 # ===== 6. 合并保留的列和编码后的特征 =====
-# 只保留project_id和year，不包含launched_at
-project_info_reduced = project_info[['project_id', 'year']].copy()
-final_data = pd.concat([project_info_reduced.reset_index(drop=True), X.reset_index(drop=True)], axis=1)
+# 确保所有数据在同一索引下对齐
+# 将y转换为DataFrame并重命名列
+y_df = y.reset_index(drop=True).to_frame(name='state')
+final_data = pd.concat([project_info.reset_index(drop=True), X.reset_index(drop=True), y_df], axis=1)
+
+# ===== 按time列排序，确保整行数据一起移动 =====
+final_data.sort_values(by='time', inplace=True)
 
 # ===== 7. 保存到新的CSV文件 =====
 output_csv_path = "/home/zlc/crowdfunding/data/metadata/now_processed.csv"
-final_data['state'] = y.values  # 添加标签列
 final_data.to_csv(output_csv_path, index=False)
 print(f"已保存处理后的数据到: {output_csv_path}")
-
