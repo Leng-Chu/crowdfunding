@@ -208,7 +208,11 @@ def split_by_year(
     for label, group in eval_df.groupby(cfg.target_col):
         idx = group.index.to_numpy()
         rng.shuffle(idx)
-        n_val = int(round(len(idx) * cfg.val_ratio_in_eval))
+        # 当 val_ratio=0.5 时，用“精确对半”（每个类别各取一半）更符合“平均划分”的直觉
+        if abs(float(cfg.val_ratio_in_eval) - 0.5) < 1e-12:
+            n_val = int(len(idx) // 2)
+        else:
+            n_val = int(round(len(idx) * cfg.val_ratio_in_eval))
         # 尽量保证 val/test 两边都有样本（当某类样本数 >= 2 时）
         if len(idx) >= 2:
             n_val = max(1, min(n_val, len(idx) - 1))

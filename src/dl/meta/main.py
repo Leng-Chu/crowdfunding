@@ -4,7 +4,7 @@
 - 读取数据
 - 预处理（one-hot + 标准化）
 - 训练 PyTorch MLP（二分类）
-- 保存实验产物到 experiments/meta_dl/<run_id>/{model,log}
+- 保存实验产物到 experiments/meta_dl/<run_id>/{artifacts,reports,plots}
 
 运行示例（在项目根目录）：
 conda run -n crowdfunding python src/dl/meta/main.py
@@ -36,14 +36,15 @@ def main() -> int:
     experiment_root = project_root / cfg.experiment_root
     experiment_root.mkdir(parents=True, exist_ok=True)
 
-    run_id, model_dir, log_dir = make_run_dirs(experiment_root, run_name=cfg.run_name)
-    logger = setup_logger(log_dir / "train.log")
+    run_id, artifacts_dir, reports_dir, plots_dir = make_run_dirs(experiment_root, run_name=cfg.run_name)
+    run_dir = reports_dir.parent
+    logger = setup_logger(reports_dir / "train.log")
 
     logger.info("run_id=%s", run_id)
     logger.info("python=%s | platform=%s", sys.version.replace("\n", " "), platform.platform())
     logger.info("data_csv=%s", str(csv_path))
 
-    save_json({"run_id": run_id, **cfg.to_dict()}, model_dir / "config.json")
+    save_json({"run_id": run_id, **cfg.to_dict()}, reports_dir / "config.json")
 
     set_global_seed(cfg.random_seed)
 
@@ -58,10 +59,10 @@ def main() -> int:
     )
 
     # 保存预处理器与特征名（方便后续复用/排查）
-    with (model_dir / "preprocessor.pkl").open("wb") as f:
+    with (artifacts_dir / "preprocessor.pkl").open("wb") as f:
         pickle.dump(prepared.preprocessor, f)
     if prepared.feature_names:
-        save_text(prepared.feature_names, model_dir / "feature_names.txt")
+        save_text(prepared.feature_names, artifacts_dir / "feature_names.txt")
 
     # 2) 模型训练
     model = build_mlp(cfg, input_dim=int(prepared.X_train.shape[1]))
@@ -80,7 +81,7 @@ def main() -> int:
     try:
         import pandas as pd
 
-        pd.DataFrame(history).to_csv(model_dir / "history.csv", index=False, encoding="utf-8")
+        pd.DataFrame(history).to_csv(reports_dir / "history.csv", index=False, encoding="utf-8")
     except Exception as e:
         logger.warning("保存 history.csv 失败：%s", e)
 
@@ -95,7 +96,7 @@ def main() -> int:
         "val": val_out["metrics"],
         "test": test_out["metrics"],
     }
-    save_json(results, model_dir / "metrics.json")
+    save_json(results, reports_dir / "metrics.json")
 
     # 保存 PyTorch 权重（包含必要的结构信息，便于复现/加载）
     torch.save(
@@ -107,16 +108,16 @@ def main() -> int:
             "dropout": cfg.dropout,
             "use_batch_norm": cfg.use_batch_norm,
         },
-        model_dir / "model.pt",
+        artifacts_dir / "model.pt",
     )
 
     # 保存训练曲线与 ROC
     if cfg.save_plots:
-        plot_history(history, model_dir / "history.png")
-        plot_roc(prepared.y_val, val_out["prob"], model_dir / "roc_val.png")
-        plot_roc(prepared.y_test, test_out["prob"], model_dir / "roc_test.png")
+        plot_history(history, plots_dir / "history.png")
+        plot_roc(prepared.y_val, val_out["prob"], plots_dir / "roc_val.png")
+        plot_roc(prepared.y_test, test_out["prob"], plots_dir / "roc_test.png")
 
-    logger.info("完成：产物已保存到 %s", str(model_dir))
+    logger.info("完成：产物已保存到 %s", str(run_dir))
     logger.info("测试集指标：%s", test_out["metrics"])
     return 0
 

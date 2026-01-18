@@ -42,11 +42,12 @@ def _sanitize_name(name: str) -> str:
     return name[:80] if name else "run"
 
 
-def make_run_dirs(experiment_root: Path, run_name: Optional[str] = None) -> Tuple[str, Path, Path]:
+def make_run_dirs(experiment_root: Path, run_name: Optional[str] = None) -> Tuple[str, Path, Path, Path]:
     """
     在 experiments/meta_dl 下创建本次实验的：
-    - <run_id>/model：保存模型、预处理器、指标、图等产物
-    - <run_id>/log：保存日志文件
+    - <run_id>/artifacts：保存模型权重、预处理器、特征名等“可复现”产物
+    - <run_id>/reports：保存日志、配置、指标、训练历史等“报告”产物
+    - <run_id>/plots：保存图片（训练曲线、ROC 等）
     """
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     suffix = _sanitize_name(run_name) if run_name else ""
@@ -55,14 +56,16 @@ def make_run_dirs(experiment_root: Path, run_name: Optional[str] = None) -> Tupl
     for i in range(1000):
         run_id = base_run_id if i == 0 else f"{base_run_id}_{i}"
         run_dir = experiment_root / run_id
-        model_dir = run_dir / "model"
-        log_dir = run_dir / "log"
+        artifacts_dir = run_dir / "artifacts"
+        reports_dir = run_dir / "reports"
+        plots_dir = run_dir / "plots"
 
         # 用 run_dir 是否存在来判重；避免出现只创建了半边目录的边界情况
         if not run_dir.exists():
-            model_dir.mkdir(parents=True, exist_ok=False)
-            log_dir.mkdir(parents=True, exist_ok=False)
-            return run_id, model_dir, log_dir
+            artifacts_dir.mkdir(parents=True, exist_ok=False)
+            reports_dir.mkdir(parents=True, exist_ok=False)
+            plots_dir.mkdir(parents=True, exist_ok=False)
+            return run_id, artifacts_dir, reports_dir, plots_dir
 
     raise RuntimeError("创建 run 目录失败：可能存在大量同名实验目录")
 

@@ -2,7 +2,7 @@
 """
 训练与评估模块：
 - 按 epoch 训练（PyTorch 手写 MLP）
-- 在验证集上做 early stopping
+- 在验证集上做早停
 - 输出训练曲线与最终测试指标
 """
 
@@ -84,6 +84,17 @@ def train_with_early_stopping(
         weight_decay=float(cfg.alpha),
     )
 
+    # 学习率调度器：当验证集 logloss 不再下降时自动降低学习率
+    scheduler = None
+    if getattr(cfg, "use_lr_scheduler", False):
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode="min",
+            factor=float(getattr(cfg, "lr_scheduler_factor", 0.5)),
+            patience=int(getattr(cfg, "lr_scheduler_patience", 3)),
+            min_lr=float(getattr(cfg, "lr_scheduler_min_lr", 1e-6)),
+        )
+
     best_state: Dict[str, torch.Tensor] | None = None
     best_epoch = 0
     best_score = -float("inf")
@@ -105,6 +116,12 @@ def train_with_early_stopping(
             logits = model(xb)
             loss = criterion(logits, yb)
             loss.backward()
+
+            # 可选：梯度裁剪，避免个别 batch 梯度爆炸导致训练不稳定
+            max_grad_norm = float(getattr(cfg, "max_grad_norm", 0.0))
+            if max_grad_norm > 0.0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+
             optimizer.step()
 
             bs = int(xb.shape[0])
@@ -127,9 +144,12 @@ def train_with_early_stopping(
             row[f"val_{k}"] = v
         history.append(row)
 
-        # 选择用于 early-stopping 的指标
-        if cfg.metric_for_best == "val_loss":
+        # 选择用于早停的指标
+        metric_for_best = str(getattr(cfg, "metric_for_best", "val_accuracy")).strip().lower()
+        if metric_for_best in {"val_loss", "loss"}:
             score = -float(val_metrics["log_loss"])
+        elif metric_for_best in {"val_accuracy", "val_acc", "accuracy"}:
+            score = float(val_metrics["accuracy"])
         else:
             # 默认用 AUC，越大越好；如果算不出来则回退到 loss
             score = val_metrics.get("roc_auc")
@@ -147,14 +167,16 @@ def train_with_early_stopping(
         else:
             bad_epochs += 1
 
+        lr_now = float(optimizer.param_groups[0]["lr"])
         logger.info(
-            "Epoch %d/%d | train_loss=%.4f val_loss=%.4f | train_auc=%s val_auc=%s | best_epoch=%d bad=%d",
+            "Epoch %d/%d | lr=%.6g | train_loss=%.4f val_loss=%.4f | train_acc=%.4f val_acc=%.4f | best_epoch=%d bad=%d",
             epoch,
             cfg.max_epochs,
+            lr_now,
             train_metrics["log_loss"],
             val_metrics["log_loss"],
-            f"{train_metrics.get('roc_auc'):.4f}" if train_metrics.get("roc_auc") is not None else "NA",
-            f"{val_metrics.get('roc_auc'):.4f}" if val_metrics.get("roc_auc") is not None else "NA",
+            float(train_metrics["accuracy"]),
+            float(val_metrics["accuracy"]),
             best_epoch,
             bad_epochs,
         )
@@ -162,8 +184,21 @@ def train_with_early_stopping(
         # 可选：把当前 epoch 的平均训练损失也写进 history，便于排查
         history[-1]["train_epoch_loss"] = float(train_loss)
 
+        # 3) 学习率自适应：基于验证集 logloss 调整
+        if scheduler is not None:
+            old_lr = float(optimizer.param_groups[0]["lr"])
+            scheduler.step(float(val_metrics["log_loss"]))
+            new_lr = float(optimizer.param_groups[0]["lr"])
+            if new_lr < old_lr:
+                logger.info("学习率调整：%.6g -> %.6g", old_lr, new_lr)
+                if bool(getattr(cfg, "reset_early_stop_on_lr_change", True)):
+                    bad_epochs = 0
+
         if bad_epochs >= cfg.early_stop_patience:
-            logger.info("触发 early stopping：连续 %d 个 epoch 无提升。", bad_epochs)
+            min_epochs = int(getattr(cfg, "early_stop_min_epochs", 0))
+            if epoch < min_epochs:
+                continue
+            logger.info("触发早停：连续 %d 个 epoch 无提升。", bad_epochs)
             break
 
     if best_state is None:

@@ -41,9 +41,9 @@ class MetaDLConfig:
     # -----------------------------
     # 划分策略
     # -----------------------------
-    # 你要求“2025 作为测试集和验证集”，默认直接复用同一份 2025 数据
+    # 你希望 2025 再划分为 val/test（而不是复用同一份数据）
     use_same_eval_for_val_and_test: bool = False
-    # 如果不复用，则从 2025 中再切一刀：val_ratio_in_eval 给验证集比例，其余为测试集
+    # 从 2025 中平均划分：val_ratio_in_eval 给验证集比例，其余为测试集
     val_ratio_in_eval: float = 0.5
 
     # -----------------------------
@@ -54,16 +54,39 @@ class MetaDLConfig:
     activation: str = "relu"
     # 对应 Adam 的 weight_decay（L2 正则），保留字段名 alpha 以兼容旧配置
     alpha: float = 1e-4
-    learning_rate_init: float = 1e-3
+    # 经验上 5e-4 在该数据上更稳定，不容易在前几轮就过拟合
+    learning_rate_init: float = 5e-4
     batch_size: int = 256
     # 结构可调项：dropout / batchnorm
-    dropout: float = 0.0
+    # 轻量正则：避免 val_loss 早早反弹
+    dropout: float = 0.1
     use_batch_norm: bool = False
 
     max_epochs: int = 50
+    # 早停：连续多少个 epoch 没有提升就停止
     early_stop_patience: int = 10
-    # 可选：val_auc / val_loss
-    metric_for_best: str = "val_auc"
+    # 早停：最少训练多少个 epoch 才允许触发（避免过早停止）
+    early_stop_min_epochs: int = 5
+    # 可选：val_accuracy / val_auc / val_loss
+    # 你已保证类别绝对平衡，因此默认用 accuracy 做早停
+    metric_for_best: str = "val_accuracy"
+
+    # -----------------------------
+    # 学习率自适应（自动调参的一种：只调学习率）
+    # -----------------------------
+    # 当验证集 logloss 长时间不下降时，自动降低学习率，避免“看起来不降就提前停”
+    use_lr_scheduler: bool = True
+    lr_scheduler_patience: int = 3
+    lr_scheduler_factor: float = 0.5
+    lr_scheduler_min_lr: float = 1e-6
+    # 当学习率发生下降时，是否把早停的 bad 计数清零，给模型“再试一次”的机会
+    reset_early_stop_on_lr_change: bool = True
+
+    # -----------------------------
+    # 训练稳定性
+    # -----------------------------
+    # 梯度裁剪：>0 时启用（建议从 1.0 / 5.0 试起）
+    max_grad_norm: float = 0.0
 
     # -----------------------------
     # 其他
