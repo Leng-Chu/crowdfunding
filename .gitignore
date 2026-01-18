@@ -208,7 +208,4 @@ __marimo__/
 
 # Project data / outputs
 /data
-/experiments/runs/
-/experiments/logs/
-/models/
-/artifacts/
+/experiments
