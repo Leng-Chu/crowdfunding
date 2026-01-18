@@ -2,10 +2,14 @@
 """
 数据加载与预处理模块：
 - 读取 now_processed.csv
-- 按 year 划分：2023/2024 训练，2025 验证与测试
-- 删除 project_id
+- 删除 time（以及其它 drop_cols）
+- 按比例划分 train/val/test：
+  - 可按 CSV 原始顺序切分（适用于已按时间排序的数据）
+  - 或随机打乱后切分（可复现由 random_seed 控制）
 - category/country/currency 做 one-hot
 - duration_days/log_usd_goal 做标准化
+
+说明：默认假设输入 CSV 已经清洗干净、没有缺失值，且样本量足够，因此不做额外校验。
 """
 
 from __future__ import annotations
@@ -38,25 +42,19 @@ class TabularPreprocessor:
 
     def fit(self, df: pd.DataFrame) -> "TabularPreprocessor":
         """只用训练集拟合：类别全集、数值均值与标准差、输出特征名。"""
-        missing = [c for c in [*self.categorical_cols, *self.numeric_cols] if c not in df.columns]
-        if missing:
-            raise ValueError(f"预处理器 fit 缺少列：{missing}")
-
         self.categories_.clear()
         for col in self.categorical_cols:
-            values = df[col].dropna().unique().tolist()
+            values = df[col].unique().tolist()
             # 与 sklearn OneHotEncoder 的默认行为一致：对类别进行排序，保证稳定性
             self.categories_[col] = sorted(values, key=lambda x: str(x))
 
         self.numeric_mean_.clear()
         self.numeric_std_.clear()
         for col in self.numeric_cols:
-            x = pd.to_numeric(df[col], errors="coerce").to_numpy(dtype=np.float64)
-            mean = float(np.nanmean(x))
-            std = float(np.nanstd(x))
-            if not np.isfinite(mean):
-                mean = 0.0
-            if not np.isfinite(std) or std <= 0.0:
+            x = df[col].to_numpy(dtype=np.float64, copy=False)
+            mean = float(np.mean(x))
+            std = float(np.std(x))
+            if std <= 0.0:
                 std = 1.0
             self.numeric_mean_[col] = mean
             self.numeric_std_[col] = std
@@ -71,13 +69,6 @@ class TabularPreprocessor:
 
     def transform(self, df: pd.DataFrame) -> np.ndarray:
         """把 df 转成模型可用的 float32 特征矩阵。"""
-        if not self.feature_names_:
-            raise RuntimeError("预处理器尚未 fit，无法 transform。")
-
-        missing = [c for c in [*self.categorical_cols, *self.numeric_cols] if c not in df.columns]
-        if missing:
-            raise ValueError(f"预处理器 transform 缺少列：{missing}")
-
         work = df.copy()
 
         # 1) 类别 one-hot
@@ -101,13 +92,11 @@ class TabularPreprocessor:
 
         # 2) 数值标准化
         if self.numeric_cols:
-            num_df = work[self.numeric_cols].copy()
+            num_df = work[self.numeric_cols].astype(np.float32).copy()
             for col in self.numeric_cols:
-                x = pd.to_numeric(num_df[col], errors="coerce").to_numpy(dtype=np.float32)
                 mean = float(self.numeric_mean_.get(col, 0.0))
                 std = float(self.numeric_std_.get(col, 1.0))
-                x = np.where(np.isfinite(x), x, mean).astype(np.float32, copy=False)
-                num_df[col] = (x - mean) / std
+                num_df[col] = (num_df[col] - mean) / std
             num_arr = num_df.to_numpy(dtype=np.float32, copy=False)
         else:
             num_arr = np.zeros((len(work), 0), dtype=np.float32)
@@ -142,95 +131,42 @@ def load_metadata(csv_path: Path) -> pd.DataFrame:
     return df
 
 
-def _validate_and_clean(df: pd.DataFrame, cfg: MetaDLConfig) -> pd.DataFrame:
-    """清洗与类型转换：缺失值、类型、目标值范围等。"""
-    required_cols = (
-        ("year",)
-        + cfg.categorical_cols
-        + cfg.numeric_cols
-        + (cfg.target_col,)
-        + cfg.drop_cols
-    )
-    missing = [c for c in required_cols if c not in df.columns]
-    if missing:
-        raise ValueError(f"CSV 缺少必要列：{missing}")
-
-    work = df.copy()
-
-    # 数值列转为 float，无法解析的设为 NaN
-    for c in cfg.numeric_cols:
-        work[c] = pd.to_numeric(work[c], errors="coerce")
-
-    # year/target 转为 int，无法解析的设为 NaN
-    work["year"] = pd.to_numeric(work["year"], errors="coerce")
-    work[cfg.target_col] = pd.to_numeric(work[cfg.target_col], errors="coerce")
-
-    # 去掉关键列为空的样本
-    key_cols = ["year", *cfg.categorical_cols, *cfg.numeric_cols, cfg.target_col]
-    work = work.dropna(subset=key_cols).copy()
-
-    # 明确类型
-    work["year"] = work["year"].astype(int)
-    work[cfg.target_col] = work[cfg.target_col].astype(int)
-
-    # 只保留二分类标签 0/1
-    work = work[work[cfg.target_col].isin([0, 1])].copy()
-
-    return work
+def _drop_unused_cols(df: pd.DataFrame, cfg: MetaDLConfig) -> pd.DataFrame:
+    """删除不参与训练的列（如 project_id/time）。"""
+    if not cfg.drop_cols:
+        return df
+    return df.drop(columns=list(cfg.drop_cols), errors="ignore")
 
 
-def split_by_year(
+def split_by_ratio(
     df: pd.DataFrame, cfg: MetaDLConfig
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """按年划分数据集（2023/2024 -> train，2025 -> val/test）。"""
-    train_df = df[df["year"].isin(cfg.train_years)].copy()
-    eval_df = df[df["year"] == cfg.eval_year].copy()
+    """
+    按比例划分数据集：train/val/test。
 
-    if train_df.empty:
-        raise ValueError(f"训练集为空：year in {cfg.train_years}")
-    if eval_df.empty:
-        raise ValueError(f"验证/测试集为空：year == {cfg.eval_year}")
+    - 当 cfg.shuffle_before_split=False：按 CSV 原始顺序切分（不打乱）
+    - 当 cfg.shuffle_before_split=True：随机打乱后再切分
+    """
+    if bool(getattr(cfg, "shuffle_before_split", False)):
+        df = df.sample(frac=1.0, random_state=int(getattr(cfg, "random_seed", 42))).reset_index(drop=True)
 
-    if cfg.use_same_eval_for_val_and_test:
-        val_df = eval_df
-        test_df = eval_df
-        return train_df, val_df, test_df
+    n_total = int(len(df))
+    n_train = int(n_total * float(getattr(cfg, "train_ratio", 0.7)))
+    n_val = int(n_total * float(getattr(cfg, "val_ratio", 0.15)))
 
-    # 从 2025 再切一刀：验证/测试
-    if not (0.0 < cfg.val_ratio_in_eval < 1.0):
-        raise ValueError("val_ratio_in_eval 需要在 (0, 1) 之间")
-
-    # 在不依赖 sklearn 的前提下，做一个简单的分层随机划分
-    rng = np.random.default_rng(cfg.random_seed)
-    val_idx: List[int] = []
-    test_idx: List[int] = []
-
-    for label, group in eval_df.groupby(cfg.target_col):
-        idx = group.index.to_numpy()
-        rng.shuffle(idx)
-        # 当 val_ratio=0.5 时，用“精确对半”（每个类别各取一半）更符合“平均划分”的直觉
-        if abs(float(cfg.val_ratio_in_eval) - 0.5) < 1e-12:
-            n_val = int(len(idx) // 2)
-        else:
-            n_val = int(round(len(idx) * cfg.val_ratio_in_eval))
-        # 尽量保证 val/test 两边都有样本（当某类样本数 >= 2 时）
-        if len(idx) >= 2:
-            n_val = max(1, min(n_val, len(idx) - 1))
-        val_idx.extend(idx[:n_val].tolist())
-        test_idx.extend(idx[n_val:].tolist())
-
-    val_df = eval_df.loc[val_idx].sample(frac=1.0, random_state=cfg.random_seed).copy()
-    test_df = eval_df.loc[test_idx].sample(frac=1.0, random_state=cfg.random_seed).copy()
+    train_df = df.iloc[:n_train].copy()
+    val_df = df.iloc[n_train : n_train + n_val].copy()
+    test_df = df.iloc[n_train + n_val :].copy()
     return train_df, val_df, test_df
 
 
 def prepare_data(csv_path: Path, cfg: MetaDLConfig) -> PreparedData:
     """一站式：读取->清洗->划分->预处理->输出 numpy 数组。"""
     raw_df = load_metadata(csv_path)
-    df = _validate_and_clean(raw_df, cfg)
+    df = _drop_unused_cols(raw_df, cfg)
 
     # 划分
-    train_df, val_df, test_df = split_by_year(df, cfg)
+    train_df, val_df, test_df = split_by_ratio(df, cfg)
 
     # 丢弃无用列（比如 project_id）
     feature_cols = [*cfg.categorical_cols, *cfg.numeric_cols]

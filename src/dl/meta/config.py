@@ -2,7 +2,7 @@
 """
 配置文件：
 - 统一管理路径与超参数，避免在主程序里硬编码
-- 默认按你的需求：2023/2024 训练，2025 验证+测试
+- 默认按你的需求：按 CSV 的时间顺序做比例划分（不再依赖 year 列）
 """
 
 from __future__ import annotations
@@ -27,13 +27,11 @@ class MetaDLConfig:
     data_csv: str = "data/metadata/now_processed.csv"
     experiment_root: str = "experiments/meta_dl"
 
-    train_years: Tuple[int, ...] = (2023, 2024)
-    eval_year: int = 2025
-
     # -----------------------------
     # 列配置
     # -----------------------------
-    drop_cols: Tuple[str, ...] = ("project_id",)
+    # now_processed.csv 已无 year，新增 time（已按时间排序）；time 不参与训练，直接丢弃
+    drop_cols: Tuple[str, ...] = ("project_id", "time")
     categorical_cols: Tuple[str, ...] = ("category", "country", "currency")
     numeric_cols: Tuple[str, ...] = ("duration_days", "log_usd_goal")
     target_col: str = "state"
@@ -41,10 +39,15 @@ class MetaDLConfig:
     # -----------------------------
     # 划分策略
     # -----------------------------
-    # 你希望 2025 再划分为 val/test（而不是复用同一份数据）
-    use_same_eval_for_val_and_test: bool = False
-    # 从 2025 中平均划分：val_ratio_in_eval 给验证集比例，其余为测试集
-    val_ratio_in_eval: float = 0.5
+    # 训练/验证/测试比例（需要相加为 1.0）
+    train_ratio: float = 0.7
+    val_ratio: float = 0.15
+    test_ratio: float = 0.15
+
+    # 划分开关：
+    # - False：按 CSV 原始顺序切分（适用于按时间排序的数据）
+    # - True：随机打乱后再切分（可复现实验由 random_seed 控制）
+    shuffle_before_split: bool = False
 
     # -----------------------------
     # 模型（PyTorch MLP）超参
