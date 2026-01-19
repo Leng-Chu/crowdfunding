@@ -379,7 +379,7 @@ def _image_load_cache(cache_path: Path) -> PreparedImageData:
         )
 
 
-def _image_save_cache(cache_path: Path, prepared: PreparedImageData, meta: Dict[str, Any], compress: bool) -> None:
+def _image_save_cache(cache_path: Path, prepared: PreparedImageData, meta: Dict[str, Any]) -> None:
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     stats_json = json.dumps(prepared.stats, ensure_ascii=False)
     meta_json = json.dumps(meta, ensure_ascii=False, sort_keys=True)
@@ -405,10 +405,7 @@ def _image_save_cache(cache_path: Path, prepared: PreparedImageData, meta: Dict[
 
     tmp_path = cache_path.with_name(cache_path.name + ".tmp")
     with tmp_path.open("wb") as f:
-        if compress:
-            np.savez_compressed(f, **arrays)
-        else:
-            np.savez(f, **arrays)
+        np.savez(f, **arrays)
     tmp_path.replace(cache_path)
 
 
@@ -484,8 +481,6 @@ def prepare_image_data(
 ) -> PreparedImageData:
     """读 CSV -> 切分 -> 构建图片嵌入特征 -> 返回 numpy 数组。支持缓存。"""
     use_cache = bool(getattr(cfg, "use_cache", False)) and cache_dir is not None
-    refresh_cache = bool(getattr(cfg, "refresh_cache", False))
-    compress = bool(getattr(cfg, "cache_compress", False))
 
     cache_path: Path | None = None
     cache_key: str | None = None
@@ -493,7 +488,7 @@ def prepare_image_data(
         cache_dir.mkdir(parents=True, exist_ok=True)
         cache_key = _image_make_cache_key(csv_path, projects_root, cfg)
         cache_path = cache_dir / f"{cache_key}.npz"
-        if cache_path.exists() and not refresh_cache:
+        if cache_path.exists():
             try:
                 prepared = _image_load_cache(cache_path)
                 if logger is not None:
@@ -557,7 +552,7 @@ def prepare_image_data(
                 "projects_root": str(projects_root.as_posix()),
                 "config": cfg.to_dict(),
             }
-            _image_save_cache(cache_path, prepared, meta=meta, compress=compress)
+            _image_save_cache(cache_path, prepared, meta=meta)
             if logger is not None:
                 logger.info("已写入数据缓存：%s", str(cache_path))
         except Exception as e:
@@ -676,10 +671,9 @@ def _text_make_cache_key(csv_path: Path, projects_root: Path, cfg: MlpConfig) ->
     return hashlib.md5(raw).hexdigest()
 
 
-def _text_save_cache(path: Path, prepared: PreparedTextData, meta: Dict[str, Any], compress: bool) -> None:
+def _text_save_cache(path: Path, prepared: PreparedTextData, meta: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    savez = np.savez_compressed if compress else np.savez
-    savez(
+    np.savez(
         path,
         X_train=prepared.X_train,
         len_train=prepared.len_train,
@@ -793,8 +787,6 @@ def prepare_text_data(
 ) -> PreparedTextData:
     """读 CSV -> 切分 -> 构建文本嵌入特征 -> 返回 numpy 数组。支持缓存。"""
     use_cache = bool(getattr(cfg, "use_cache", False)) and cache_dir is not None
-    refresh_cache = bool(getattr(cfg, "refresh_cache", False))
-    compress = bool(getattr(cfg, "cache_compress", False))
 
     cache_path: Path | None = None
     cache_key: str | None = None
@@ -802,7 +794,7 @@ def prepare_text_data(
         cache_dir.mkdir(parents=True, exist_ok=True)
         cache_key = _text_make_cache_key(csv_path, projects_root, cfg)
         cache_path = cache_dir / f"{cache_key}.npz"
-        if cache_path.exists() and not refresh_cache:
+        if cache_path.exists():
             try:
                 prepared = _text_load_cache(cache_path)
                 if logger is not None:
@@ -866,7 +858,7 @@ def prepare_text_data(
                 "projects_root": str(projects_root.as_posix()),
                 "config": cfg.to_dict(),
             }
-            _text_save_cache(cache_path, prepared, meta=meta, compress=compress)
+            _text_save_cache(cache_path, prepared, meta=meta)
             if logger is not None:
                 logger.info("已写入数据缓存：%s", str(cache_path))
         except Exception as e:
@@ -974,7 +966,7 @@ def _mm_make_cache_key(
     return f"mlp_{h}"
 
 
-def _mm_save_cache(cache_path: Path, prepared: PreparedMultiModalData, meta: Dict[str, Any], compress: bool) -> None:
+def _mm_save_cache(cache_path: Path, prepared: PreparedMultiModalData, meta: Dict[str, Any]) -> None:
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     stats_json = json.dumps(prepared.stats, ensure_ascii=False)
     meta_json = json.dumps(meta, ensure_ascii=False, sort_keys=True)
@@ -1025,10 +1017,7 @@ def _mm_save_cache(cache_path: Path, prepared: PreparedMultiModalData, meta: Dic
 
     tmp_path = cache_path.with_name(cache_path.name + ".tmp")
     with tmp_path.open("wb") as f:
-        if compress:
-            np.savez_compressed(f, **arrays)
-        else:
-            np.savez(f, **arrays)
+        np.savez(f, **arrays)
     tmp_path.replace(cache_path)
 
 
@@ -1357,15 +1346,13 @@ def prepare_multimodal_data(
 ) -> PreparedMultiModalData:
     """两路/三路：读 CSV -> 切分 -> 构建所选分支特征 -> 返回 numpy 数组。支持缓存。"""
     use_cache = bool(getattr(cfg, "use_cache", False)) and cache_dir is not None
-    refresh_cache = bool(getattr(cfg, "refresh_cache", False))
-    compress = bool(getattr(cfg, "cache_compress", False))
 
     cache_path: Path | None = None
     if use_cache:
         cache_dir.mkdir(parents=True, exist_ok=True)
         cache_key = _mm_make_cache_key(csv_path, projects_root, cfg, use_meta=use_meta, use_image=use_image, use_text=use_text)
         cache_path = cache_dir / f"{cache_key}.npz"
-        if cache_path.exists() and not refresh_cache:
+        if cache_path.exists():
             try:
                 prepared = _mm_load_cache(cache_path)
                 if logger is not None:
@@ -1508,7 +1495,7 @@ def prepare_multimodal_data(
                 "modalities": {"meta": bool(use_meta), "image": bool(use_image), "text": bool(use_text)},
                 "config": cfg.to_dict(),
             }
-            _mm_save_cache(cache_path, prepared, meta=meta, compress=compress)
+            _mm_save_cache(cache_path, prepared, meta=meta)
             if logger is not None:
                 logger.info("已写入数据缓存：%s", str(cache_path))
         except Exception as e:

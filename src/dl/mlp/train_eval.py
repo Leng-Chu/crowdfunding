@@ -20,9 +20,36 @@ from config import MlpConfig
 from utils import compute_binary_metrics
 
 
-def _get_device() -> torch.device:
-    """优先使用 GPU（若可用），否则使用 CPU。"""
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def _get_device(cfg: MlpConfig) -> torch.device:
+    """根据配置选择 device：auto/cpu/cuda/cuda:N。"""
+    device_str = str(getattr(cfg, "device", "auto") or "auto").strip().lower()
+
+    if device_str in ("auto", ""):
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    if device_str == "cpu":
+        return torch.device("cpu")
+
+    if device_str == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError("当前环境不可用 CUDA，但配置了 device=cuda。")
+        return torch.device("cuda")
+
+    if device_str.startswith("cuda:"):
+        if not torch.cuda.is_available():
+            raise RuntimeError(f"当前环境不可用 CUDA，但配置了 device={device_str}。")
+
+        try:
+            gpu_index = int(device_str.split(":", 1)[1])
+        except Exception as e:
+            raise ValueError(f"不合法的 device={device_str!r}，期望形如 cuda:0 / cuda:1。") from e
+
+        n = int(torch.cuda.device_count())
+        if gpu_index < 0 or gpu_index >= n:
+            raise ValueError(f"device={device_str!r} 越界：当前可见 GPU 数量为 {n}。")
+        return torch.device(f"cuda:{gpu_index}")
+
+    raise ValueError(f"不支持的 device={device_str!r}，可选：auto/cpu/cuda/cuda:N。")
 
 
 # -----------------------------
@@ -62,7 +89,7 @@ def train_meta_with_early_stopping(
     logger,
 ) -> Tuple[nn.Module, List[Dict[str, Any]], Dict[str, Any]]:
     """对齐 meta：训练 + 早停。"""
-    device = _get_device()
+    device = _get_device(cfg)
     model = model.to(device)
 
     x_train = torch.from_numpy(np.asarray(X_train, dtype=np.float32))
@@ -201,7 +228,7 @@ def train_meta_with_early_stopping(
 
 
 def evaluate_meta_split(model: nn.Module, X: np.ndarray, y: np.ndarray, cfg: MlpConfig) -> Dict[str, Any]:
-    device = _get_device()
+    device = _get_device(cfg)
     model = model.to(device)
     prob = _positive_proba_tabular(model, X, device=device, batch_size=cfg.batch_size)
     metrics = compute_binary_metrics(y, prob, threshold=cfg.threshold)
@@ -253,7 +280,7 @@ def train_sequence_with_early_stopping(
     cfg: MlpConfig,
     logger,
 ) -> Tuple[nn.Module, List[Dict[str, Any]], Dict[str, Any]]:
-    device = _get_device()
+    device = _get_device(cfg)
     model = model.to(device)
 
     x_train = torch.from_numpy(np.asarray(X_train, dtype=np.float32))
@@ -400,7 +427,7 @@ def evaluate_sequence_split(
     y: np.ndarray,
     cfg: MlpConfig,
 ) -> Dict[str, Any]:
-    device = _get_device()
+    device = _get_device(cfg)
     model = model.to(device)
     prob = _positive_proba_sequence(model, X, lengths, device=device, batch_size=cfg.batch_size)
     metrics = compute_binary_metrics(y, prob, threshold=cfg.threshold)
@@ -494,7 +521,7 @@ def train_multimodal_with_early_stopping(
     cfg: MlpConfig,
     logger,
 ) -> Tuple[nn.Module, List[Dict[str, Any]], Dict[str, Any]]:
-    device = _get_device()
+    device = _get_device(cfg)
     model = model.to(device)
 
     tensors: List[torch.Tensor] = []
@@ -696,7 +723,7 @@ def evaluate_multimodal_split(
     y: np.ndarray,
     cfg: MlpConfig,
 ) -> Dict[str, Any]:
-    device = _get_device()
+    device = _get_device(cfg)
     model = model.to(device)
     prob = _positive_proba_multimodal(
         model,

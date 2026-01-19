@@ -9,23 +9,64 @@ mlp 主程序入口：
 - fusion_hidden_dim 会在构建模型时根据实际启用的分支自动计算
 
 运行（在项目根目录）：
-`conda run -n crowdfunding python src/dl/mlp/main.py`
+- 使用默认配置：
+  `conda run -n crowdfunding python src/dl/mlp/main.py`
+- 指定 run_name / 嵌入类型 / 显卡：
+  `conda run -n crowdfunding python src/dl/mlp/main.py --run-name clip --image-embedding-type clip --text-embedding-type clip --device cuda:0`
+- 使用第 2 张 GPU（等价写法）：
+  `conda run -n crowdfunding python src/dl/mlp/main.py --gpu 1`
 """
 
 from __future__ import annotations
 
+import argparse
 import pickle
 import platform
 import sys
+from dataclasses import replace
 from pathlib import Path
 
-import torch
-
 from config import MlpConfig
-from data import prepare_multimodal_data
-from model import build_multimodal_model
-from train_eval import evaluate_multimodal_split, train_multimodal_with_early_stopping
-from utils import make_run_dirs, plot_history, plot_roc, save_json, save_text, set_global_seed, setup_logger
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="mlp 训练入口（支持命令行覆盖部分配置）。")
+    parser.add_argument("--run-name", default=None, help="实验名称后缀，用于产物目录命名。")
+    parser.add_argument(
+        "--image-embedding-type",
+        default=None,
+        choices=["clip", "siglip", "resnet"],
+        help="图片嵌入类型（默认读取 config.py）。",
+    )
+    parser.add_argument(
+        "--text-embedding-type",
+        default=None,
+        choices=["bge", "clip", "siglip"],
+        help="文本嵌入类型（默认读取 config.py）。",
+    )
+    parser.add_argument(
+        "--device",
+        default=None,
+        help="训练设备：auto/cpu/cuda/cuda:0/cuda:1 ...（默认读取 config.py）。",
+    )
+    parser.add_argument(
+        "--gpu",
+        type=int,
+        default=None,
+        help="选择第 N 张 GPU（等价于 --device cuda:N；与 --device 互斥）。",
+    )
+    args = parser.parse_args(argv)
+
+    if args.device is not None and args.gpu is not None:
+        raise ValueError("参数冲突：--device 与 --gpu 不能同时使用。")
+
+    if args.gpu is not None and int(args.gpu) < 0:
+        raise ValueError("--gpu 需要是非负整数。")
+
+    if args.run_name is not None and not str(args.run_name).strip():
+        args.run_name = None
+
+    return args
 
 
 def _save_predictions_csv(
@@ -66,7 +107,28 @@ def _mode_name(use_meta: bool, use_image: bool, use_text: bool) -> str:
 
 
 def main() -> int:
+    args = _parse_args()
     cfg = MlpConfig()
+
+    import torch
+
+    from data import prepare_multimodal_data
+    from model import build_multimodal_model
+    from train_eval import evaluate_multimodal_split, train_multimodal_with_early_stopping
+    from utils import make_run_dirs, plot_history, plot_roc, save_json, save_text, set_global_seed, setup_logger
+
+    if args.run_name is not None:
+        cfg = replace(cfg, run_name=str(args.run_name))
+    if args.image_embedding_type is not None:
+        cfg = replace(cfg, image_embedding_type=str(args.image_embedding_type))
+    if args.text_embedding_type is not None:
+        cfg = replace(cfg, text_embedding_type=str(args.text_embedding_type))
+
+    if args.device is not None:
+        cfg = replace(cfg, device=str(args.device))
+    elif args.gpu is not None:
+        cfg = replace(cfg, device=f"cuda:{int(args.gpu)}")
+
     use_meta = bool(cfg.use_meta)
     use_image = bool(cfg.use_image)
     use_text = bool(cfg.use_text)
@@ -92,6 +154,7 @@ def main() -> int:
     logger.info("python=%s | 平台=%s", sys.version.replace("\n", " "), platform.platform())
     logger.info("data_csv=%s", str(csv_path))
     logger.info("projects_root=%s", str(projects_root))
+    logger.info("device=%s", str(getattr(cfg, "device", "auto")))
     logger.info(
         "嵌入类型：image=%s text=%s | 缺失策略=%s",
         cfg.image_embedding_type,
@@ -99,10 +162,8 @@ def main() -> int:
         cfg.missing_strategy,
     )
     logger.info(
-        "缓存：use_cache=%s refresh_cache=%s compress=%s | cache_dir=%s",
+        "缓存：use_cache=%s | cache_dir=%s（默认不刷新、不压缩）",
         bool(getattr(cfg, "use_cache", False)),
-        bool(getattr(cfg, "refresh_cache", False)),
-        bool(getattr(cfg, "cache_compress", False)),
         str(cache_dir),
     )
 

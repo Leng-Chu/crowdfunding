@@ -3,13 +3,15 @@
 mlp 配置（单文件 / 单类）：
 - 三路输入：metadata / image / text
 - 通过 use_meta / use_image / use_text 三个开关自由组合分支
-
-与 `src/dl/mlp/config.py` 保持同一风格：
-- 不再拆成多个配置类，避免冗余
-- `fusion_hidden_dim` 不在配置中手填，而是在代码里根据实际启用的分支自动计算
+- `fusion_hidden_dim` 在代码里根据实际启用的分支自动计算
 
 运行方式（在项目根目录）：
-`conda run -n crowdfunding python src/dl/mlp/main.py`
+- 使用默认配置：
+  `conda run -n crowdfunding python src/dl/mlp/main.py`
+- 指定 run_name / 嵌入类型 / 显卡：
+  `conda run -n crowdfunding python src/dl/mlp/main.py --run-name clip --image-embedding-type clip --text-embedding-type clip --device cuda:0`
+- 强制使用 CPU：
+  `conda run -n crowdfunding python src/dl/mlp/main.py --device cpu`
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ class MlpConfig:
     # 运行相关
     # -----------------------------
     run_name: Optional[str] = "clip"
+    device: str = "auto"  # auto / cpu / cuda / cuda:0 / cuda:1 ...
 
     # -----------------------------
     # 数据与路径
@@ -83,11 +86,9 @@ class MlpConfig:
     # -----------------------------
     use_cache: bool = True
     cache_dir: str = "experiments/mlp/_cache"
-    refresh_cache: bool = False
-    cache_compress: bool = False
 
     # -----------------------------
-    # 模型结构超参（默认与 mlp 对齐）
+    # 模型结构超参
     # -----------------------------
     # meta 分支
     meta_hidden_dim: int = 256
