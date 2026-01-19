@@ -23,14 +23,14 @@ class MlpNewConfig:
     # -----------------------------
     # 运行相关
     # -----------------------------
-    run_name: Optional[str] = None
+    run_name: Optional[str] = "clip"
 
     # -----------------------------
     # 数据与路径
     # -----------------------------
     data_csv: str = "data/metadata/now_processed.csv"
     projects_root: str = "data/projects/now"
-    experiment_root: str = "experiments/mlp_new"
+    experiment_root: str = "experiments/mlp"
 
     # -----------------------------
     # 分支开关
@@ -59,15 +59,15 @@ class MlpNewConfig:
     # -----------------------------
     # 嵌入配置（图片）
     # -----------------------------
-    image_embedding_type: str = "siglip"  # clip / siglip / resnet
+    image_embedding_type: str = "clip"  # clip / siglip / resnet
     max_image_vectors: int = 20
     image_select_strategy: str = "first"  # first / random
 
     # -----------------------------
     # 嵌入配置（文本）
     # -----------------------------
-    text_embedding_type: str = "bge"  # bge / clip / siglip
-    max_text_vectors: int = 200
+    text_embedding_type: str = "clip"  # bge / clip / siglip
+    max_text_vectors: int = 20
     text_select_strategy: str = "first"  # first / random
 
     # -----------------------------
@@ -82,7 +82,7 @@ class MlpNewConfig:
     # 数据缓存（加速：避免每次逐个 np.load）
     # -----------------------------
     use_cache: bool = True
-    cache_dir: str = "experiments/mlp_new/_cache"
+    cache_dir: str = "experiments/mlp/_cache"
     refresh_cache: bool = False
     cache_compress: bool = False
 
@@ -114,7 +114,7 @@ class MlpNewConfig:
     # -----------------------------
     alpha: float = 5e-4  # weight_decay（L2）
     learning_rate_init: float = 3e-4
-    batch_size: int = 256
+    batch_size: int = 512
 
     max_epochs: int = 100
     early_stop_patience: int = 10
