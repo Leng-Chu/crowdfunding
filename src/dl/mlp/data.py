@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -32,6 +32,77 @@ def _split_by_ratio(
     val_df = df.iloc[n_train : n_train + n_val].copy()
     test_df = df.iloc[n_train + n_val :].copy()
     return train_df, val_df, test_df
+
+
+def _get_split_mode(cfg: MlpConfig) -> str:
+    """获取 split_mode（ratio/kfold），兼容旧规则。"""
+    mode = str(getattr(cfg, "split_mode", "ratio") or "ratio").strip().lower()
+    return mode or "ratio"
+
+
+def _kfold_split_indices(
+    n_total: int,
+    n_splits: int,
+    shuffle: bool,
+    seed: int,
+    y: np.ndarray | None = None,
+    stratify: bool = True,
+) -> List[Tuple[np.ndarray, np.ndarray]]:
+    """
+    轻量级 KFold/StratifiedKFold（不依赖 sklearn）。
+
+    返回：[(train_idx, test_idx), ...]，其中 train_idx/test_idx 都是一维 int64 索引数组。
+    """
+    n_total = int(n_total)
+    n_splits = int(n_splits)
+    if n_splits < 2:
+        raise ValueError(f"k_folds 需要 >= 2，当前={n_splits}")
+    if n_total <= 0:
+        raise ValueError("数据集为空，无法做 K 折切分。")
+    if n_total < n_splits:
+        raise ValueError(f"k_folds={n_splits} 大于样本数 {n_total}，无法分折。")
+
+    rng = np.random.RandomState(int(seed))
+    all_idx = np.arange(n_total, dtype=np.int64)
+
+    folds: List[np.ndarray] = []
+    use_stratify = bool(stratify) and y is not None
+    if use_stratify:
+        y = np.asarray(y).astype(int).reshape(-1)
+        if int(y.shape[0]) != int(n_total):
+            raise ValueError(f"y 长度不匹配：{y.shape[0]} vs {n_total}")
+
+        buckets: List[List[int]] = [[] for _ in range(n_splits)]
+        for cls in (0, 1):
+            cls_idx = all_idx[y == int(cls)].copy()
+            if bool(shuffle):
+                rng.shuffle(cls_idx)
+            for j, idx in enumerate(cls_idx.tolist()):
+                buckets[j % n_splits].append(int(idx))
+
+        for b in buckets:
+            arr = np.asarray(b, dtype=np.int64)
+            if arr.size > 1 and bool(shuffle):
+                rng.shuffle(arr)
+            folds.append(arr)
+    else:
+        perm = all_idx.copy()
+        if bool(shuffle):
+            rng.shuffle(perm)
+        folds = [np.asarray(x, dtype=np.int64) for x in np.array_split(perm, n_splits)]
+
+    pairs: List[Tuple[np.ndarray, np.ndarray]] = []
+    for test_idx in folds:
+        if int(test_idx.size) <= 0:
+            continue
+        mask = np.ones((n_total,), dtype=bool)
+        mask[test_idx] = False
+        train_idx = all_idx[mask]
+        pairs.append((train_idx.astype(np.int64, copy=False), test_idx.astype(np.int64, copy=False)))
+
+    if len(pairs) != int(n_splits):
+        raise RuntimeError(f"K 折切分异常：期望 {n_splits} 折，实际得到 {len(pairs)} 折（可能存在空折）。")
+    return pairs
 
 
 def _normalize_project_id(value: Any) -> str:
@@ -332,6 +403,7 @@ def _image_load_embedding_stack(project_dir: Path, cfg: MlpConfig) -> Tuple[Opti
 
 def _image_make_cache_key(csv_path: Path, projects_root: Path, cfg: MlpConfig) -> str:
     stat = csv_path.stat()
+    split_mode = _get_split_mode(cfg)
     payload = {
         "cache_version": _IMAGE_CACHE_VERSION,
         "data_csv": str(csv_path.as_posix()),
@@ -340,11 +412,15 @@ def _image_make_cache_key(csv_path: Path, projects_root: Path, cfg: MlpConfig) -
         "projects_root": str(projects_root.as_posix()),
         "embedding_type": str(getattr(cfg, "image_embedding_type", "")),
         "missing_strategy": str(getattr(cfg, "missing_strategy", "")),
+        "split_mode": split_mode,
         "train_ratio": float(getattr(cfg, "train_ratio", 0.7)),
         "val_ratio": float(getattr(cfg, "val_ratio", 0.15)),
         "test_ratio": float(getattr(cfg, "test_ratio", 0.15)),
         "shuffle_before_split": bool(getattr(cfg, "shuffle_before_split", False)),
         "random_seed": int(getattr(cfg, "random_seed", 42)),
+        "k_folds": int(getattr(cfg, "k_folds", 5)),
+        "kfold_shuffle": bool(getattr(cfg, "kfold_shuffle", True)),
+        "kfold_stratify": bool(getattr(cfg, "kfold_stratify", True)),
         "max_image_vectors": int(getattr(cfg, "max_image_vectors", 0)),
         "image_select_strategy": str(getattr(cfg, "image_select_strategy", "first")),
     }
@@ -560,6 +636,231 @@ def prepare_image_data(
     return prepared
 
 
+def _mm_prepare_from_splits(
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    projects_root: Path,
+    cfg: MlpConfig,
+    use_meta: bool,
+    use_image: bool,
+    use_text: bool,
+) -> PreparedMultiModalData:
+    """在已切好的 df 上构建 multimodal 特征（支持 val 复用 train）。"""
+    preprocessor = None
+    feature_names: List[str] = []
+    meta_dim = 0
+    X_meta_train_all = None
+    X_meta_val_all = None
+    X_meta_test_all = None
+
+    if use_meta:
+        feature_cols = [*cfg.categorical_cols, *cfg.numeric_cols]
+        preprocessor = TabularPreprocessor(
+            categorical_cols=list(cfg.categorical_cols),
+            numeric_cols=list(cfg.numeric_cols),
+        )
+        X_meta_train_all = preprocessor.fit_transform(train_df[feature_cols])
+        X_meta_val_all = X_meta_train_all if val_df is train_df else preprocessor.transform(val_df[feature_cols])
+        X_meta_test_all = preprocessor.transform(test_df[feature_cols])
+        feature_names = preprocessor.get_feature_names()
+        meta_dim = int(X_meta_train_all.shape[1])
+
+    (
+        X_meta_train,
+        X_img_train,
+        len_img_train,
+        X_txt_train,
+        len_txt_train,
+        y_train,
+        train_ids,
+        train_stats,
+        img_dim,
+        txt_dim,
+        max_img_train,
+        max_txt_train,
+    ) = _mm_build_features_for_split(train_df, X_meta_train_all, projects_root, cfg, use_meta, use_image, use_text)
+    (
+        X_meta_val,
+        X_img_val,
+        len_img_val,
+        X_txt_val,
+        len_txt_val,
+        y_val,
+        val_ids,
+        val_stats,
+        img_dim_val,
+        txt_dim_val,
+        max_img_val,
+        max_txt_val,
+    ) = _mm_build_features_for_split(val_df, X_meta_val_all, projects_root, cfg, use_meta, use_image, use_text)
+    (
+        X_meta_test,
+        X_img_test,
+        len_img_test,
+        X_txt_test,
+        len_txt_test,
+        y_test,
+        test_ids,
+        test_stats,
+        img_dim_test,
+        txt_dim_test,
+        max_img_test,
+        max_txt_test,
+    ) = _mm_build_features_for_split(test_df, X_meta_test_all, projects_root, cfg, use_meta, use_image, use_text)
+
+    if use_image and (int(img_dim_val) != int(img_dim) or int(img_dim_test) != int(img_dim)):
+        raise ValueError(f"image_embedding_dim 不一致：train={img_dim} val={img_dim_val} test={img_dim_test}")
+    if use_text and (int(txt_dim_val) != int(txt_dim) or int(txt_dim_test) != int(txt_dim)):
+        raise ValueError(f"text_embedding_dim 不一致：train={txt_dim} val={txt_dim_val} test={txt_dim_test}")
+
+    stats: Dict[str, int] = {}
+    for s in (train_stats, val_stats, test_stats):
+        for k, v in s.items():
+            stats[k] = int(stats.get(k, 0) + int(v))
+
+    return PreparedMultiModalData(
+        y_train=y_train,
+        train_project_ids=train_ids,
+        y_val=y_val,
+        val_project_ids=val_ids,
+        y_test=y_test,
+        test_project_ids=test_ids,
+        X_meta_train=X_meta_train,
+        X_meta_val=X_meta_val,
+        X_meta_test=X_meta_test,
+        meta_dim=int(meta_dim) if use_meta else 0,
+        preprocessor=preprocessor,
+        feature_names=feature_names,
+        X_image_train=X_img_train,
+        len_image_train=len_img_train,
+        X_image_val=X_img_val,
+        len_image_val=len_img_val,
+        X_image_test=X_img_test,
+        len_image_test=len_img_test,
+        image_embedding_dim=int(img_dim) if use_image else 0,
+        max_image_seq_len=int(max(max_img_train, max_img_val, max_img_test)) if use_image else 0,
+        X_text_train=X_txt_train,
+        len_text_train=len_txt_train,
+        X_text_val=X_txt_val,
+        len_text_val=len_txt_val,
+        X_text_test=X_txt_test,
+        len_text_test=len_txt_test,
+        text_embedding_dim=int(txt_dim) if use_text else 0,
+        max_text_seq_len=int(max(max_txt_train, max_txt_val, max_txt_test)) if use_text else 0,
+        stats=stats,
+    )
+
+
+def iter_multimodal_kfold_data(
+    csv_path: Path,
+    projects_root: Path,
+    cfg: MlpConfig,
+    use_meta: bool,
+    use_image: bool,
+    use_text: bool,
+    cache_dir: Path | None = None,
+    logger=None,
+) -> Iterator[Tuple[int, PreparedMultiModalData]]:
+    """
+    K 折交叉验证数据迭代器（每折仅切分 train/test；val 复用 train）。
+
+    - cfg.split_mode 必须是 kfold
+    - cfg.k_fold_index=-1：遍历全部折；>=0：仅返回指定折
+    """
+    mode = _get_split_mode(cfg)
+    if mode != "kfold":
+        raise ValueError(f"iter_multimodal_kfold_data 仅支持 split_mode=kfold，当前={mode!r}")
+
+    raw_df = _mm_load_dataframe(csv_path)
+    if cfg.id_col not in raw_df.columns:
+        raise ValueError(f"CSV 缺少 id_col={cfg.id_col!r}")
+    if cfg.target_col not in raw_df.columns:
+        raise ValueError(f"CSV 缺少 target_col={cfg.target_col!r}")
+
+    y = None
+    if bool(getattr(cfg, "kfold_stratify", True)):
+        y = _encode_binary_target(raw_df[cfg.target_col])
+
+    pairs = _kfold_split_indices(
+        n_total=int(len(raw_df)),
+        n_splits=int(getattr(cfg, "k_folds", 5)),
+        shuffle=bool(getattr(cfg, "kfold_shuffle", True)),
+        seed=int(getattr(cfg, "random_seed", 42)),
+        y=y,
+        stratify=bool(getattr(cfg, "kfold_stratify", True)),
+    )
+
+    only_fold = int(getattr(cfg, "k_fold_index", -1))
+    selected = range(len(pairs)) if only_fold < 0 else [only_fold]
+    for fold_idx in selected:
+        if fold_idx < 0 or fold_idx >= len(pairs):
+            raise ValueError(f"k_fold_index 越界：{fold_idx}，有效范围 0..{len(pairs)-1}")
+
+        train_idx, test_idx = pairs[int(fold_idx)]
+        train_df = raw_df.iloc[train_idx].copy()
+        test_df = raw_df.iloc[test_idx].copy()
+        val_df = train_df  # 仅 train/test 动态切分；val 复用 train
+
+        use_cache = bool(getattr(cfg, "use_cache", False)) and cache_dir is not None
+        cache_path: Path | None = None
+        if use_cache:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            cache_key = _mm_make_cache_key(
+                csv_path,
+                projects_root,
+                cfg,
+                use_meta=use_meta,
+                use_image=use_image,
+                use_text=use_text,
+                fold_index=int(fold_idx),
+            )
+            cache_path = cache_dir / f"{cache_key}.npz"
+            if cache_path.exists():
+                try:
+                    prepared = _mm_load_cache(cache_path)
+                    if logger is not None:
+                        logger.info("fold=%d 使用数据缓存：%s", int(fold_idx), str(cache_path))
+                    yield int(fold_idx), prepared
+                    continue
+                except Exception as e:
+                    if logger is not None:
+                        logger.warning("fold=%d 读取缓存失败，将重新构建：%s", int(fold_idx), e)
+
+        prepared = _mm_prepare_from_splits(
+            train_df=train_df,
+            val_df=val_df,
+            test_df=test_df,
+            projects_root=projects_root,
+            cfg=cfg,
+            use_meta=use_meta,
+            use_image=use_image,
+            use_text=use_text,
+        )
+
+        if use_cache and cache_path is not None:
+            try:
+                meta = {
+                    "cache_version": _MM_CACHE_VERSION,
+                    "cache_key": cache_path.stem,
+                    "csv_path": str(csv_path.as_posix()),
+                    "projects_root": str(projects_root.as_posix()),
+                    "split_mode": "kfold",
+                    "fold_index": int(fold_idx),
+                    "k_folds": int(getattr(cfg, "k_folds", 5)),
+                    "modalities": {"meta": bool(use_meta), "image": bool(use_image), "text": bool(use_text)},
+                    "config": cfg.to_dict(),
+                }
+                _mm_save_cache(cache_path, prepared, meta=meta)
+                if logger is not None:
+                    logger.info("fold=%d 已写入数据缓存：%s", int(fold_idx), str(cache_path))
+            except Exception as e:
+                if logger is not None:
+                    logger.warning("fold=%d 写入缓存失败：%s", int(fold_idx), e)
+
+        yield int(fold_idx), prepared
+
+
 # -----------------------------
 # text（单分支，对齐 src/dl/text）
 # -----------------------------
@@ -649,6 +950,7 @@ def _text_load_embedding_stack(project_dir: Path, cfg: MlpConfig) -> Tuple[Optio
 
 
 def _text_make_cache_key(csv_path: Path, projects_root: Path, cfg: MlpConfig) -> str:
+    split_mode = _get_split_mode(cfg)
     payload = {
         "cache_version": _TEXT_CACHE_VERSION,
         "csv": str(csv_path.as_posix()),
@@ -658,11 +960,15 @@ def _text_make_cache_key(csv_path: Path, projects_root: Path, cfg: MlpConfig) ->
         "text_select_strategy": str(getattr(cfg, "text_select_strategy", "")),
         "missing_strategy": str(getattr(cfg, "missing_strategy", "")),
         "split": {
+            "split_mode": split_mode,
             "train_ratio": float(getattr(cfg, "train_ratio", 0.7)),
             "val_ratio": float(getattr(cfg, "val_ratio", 0.15)),
             "test_ratio": float(getattr(cfg, "test_ratio", 0.15)),
             "shuffle_before_split": bool(getattr(cfg, "shuffle_before_split", False)),
             "random_seed": int(getattr(cfg, "random_seed", 42)),
+            "k_folds": int(getattr(cfg, "k_folds", 5)),
+            "kfold_shuffle": bool(getattr(cfg, "kfold_shuffle", True)),
+            "kfold_stratify": bool(getattr(cfg, "kfold_stratify", True)),
         },
     }
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
@@ -925,8 +1231,10 @@ def _mm_make_cache_key(
     use_meta: bool,
     use_image: bool,
     use_text: bool,
+    fold_index: int | None = None,
 ) -> str:
     stat = csv_path.stat()
+    split_mode = _get_split_mode(cfg)
     payload = {
         "cache_version": _MM_CACHE_VERSION,
         "data_csv": str(csv_path.as_posix()),
@@ -941,11 +1249,16 @@ def _mm_make_cache_key(
             "numeric_cols": list(cfg.numeric_cols) if use_meta else [],
         },
         "split": {
+            "split_mode": split_mode,
             "train_ratio": float(getattr(cfg, "train_ratio", 0.7)),
             "val_ratio": float(getattr(cfg, "val_ratio", 0.15)),
             "test_ratio": float(getattr(cfg, "test_ratio", 0.15)),
             "shuffle_before_split": bool(getattr(cfg, "shuffle_before_split", False)),
             "random_seed": int(getattr(cfg, "random_seed", 42)),
+            "k_folds": int(getattr(cfg, "k_folds", 5)),
+            "kfold_shuffle": bool(getattr(cfg, "kfold_shuffle", True)),
+            "kfold_stratify": bool(getattr(cfg, "kfold_stratify", True)),
+            "fold_index": None if fold_index is None else int(fold_index),
         },
         "image": {
             "embedding_type": str(getattr(cfg, "image_embedding_type", "")),
