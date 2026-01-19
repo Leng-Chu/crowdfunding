@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-数据加载与特征构建（mlp_new）：
+数据加载与特征构建（mlp）：
 - 单分支模式：对齐 src/dl/meta、src/dl/image、src/dl/text
 - 多分支模式：以 src/dl/mlp 为基础，并根据开关只构建所需分支
 """
@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from config import MlpNewConfig
+from config import MlpConfig
 
 
 def _split_by_ratio(
@@ -196,7 +196,7 @@ class PreparedMetaData:
     feature_names: List[str]
 
 
-def prepare_meta_data(csv_path: Path, cfg: MlpNewConfig) -> PreparedMetaData:  # noqa: D401
+def prepare_meta_data(csv_path: Path, cfg: MlpConfig) -> PreparedMetaData:  # noqa: D401
     """对齐 meta：读取->切分->one-hot+标准化->输出 numpy。"""
     raw_df = pd.read_csv(csv_path)
     if cfg.target_col not in raw_df.columns:
@@ -270,11 +270,11 @@ class PreparedImageData:
     stats: Dict[str, int]
 
 
-def _image_load_labels(csv_path: Path, cfg: MlpNewConfig) -> pd.DataFrame:
+def _image_load_labels(csv_path: Path, cfg: MlpConfig) -> pd.DataFrame:
     return pd.read_csv(csv_path, usecols=[cfg.id_col, cfg.target_col])
 
 
-def _image_load_embedding_stack(project_dir: Path, cfg: MlpNewConfig) -> Tuple[Optional[np.ndarray], int, int]:
+def _image_load_embedding_stack(project_dir: Path, cfg: MlpConfig) -> Tuple[Optional[np.ndarray], int, int]:
     """
     读取并堆叠 cover + image 的向量集合：
     - cover 必须存在
@@ -332,7 +332,7 @@ def _image_load_embedding_stack(project_dir: Path, cfg: MlpNewConfig) -> Tuple[O
     return seq, int(missing_image), 0
 
 
-def _image_make_cache_key(csv_path: Path, projects_root: Path, cfg: MlpNewConfig) -> str:
+def _image_make_cache_key(csv_path: Path, projects_root: Path, cfg: MlpConfig) -> str:
     stat = csv_path.stat()
     payload = {
         "cache_version": _IMAGE_CACHE_VERSION,
@@ -415,7 +415,7 @@ def _image_save_cache(cache_path: Path, prepared: PreparedImageData, meta: Dict[
 def _image_build_features_for_split(
     df_split: pd.DataFrame,
     projects_root: Path,
-    cfg: MlpNewConfig,
+    cfg: MlpConfig,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List[str], Dict[str, int], int, int]:
     project_ids: List[str] = [_normalize_project_id(v) for v in df_split[cfg.id_col].tolist()]
     y_all = _encode_binary_target(df_split[cfg.target_col])
@@ -478,7 +478,7 @@ def _image_build_features_for_split(
 def prepare_image_data(
     csv_path: Path,
     projects_root: Path,
-    cfg: MlpNewConfig,
+    cfg: MlpConfig,
     cache_dir: Path | None = None,
     logger=None,
 ) -> PreparedImageData:
@@ -597,11 +597,11 @@ class PreparedTextData:
     stats: Dict[str, int]
 
 
-def _text_load_labels(csv_path: Path, cfg: MlpNewConfig) -> pd.DataFrame:
+def _text_load_labels(csv_path: Path, cfg: MlpConfig) -> pd.DataFrame:
     return pd.read_csv(csv_path, usecols=[cfg.id_col, cfg.target_col])
 
 
-def _text_load_embedding_stack(project_dir: Path, cfg: MlpNewConfig) -> Tuple[Optional[np.ndarray], int, int]:
+def _text_load_embedding_stack(project_dir: Path, cfg: MlpConfig) -> Tuple[Optional[np.ndarray], int, int]:
     """
     读取并堆叠 title_blurb + text 的向量集合：
     - title_blurb 必须存在
@@ -655,7 +655,7 @@ def _text_load_embedding_stack(project_dir: Path, cfg: MlpNewConfig) -> Tuple[Op
     return seq.astype(np.float32, copy=False), int(missing_text), 0
 
 
-def _text_make_cache_key(csv_path: Path, projects_root: Path, cfg: MlpNewConfig) -> str:
+def _text_make_cache_key(csv_path: Path, projects_root: Path, cfg: MlpConfig) -> str:
     payload = {
         "cache_version": _TEXT_CACHE_VERSION,
         "csv": str(csv_path.as_posix()),
@@ -725,7 +725,7 @@ def _text_load_cache(path: Path) -> PreparedTextData:
 def _text_build_features_for_split(
     df: pd.DataFrame,
     projects_root: Path,
-    cfg: MlpNewConfig,
+    cfg: MlpConfig,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List[str], Dict[str, int], int, int]:
     ids = [_normalize_project_id(v) for v in df[cfg.id_col].tolist()]
     y = _encode_binary_target(df[cfg.target_col])
@@ -787,7 +787,7 @@ def _text_build_features_for_split(
 def prepare_text_data(
     csv_path: Path,
     projects_root: Path,
-    cfg: MlpNewConfig,
+    cfg: MlpConfig,
     cache_dir: Path | None = None,
     logger=None,
 ) -> PreparedTextData:
@@ -931,7 +931,7 @@ def _mm_load_dataframe(csv_path: Path) -> pd.DataFrame:
 def _mm_make_cache_key(
     csv_path: Path,
     projects_root: Path,
-    cfg: MlpNewConfig,
+    cfg: MlpConfig,
     use_meta: bool,
     use_image: bool,
     use_text: bool,
@@ -971,7 +971,7 @@ def _mm_make_cache_key(
     }
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
     h = hashlib.sha1(raw).hexdigest()[:16]
-    return f"mlp_new_{h}"
+    return f"mlp_{h}"
 
 
 def _mm_save_cache(cache_path: Path, prepared: PreparedMultiModalData, meta: Dict[str, Any], compress: bool) -> None:
@@ -1096,7 +1096,7 @@ def _mm_load_cache(cache_path: Path) -> PreparedMultiModalData:
         )
 
 
-def _mm_load_image_embedding_stack(project_dir: Path, cfg: MlpNewConfig) -> Tuple[Optional[np.ndarray], int, int]:
+def _mm_load_image_embedding_stack(project_dir: Path, cfg: MlpConfig) -> Tuple[Optional[np.ndarray], int, int]:
     emb_type = (cfg.image_embedding_type or "").strip().lower()
     if emb_type not in {"clip", "siglip", "resnet"}:
         raise ValueError(f"不支持的 image_embedding_type={cfg.image_embedding_type!r}，可选：clip/siglip/resnet")
@@ -1145,7 +1145,7 @@ def _mm_load_image_embedding_stack(project_dir: Path, cfg: MlpNewConfig) -> Tupl
     return seq, int(missing_image), 0
 
 
-def _mm_load_text_embedding_stack(project_dir: Path, cfg: MlpNewConfig) -> Tuple[Optional[np.ndarray], int, int]:
+def _mm_load_text_embedding_stack(project_dir: Path, cfg: MlpConfig) -> Tuple[Optional[np.ndarray], int, int]:
     emb_type = (cfg.text_embedding_type or "").strip().lower()
     if emb_type not in {"bge", "clip", "siglip"}:
         raise ValueError(f"不支持的 text_embedding_type={cfg.text_embedding_type!r}，可选：bge/clip/siglip")
@@ -1200,7 +1200,7 @@ def _mm_build_features_for_split(
     df_split: pd.DataFrame,
     X_meta_all: Optional[np.ndarray],
     projects_root: Path,
-    cfg: MlpNewConfig,
+    cfg: MlpConfig,
     use_meta: bool,
     use_image: bool,
     use_text: bool,
@@ -1348,7 +1348,7 @@ def _mm_build_features_for_split(
 def prepare_multimodal_data(
     csv_path: Path,
     projects_root: Path,
-    cfg: MlpNewConfig,
+    cfg: MlpConfig,
     use_meta: bool,
     use_image: bool,
     use_text: bool,

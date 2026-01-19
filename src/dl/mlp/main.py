@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-mlp_new 主程序入口：
+mlp 主程序入口：
 - 三路输入：metadata / image / text
 - 通过 use_meta / use_image / use_text 三个开关自由组合分支
 
 说明：
-- 本目录代码不依赖 `src/dl/mlp_new` 之外的其他训练代码，可独立运行
+- 本目录代码不依赖 `src/dl/mlp` 之外的其他训练代码，可独立运行
 - fusion_hidden_dim 会在构建模型时根据实际启用的分支自动计算
 
 运行（在项目根目录）：
-`conda run -n crowdfunding python src/dl/mlp_new/main.py`
+`conda run -n crowdfunding python src/dl/mlp/main.py`
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from pathlib import Path
 
 import torch
 
-from config import MlpNewConfig
+from config import MlpConfig
 from data import prepare_multimodal_data
 from model import build_multimodal_model
 from train_eval import evaluate_multimodal_split, train_multimodal_with_early_stopping
@@ -66,7 +66,7 @@ def _mode_name(use_meta: bool, use_image: bool, use_text: bool) -> str:
 
 
 def main() -> int:
-    cfg = MlpNewConfig()
+    cfg = MlpConfig()
     use_meta = bool(cfg.use_meta)
     use_image = bool(cfg.use_image)
     use_text = bool(cfg.use_text)

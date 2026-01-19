@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-训练与评估（mlp_new）：
+训练与评估（mlp）：
 - meta：MLP（无序列长度）
 - image/text：1D CNN（带 lengths 做 mask）
 - multimodal：可选分支融合（meta/image/text 任意组合）
@@ -16,7 +16,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from config import MlpNewConfig
+from config import MlpConfig
 from utils import compute_binary_metrics
 
 
@@ -58,7 +58,7 @@ def train_meta_with_early_stopping(
     y_train: np.ndarray,
     X_val: np.ndarray,
     y_val: np.ndarray,
-    cfg: MlpNewConfig,
+    cfg: MlpConfig,
     logger,
 ) -> Tuple[nn.Module, List[Dict[str, Any]], Dict[str, Any]]:
     """对齐 meta：训练 + 早停。"""
@@ -200,7 +200,7 @@ def train_meta_with_early_stopping(
     return model, history, best_info
 
 
-def evaluate_meta_split(model: nn.Module, X: np.ndarray, y: np.ndarray, cfg: MlpNewConfig) -> Dict[str, Any]:
+def evaluate_meta_split(model: nn.Module, X: np.ndarray, y: np.ndarray, cfg: MlpConfig) -> Dict[str, Any]:
     device = _get_device()
     model = model.to(device)
     prob = _positive_proba_tabular(model, X, device=device, batch_size=cfg.batch_size)
@@ -250,7 +250,7 @@ def train_sequence_with_early_stopping(
     X_val: np.ndarray,
     len_val: np.ndarray,
     y_val: np.ndarray,
-    cfg: MlpNewConfig,
+    cfg: MlpConfig,
     logger,
 ) -> Tuple[nn.Module, List[Dict[str, Any]], Dict[str, Any]]:
     device = _get_device()
@@ -398,7 +398,7 @@ def evaluate_sequence_split(
     X: np.ndarray,
     lengths: np.ndarray,
     y: np.ndarray,
-    cfg: MlpNewConfig,
+    cfg: MlpConfig,
 ) -> Dict[str, Any]:
     device = _get_device()
     model = model.to(device)
@@ -491,7 +491,7 @@ def train_multimodal_with_early_stopping(
     X_text_val: np.ndarray | None,
     len_text_val: np.ndarray | None,
     y_val: np.ndarray,
-    cfg: MlpNewConfig,
+    cfg: MlpConfig,
     logger,
 ) -> Tuple[nn.Module, List[Dict[str, Any]], Dict[str, Any]]:
     device = _get_device()
@@ -694,7 +694,7 @@ def evaluate_multimodal_split(
     X_text: np.ndarray | None,
     len_text: np.ndarray | None,
     y: np.ndarray,
-    cfg: MlpNewConfig,
+    cfg: MlpConfig,
 ) -> Dict[str, Any]:
     device = _get_device()
     model = model.to(device)

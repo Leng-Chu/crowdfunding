@@ -72,7 +72,7 @@ def make_run_dirs(experiment_root: Path, run_name: Optional[str] = None) -> Tupl
 
 def setup_logger(log_file: Path, level: int = logging.INFO) -> logging.Logger:
     """同时输出到控制台与文件的 logger（utf-8）。"""
-    logger = logging.getLogger("mlp_new")
+    logger = logging.getLogger("mlp")
     logger.setLevel(level)
     logger.propagate = False
 

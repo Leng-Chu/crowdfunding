@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-模型定义（mlp_new）：
+模型定义（mlp）：
 - 单分支：
   - meta：MLPBinaryClassifier（对齐 src/dl/meta）
   - image：ImageCNNBinaryClassifier（对齐 src/dl/image）
@@ -16,7 +16,7 @@ from typing import Iterable, List, Optional
 import torch
 import torch.nn as nn
 
-from config import MlpNewConfig
+from config import MlpConfig
 
 
 # -----------------------------
@@ -88,7 +88,7 @@ class MLPBinaryClassifier(nn.Module):
         return logits.squeeze(-1)
 
 
-def build_meta_mlp(cfg: MlpNewConfig, input_dim: int) -> MLPBinaryClassifier:
+def build_meta_mlp(cfg: MlpConfig, input_dim: int) -> MLPBinaryClassifier:
     hidden_sizes = getattr(cfg, "hidden_layer_sizes", None)
     if hidden_sizes is None:
         hidden_sizes = (int(getattr(cfg, "meta_hidden_dim", 256)),)
@@ -219,7 +219,7 @@ class ImageCNNBinaryClassifier(nn.Module):
         return logits
 
 
-def build_image_cnn(cfg: MlpNewConfig, embedding_dim: int) -> ImageCNNBinaryClassifier:
+def build_image_cnn(cfg: MlpConfig, embedding_dim: int) -> ImageCNNBinaryClassifier:
     return ImageCNNBinaryClassifier(
         embedding_dim=int(embedding_dim),
         conv_channels=int(getattr(cfg, "image_conv_channels", 256)),
@@ -361,7 +361,7 @@ class TextCNNBinaryClassifier(nn.Module):
         return logits
 
 
-def build_text_cnn(cfg: MlpNewConfig, embedding_dim: int) -> TextCNNBinaryClassifier:
+def build_text_cnn(cfg: MlpConfig, embedding_dim: int) -> TextCNNBinaryClassifier:
     return TextCNNBinaryClassifier(
         embedding_dim=int(embedding_dim),
         conv_kernel_size=int(getattr(cfg, "text_conv_kernel_size", 3)),
@@ -735,7 +735,7 @@ class MultiModalBinaryClassifier(nn.Module):
 
 
 def build_multimodal_model(
-    cfg: MlpNewConfig,
+    cfg: MlpConfig,
     use_meta: bool,
     use_image: bool,
     use_text: bool,

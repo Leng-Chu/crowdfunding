@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-mlp_new 配置（单文件 / 单类）：
+mlp 配置（单文件 / 单类）：
 - 三路输入：metadata / image / text
 - 通过 use_meta / use_image / use_text 三个开关自由组合分支
 
@@ -9,7 +9,7 @@ mlp_new 配置（单文件 / 单类）：
 - `fusion_hidden_dim` 不在配置中手填，而是在代码里根据实际启用的分支自动计算
 
 运行方式（在项目根目录）：
-`conda run -n crowdfunding python src/dl/mlp_new/main.py`
+`conda run -n crowdfunding python src/dl/mlp/main.py`
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from typing import Optional, Tuple
 
 
 @dataclass(frozen=True)
-class MlpNewConfig:
+class MlpConfig:
     # -----------------------------
     # 运行相关
     # -----------------------------
