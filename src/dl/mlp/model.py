@@ -2,9 +2,9 @@
 """
 模型定义（mlp）：
 - 单分支：
-  - meta：MLPBinaryClassifier（对齐 src/dl/meta）
-  - image：ImageCNNBinaryClassifier（对齐 src/dl/image）
-  - text：TextCNNBinaryClassifier（对齐 src/dl/text）
+  - meta：MLPBinaryClassifier
+  - image：ImageCNNBinaryClassifier
+  - text：TextCNNBinaryClassifier
 - 多分支（两路/三路）：
   - 使用 encoder + concat + fusion head 的方式（对齐 src/dl/mlp 的融合思路）
 """

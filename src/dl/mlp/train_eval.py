@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 训练与评估（mlp）：
-- meta：MLP（无序列长度）
+- meta：MLP
 - image/text：1D CNN（带 lengths 做 mask）
 - multimodal：可选分支融合（meta/image/text 任意组合）
 """

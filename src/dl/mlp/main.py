@@ -400,6 +400,7 @@ def main() -> int:
                 "test_precision": test_metrics.get("precision"),
                 "test_recall": test_metrics.get("recall"),
                 "test_f1": test_metrics.get("f1"),
+                "test_auc": test_metrics.get("roc_auc"),
             },
         )
     except Exception as e:

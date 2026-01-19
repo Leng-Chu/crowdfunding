@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 数据加载与特征构建（mlp）：
-- 单分支模式：对齐 src/dl/meta、src/dl/image、src/dl/text
-- 多分支模式：以 src/dl/mlp 为基础，并根据开关只构建所需分支
 """
 
 from __future__ import annotations
