@@ -20,6 +20,7 @@ mlp 主程序入口：
 from __future__ import annotations
 
 import argparse
+import csv
 import pickle
 import platform
 import sys
@@ -95,6 +96,17 @@ def _save_predictions_csv(
     df.to_csv(save_path, index=False, encoding="utf-8")
 
 
+def _save_single_row_csv(save_path: Path, row: dict) -> None:
+    """
+    保存“单行结果”CSV（包含表头 + 1 条数据）。
+    """
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    with save_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=list(row.keys()))
+        writer.writeheader()
+        writer.writerow(row)
+
+
 def _mode_name(use_meta: bool, use_image: bool, use_text: bool) -> str:
     parts: list[str] = []
     if use_meta:
@@ -133,6 +145,11 @@ def main() -> int:
     use_image = bool(cfg.use_image)
     use_text = bool(cfg.use_text)
 
+    if not use_image and cfg.image_embedding_type is not None:
+        cfg = replace(cfg, image_embedding_type=None)
+    if not use_text and cfg.text_embedding_type is not None:
+        cfg = replace(cfg, text_embedding_type=None)
+
     n_enabled = int(use_meta) + int(use_image) + int(use_text)
     if n_enabled <= 0:
         raise ValueError("至少需要开启一个分支：use_meta/use_image/use_text。")
@@ -148,7 +165,7 @@ def main() -> int:
 
     run_id, artifacts_dir, reports_dir, plots_dir = make_run_dirs(experiment_root, run_name=cfg.run_name)
     run_dir = reports_dir.parent
-    logger = setup_logger(reports_dir / "train.log")
+    logger = setup_logger(run_dir / "train.log")
 
     logger.info("模式=%s | run_id=%s | use_meta=%s use_image=%s use_text=%s", mode, run_id, use_meta, use_image, use_text)
     logger.info("python=%s | 平台=%s", sys.version.replace("\n", " "), platform.platform())
@@ -328,8 +345,8 @@ def main() -> int:
             "meta_dim": int(prepared.meta_dim),
             "image_embedding_dim": int(prepared.image_embedding_dim),
             "text_embedding_dim": int(prepared.text_embedding_dim),
-            "image_embedding_type": str(cfg.image_embedding_type),
-            "text_embedding_type": str(cfg.text_embedding_type),
+            "image_embedding_type": cfg.image_embedding_type,
+            "text_embedding_type": cfg.text_embedding_type,
             "missing_strategy": str(cfg.missing_strategy),
             "meta_hidden_dim": int(cfg.meta_hidden_dim),
             "meta_dropout": float(cfg.meta_dropout),
@@ -370,6 +387,23 @@ def main() -> int:
         plot_history(history, plots_dir / "history.png")
         plot_roc(prepared.y_val, val_out["prob"], plots_dir / "roc_val.png")
         plot_roc(prepared.y_test, test_out["prob"], plots_dir / "roc_test.png")
+
+    try:
+        test_metrics = dict(test_out.get("metrics", {}) or {})
+        _save_single_row_csv(
+            run_dir / "result.csv",
+            {
+                "mode": mode,
+                "image_embedding_type": cfg.image_embedding_type,
+                "text_embedding_type": cfg.text_embedding_type,
+                "test_accuracy": test_metrics.get("accuracy"),
+                "test_precision": test_metrics.get("precision"),
+                "test_recall": test_metrics.get("recall"),
+                "test_f1": test_metrics.get("f1"),
+            },
+        )
+    except Exception as e:
+        logger.warning("保存单行结果 CSV 失败：%s", e)
 
     logger.info("完成：产物已保存到 %s", str(run_dir))
     logger.info("测试集指标：%s", test_out["metrics"])

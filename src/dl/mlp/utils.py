@@ -15,6 +15,7 @@ import json
 import logging
 import random
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -85,7 +86,8 @@ def setup_logger(log_file: Path, level: int = logging.INFO) -> logging.Logger:
     file_handler.setLevel(level)
     file_handler.setFormatter(formatter)
 
-    stream_handler = logging.StreamHandler()
+    # 统一写到 stdout，保证训练过程中可以实时看到日志输出。
+    stream_handler = logging.StreamHandler(stream=sys.stdout)
     stream_handler.setLevel(level)
     stream_handler.setFormatter(formatter)
 
