@@ -5,12 +5,13 @@
 - `src/`: Python 源代码 (以脚本为主的仓库)
   - `crawlers/`: 获取 Kickstarter 页面/资源并写入 `data/projects/...`
   - `preprocess/`: 清洗 + 特征/嵌入生成 (`clean/`, `embedding/`, `table/`)
-  - `dl/`: 模型训练代码 (例如 `dl/mlp/`)
+  - `dl/`: 模型训练代码 (例如 `dl/mlp/`, `dl/gate/`)
 - `data/`: 本地数据集 + 爬虫输出 (`metadata/`, `projects/`)
 - `experiments/`: 运行输出 (日志/指标/图表)
 - `docs/`: 文档
   - `docs/csv_fields.md`: 数据集列说明
   - `docs/dl_mlp.md`: `src/dl/mlp` 模型与复现说明
+  - `docs/dl_gate.md`: `src/dl/gate` 两阶段门控模型说明
   - `docs/preprocess_table.md`: `src/preprocess/table` 表格预处理说明
   - `docs/preprocess_embedding.md`: `src/preprocess/embedding` 向量化方案说明（忽略 qwen）
 
@@ -22,6 +23,7 @@
 - 转换 JSON → 表格: `python src/crawlers/json_to_table.py`
 - 生成嵌入: `python src/preprocess/embedding/vectorize_content.py` 或 `python src/preprocess/embedding/vectorize_csv_data.py`
 - 训练 MLP 多模态模型: `python src/dl/mlp/main.py` (在 `src/dl/mlp/config.py` 中编辑参数)
+- 训练 Gate 两阶段门控模型: `python src/dl/gate/main.py` (在 `src/dl/gate/config.py` 中编辑参数)
 
 注意: 某些嵌入后端会下载大型预训练模型; 请优先使用本地缓存并记录任何需要的权重。
 
