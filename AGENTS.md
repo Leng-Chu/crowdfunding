@@ -5,10 +5,14 @@
 - `src/`: Python 源代码 (以脚本为主的仓库)
   - `crawlers/`: 获取 Kickstarter 页面/资源并写入 `data/projects/...`
   - `preprocess/`: 清洗 + 特征/嵌入生成 (`clean/`, `embedding/`, `table/`)
-  - `dl/`: 模型训练代码 (例如 `dl/meta/`)
+  - `dl/`: 模型训练代码 (例如 `dl/mlp/`)
 - `data/`: 本地数据集 + 爬虫输出 (`metadata/`, `projects/`)
 - `experiments/`: 运行输出 (日志/指标/图表)
-- `docs/`: 文档 (参见 `docs/csv_fields.md` 了解数据集列)
+- `docs/`: 文档
+  - `docs/csv_fields.md`: 数据集列说明
+  - `docs/dl_mlp.md`: `src/dl/mlp` 模型与复现说明
+  - `docs/preprocess_table.md`: `src/preprocess/table` 表格预处理说明
+  - `docs/preprocess_embedding.md`: `src/preprocess/embedding` 向量化方案说明（忽略 qwen）
 
 ## 构建、测试和开发命令
 
@@ -17,7 +21,7 @@
 - 抓取项目页面: `python src/crawlers/crawl_batch.py` (读取 `data/metadata/*.csv`, 写入 `data/projects/...`)
 - 转换 JSON → 表格: `python src/crawlers/json_to_table.py`
 - 生成嵌入: `python src/preprocess/embedding/vectorize_content.py` 或 `python src/preprocess/embedding/vectorize_csv_data.py`
-- 训练元深度学习模型: `conda run -n crowdfunding python src/dl/meta/main.py` (在 `src/dl/meta/config.py` 中编辑参数)
+- 训练 MLP 多模态模型: `python src/dl/mlp/main.py` (在 `src/dl/mlp/config.py` 中编辑参数)
 
 注意: 某些嵌入后端会下载大型预训练模型; 请优先使用本地缓存并记录任何需要的权重。
 
@@ -37,3 +41,4 @@
 - 回答时均需要使用中文，代码中的注释和输出均需要使用中文。
 - 作图时图里不要有中文。
 - 请注意使用UTF-8编码以支持中文字符的正确显示。
+- 每次修改代码后需要检查 `AGENTS.md` 是否需要更新。
