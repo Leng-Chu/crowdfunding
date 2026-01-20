@@ -156,8 +156,15 @@ def check_random_subdirs(base_directory, num_dirs=5):
 
 
 def main():
-    # 默认检查 /home/zlc/crowdfunding/data/projects/now 目录下的随机5个子文件夹
-    target_path = "/home/zlc/crowdfunding/data/projects/now"
+    # 默认检查 data/projects/now 目录下的随机5个子文件夹
+    def _get_repo_root() -> Path:
+        for parent in Path(__file__).resolve().parents:
+            if parent.name == "src":
+                return parent.parent
+        return Path.cwd()
+
+    repo_root = _get_repo_root()
+    target_path = repo_root / "data" / "projects" / "now"
     check_random_subdirs(target_path, 5)
 
 

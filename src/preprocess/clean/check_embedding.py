@@ -10,6 +10,16 @@ from pathlib import Path
 import shutil
 
 
+def _get_repo_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if parent.name == "src":
+            return parent.parent
+    return Path.cwd()
+
+
+REPO_ROOT = _get_repo_root()
+
+
 # 定义期望的.npy文件列表
 EXPECTED_FULL_SET = {
     'cover_image_clip.npy',
@@ -253,9 +263,9 @@ def clean_projects_based_on_embedding_check(csv_path, projects_base_path, trash_
 
 
 if __name__ == "__main__":
-    CSV_PATH = "/home/zlc/crowdfunding/data/metadata/2025.csv"
-    PROJECTS_BASE_PATH = "/home/zlc/crowdfunding/data/projects/2025"
-    TRASH_FOLDER_PATH = "/home/zlc/crowdfunding/data/projects/tmp"  # 指定垃圾文件夹路径
+    CSV_PATH = REPO_ROOT / "data" / "metadata" / "2025.csv"
+    PROJECTS_BASE_PATH = REPO_ROOT / "data" / "projects" / "2025"
+    TRASH_FOLDER_PATH = REPO_ROOT / "data" / "projects" / "tmp"  # 指定垃圾文件夹路径
     CHECK_ONLY = False  # 设为True则只检查不执行删除操作
     
     if CHECK_ONLY:

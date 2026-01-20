@@ -2,6 +2,16 @@ import pandas as pd
 from pathlib import Path
 import json
 
+
+def _get_repo_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if parent.name == "src":
+            return parent.parent
+    return Path.cwd()
+
+
+REPO_ROOT = _get_repo_root()
+
 def check_content_status(project_folder):
     content_json_path = project_folder / "content.json"
     if not content_json_path.exists():
@@ -125,8 +135,8 @@ def update_status(csv_path, projects_base_path, update_content_status=True, upda
 
 
 if __name__ == "__main__":
-    CSV_PATH = "/home/zlc/crowdfunding/data/metadata/add_8266.csv"
-    PROJECTS_BASE_PATH = "/home/zlc/crowdfunding/data/projects/add"
+    CSV_PATH = REPO_ROOT / "data" / "metadata" / "add_8266.csv"
+    PROJECTS_BASE_PATH = REPO_ROOT / "data" / "projects" / "add"
     UPDATE_CONTENT_STATUS = True      # 控制是否更新content_status
     UPDATE_DOWNLOAD_STATUS = True     # 控制是否更新download_status
     DOWNLOAD_VIDEO = False            # 控制检查下载状态时是否包括视频

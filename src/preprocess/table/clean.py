@@ -1,7 +1,16 @@
 import pandas as pd
 import numpy as np
+from pathlib import Path
 
-csv_path = "/home/zlc/crowdfunding/data/metadata/now.csv"
+def _get_repo_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if parent.name == "src":
+            return parent.parent
+    return Path.cwd()
+
+
+REPO_ROOT = _get_repo_root()
+csv_path = REPO_ROOT / "data" / "metadata" / "now.csv"
 df = pd.read_csv(csv_path)
 
 # ===== 1. 提取需要保留的列 =====
@@ -62,6 +71,6 @@ final_data = pd.concat([project_info.reset_index(drop=True), X.reset_index(drop=
 final_data.sort_values(by='time', inplace=True)
 
 # ===== 7. 保存到新的CSV文件 =====
-output_csv_path = "/home/zlc/crowdfunding/data/metadata/now_processed.csv"
+output_csv_path = REPO_ROOT / "data" / "metadata" / "now_processed.csv"
 final_data.to_csv(output_csv_path, index=False)
 print(f"已保存处理后的数据到: {output_csv_path}")

@@ -125,11 +125,8 @@ data/projects/<dataset>/<project_id>/
 
 ## 5. 运行方式
 
-本仓库建议从根目录运行，以确保相对路径（`data/...`）可解析。示例：
-
 - 生成封面图与 title/blurb：
   - `python src/preprocess/embedding/vectorize_csv_data.py --dataset test --text-model bge --image-model clip`
 - 生成正文 text 与 image：
   - `python src/preprocess/embedding/vectorize_content.py --dataset test --text-model bge --image-model clip`
-
 

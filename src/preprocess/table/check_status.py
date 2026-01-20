@@ -1,7 +1,16 @@
 import pandas as pd
 import numpy as np
+from pathlib import Path
 
-csv_path = "/home/zlc/crowdfunding/data/metadata/now.csv"
+def _get_repo_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if parent.name == "src":
+            return parent.parent
+    return Path.cwd()
+
+
+REPO_ROOT = _get_repo_root()
+csv_path = REPO_ROOT / "data" / "metadata" / "now.csv"
 df = pd.read_csv(csv_path)
 # 显示所有行
 pd.set_option('display.max_rows', None)

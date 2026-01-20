@@ -17,6 +17,15 @@ if str(CURRENT_DIR) not in sys.path:
 from download_assets import download_assets_from_json
 
 
+def _get_repo_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if parent.name == "src":
+            return parent.parent
+    return Path.cwd()
+
+
+REPO_ROOT = _get_repo_root()
+
 def _format_prefix(csv_row_index: int, project_id: str) -> str:
     return f"[CSV第{csv_row_index}行][{project_id}]"
 
@@ -195,8 +204,8 @@ def download_for_success_rows(
 
 
 def main():
-    csv_path = Path("/home/zlc/crowdfunding/data/metadata/add_3071.csv")
-    output_root = Path("/home/zlc/crowdfunding/data/projects/tmp")
+    csv_path = REPO_ROOT / "data" / "metadata" / "add_3071.csv"
+    output_root = REPO_ROOT / "data" / "projects" / "tmp"
     overwrite_assets = False
     skip_success = True
     download_workers = 3

@@ -4,8 +4,18 @@ import os
 import shutil
 from pathlib import Path
 
+
+def _get_repo_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if parent.name == "src":
+            return parent.parent
+    return Path.cwd()
+
+
+REPO_ROOT = _get_repo_root()
+
 # 读取原始CSV文件
-csv_path = "/home/zlc/crowdfunding/data/metadata/now.csv"
+csv_path = REPO_ROOT / "data" / "metadata" / "now.csv"
 df = pd.read_csv(csv_path)
 
 # 确保 launched_at 是 datetime 类型并提取年份
@@ -75,22 +85,22 @@ moved_df = df.loc[moved_projects].copy()
 
 # 移动项目文件夹
 if not moved_df.empty:
-    source_folder = "/home/zlc/crowdfunding/data/projects/now"
-    target_folder = "/home/zlc/crowdfunding/data/projects/move2"
+    source_folder = REPO_ROOT / "data" / "projects" / "now"
+    target_folder = REPO_ROOT / "data" / "projects" / "move2"
     
     # 确保目标目录存在
-    os.makedirs(target_folder, exist_ok=True)
+    target_folder.mkdir(parents=True, exist_ok=True)
     
     # 遍历被移动的项目
     for index, row in moved_df.iterrows():
         project_id = row['project_id']
-        source_path = os.path.join(source_folder, str(project_id))
-        target_path = os.path.join(target_folder, str(project_id))
+        source_path = source_folder / str(project_id)
+        target_path = target_folder / str(project_id)
         
         # 如果源目录存在，则移动
-        if os.path.exists(source_path):
+        if source_path.exists():
             print(f"正在移动项目 {project_id} 从 {source_path} 到 {target_path}")
-            shutil.move(source_path, target_path)
+            shutil.move(str(source_path), str(target_path))
         else:
             print(f"警告：项目 {project_id} 的目录不存在: {source_path}")
 
@@ -98,11 +108,11 @@ if not moved_df.empty:
 processed_df = processed_df.drop(columns=["year"])
 
 # 保存处理后的数据到新的CSV文件
-balanced_csv_path = "/home/zlc/crowdfunding/data/metadata/now.csv"
+balanced_csv_path = REPO_ROOT / "data" / "metadata" / "now.csv"
 processed_df.to_csv(balanced_csv_path, index=False)
 
 # 保存被移动的项目到另一个CSV文件
-moved_csv_path = "/home/zlc/crowdfunding/data/metadata/move2.csv"
+moved_csv_path = REPO_ROOT / "data" / "metadata" / "move2.csv"
 moved_df.to_csv(moved_csv_path, index=False)
 
 print(f"\n已创建平衡后的CSV文件: {balanced_csv_path}")

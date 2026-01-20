@@ -7,6 +7,15 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
+def _get_repo_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if parent.name == "src":
+            return parent.parent
+    return Path.cwd()
+
+
+REPO_ROOT = _get_repo_root()
+
 def get_image_format_by_pil(image_path):
     """
     使用PIL获取图像的真实格式
@@ -16,7 +25,7 @@ def get_image_format_by_pil(image_path):
             # 返回PIL识别出的格式，如 'JPEG', 'PNG', 'WEBP' 等
             return img.format
     except Exception as e:
-        print(f"Error detecting image format for {image_path}: {e}")
+        print(f"使用PIL获取图像格式失败: {image_path}，错误: {e}")
         return None
 
 
@@ -46,7 +55,7 @@ def rename_cover_image_if_needed(cover_path):
                     
                     # 检查目标文件是否已经存在
                     if new_path.exists() and new_path != cover_file:
-                        print(f"Warning: Target file {new_path} already exists, skipping...")
+                        print(f"警告: 目标文件已存在，跳过重命名: {new_path}")
                         continue
                         
                     # 重命名文件
@@ -54,7 +63,7 @@ def rename_cover_image_if_needed(cover_path):
                     # print(f"Renamed cover image {cover_file} to {new_path}")
                 return False
             else:
-                print(f"Could not detect image format for {cover_file}")
+                print(f"无法识别图像格式: {cover_file}")
     
     return True
 
@@ -88,7 +97,7 @@ def rename_image_in_json(projects_base_path):
             with open(content_json_path, 'r', encoding='utf-8') as f:
                 content_data = json.load(f)
         except Exception as e:
-            print(f"Error reading {content_json_path}: {e}")
+            print(f"读取失败: {content_json_path}，错误: {e}")
             continue
         
         # 标记是否对JSON进行了更改
@@ -123,7 +132,7 @@ def rename_image_in_json(projects_base_path):
                                     
                                     # 检查目标文件是否已经存在
                                     if new_file_path.exists() and new_file_path != old_file_path:
-                                        print(f"Warning: Target file {new_file_path} already exists, skipping...")
+                                        print(f"警告: 目标文件已存在，跳过重命名: {new_file_path}")
                                         continue
                                         
                                     old_file_path.rename(new_file_path)
@@ -131,12 +140,12 @@ def rename_image_in_json(projects_base_path):
                                     json_changed = True
                                     #print(f"Renamed {old_file_path} to {new_file_path}")
                                 except Exception as e:
-                                    print(f"Error renaming file {old_file_path}: {e}")
+                                    print(f"重命名失败: {old_file_path}，错误: {e}")
                                     error_project = True
                             # else: 文件扩展名已经是正确的，无需重命名
                         else:
                             error_project = True
-                            print(f"Could not detect image format for {old_file_path}, skipping...")
+                            print(f"无法识别图像格式: {old_file_path}，跳过...")
                     else:
                         error_project = True
                         #print(f"Warning: File {old_file_path} does not exist")
@@ -149,17 +158,17 @@ def rename_image_in_json(projects_base_path):
                     json.dump(content_data, f, ensure_ascii=False, indent=2)
                 #print(f"Updated {content_json_path}")
             except Exception as e:
-                print(f"Error writing {content_json_path}: {e}")
+                print(f"写入失败: {content_json_path}，错误: {e}")
         if error_project:
             print(f"Error project: {folder}")
             cnt += 1
             # 删除文件夹
             shutil.rmtree(folder)
-    print(f"Error project count: {cnt}")
+    print(f"异常项目数量: {cnt}")
 
 
 def main():
-    projects_base_path = "/home/zlc/crowdfunding/data/projects/add"
+    projects_base_path = REPO_ROOT / "data" / "projects" / "add"
     rename_image_in_json(projects_base_path)
 
 

@@ -4,8 +4,19 @@ import os
 import shutil
 from pathlib import Path
 
+
+# 统一使用以仓库根目录为基准的相对路径（避免不同机器/不同工作目录下路径失效）
+def _get_repo_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if parent.name == "src":
+            return parent.parent
+    return Path.cwd()
+
+
+REPO_ROOT = _get_repo_root()
+
 # 读取原始CSV文件
-csv_path = "/home/zlc/crowdfunding/data/metadata/all.csv"
+csv_path = REPO_ROOT / "data" / "metadata" / "all.csv"
 df = pd.read_csv(csv_path)
 
 # 获取原始数据的备份，用于后续处理
@@ -45,22 +56,22 @@ rows_to_process = pd.concat([missing_category, low_frequency_rows, short_duratio
 
 if not rows_to_process.empty:
     # 移动这些项目文件夹到新位置
-    source_folder = "/home/zlc/crowdfunding/data/projects/now"
-    target_folder = "/home/zlc/crowdfunding/data/projects/move1"
+    source_folder = REPO_ROOT / "data" / "projects" / "now"
+    target_folder = REPO_ROOT / "data" / "projects" / "move1"
     
     # 确保目标目录存在
-    os.makedirs(target_folder, exist_ok=True)
+    target_folder.mkdir(parents=True, exist_ok=True)
     
     # 遍历需要处理的行
     for index, row in rows_to_process.iterrows():
         project_id = row['project_id']
-        source_path = os.path.join(source_folder, str(project_id))
-        target_path = os.path.join(target_folder, str(project_id))
+        source_path = source_folder / str(project_id)
+        target_path = target_folder / str(project_id)
         
         # 如果源目录存在，则移动
-        if os.path.exists(source_path):
+        if source_path.exists():
             print(f"正在移动项目 {project_id} 从 {source_path} 到 {target_path}")
-            shutil.move(source_path, target_path)
+            shutil.move(str(source_path), str(target_path))
         else:
             print(f"警告：项目 {project_id} 的目录不存在: {source_path}")
     
@@ -68,11 +79,11 @@ if not rows_to_process.empty:
     filtered_df = df.drop(rows_to_process.index)
     
     # 保存新的CSV文件（包含原始列）- 过滤后的数据
-    new_csv_path = "/home/zlc/crowdfunding/data/metadata/now.csv"
+    new_csv_path = REPO_ROOT / "data" / "metadata" / "now.csv"
     filtered_df.to_csv(new_csv_path, index=False)
     
     # 保存被移动的行到另一个CSV文件
-    moved_rows_csv_path = "/home/zlc/crowdfunding/data/metadata/move1.csv"
+    moved_rows_csv_path = REPO_ROOT / "data" / "metadata" / "move1.csv"
     rows_to_process.to_csv(moved_rows_csv_path, index=False)
     
     print(f"已创建新的CSV文件（过滤后的数据）: {new_csv_path}")

@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import List
 import torch
@@ -35,15 +36,16 @@ class EmbeddingModel:
     def __init__(self, model_name: str = "BAAI/bge-m3"):
         self.model_name = model_name
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        SNAP = "/home/zlc/.cache/huggingface/hub/models--BAAI--bge-m3/snapshots/5617a9f61b028005a4858fdac845db406aefb181"
+        local_snapshot = os.environ.get("BGE_M3_SNAPSHOT", "").strip()
 
         # 添加use_local参数以支持离线模式
         try:
-            self.tokenizer = AutoTokenizer.from_pretrained(SNAP, local_files_only=True)
-            self.model = AutoModel.from_pretrained(SNAP, local_files_only=True).to(self.device).eval()
+            source = local_snapshot or model_name
+            self.tokenizer = AutoTokenizer.from_pretrained(source, local_files_only=True)
+            self.model = AutoModel.from_pretrained(source, local_files_only=True).to(self.device).eval()
         except OSError:
             # 如果本地没有模型，则尝试在线下载
-            input(f"本地未找到模型 {model_name}，正在尝试在线获取...")
+            print(f"本地未找到模型 {model_name}，正在尝试在线获取...")
             self.tokenizer = AutoTokenizer.from_pretrained(model_name)
             self.model = AutoModel.from_pretrained(model_name).to(self.device).eval()
 
@@ -56,7 +58,7 @@ class EmbeddingModel:
 
     def __call__(self, content_sequence: List[str], vector_type: str = "text") -> List[np.ndarray]:
         if vector_type != "text":
-            print("vector_type must be 'text'")
+            print("参数 vector_type 必须为 'text'")
             return []
         return self.embed_text(content_sequence)
 

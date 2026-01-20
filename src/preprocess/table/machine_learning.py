@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+from pathlib import Path
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
@@ -7,11 +8,22 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report
 
+
+# 统一使用以仓库根目录为基准的相对路径（避免不同机器/不同工作目录下路径失效）
+def _get_repo_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if parent.name == "src":
+            return parent.parent
+    return Path.cwd()
+
+
+REPO_ROOT = _get_repo_root()
+
 # 读取csv文件
-df = pd.read_csv('/home/zlc/crowdfunding/data/metadata/now_processed.csv')
+df = pd.read_csv(REPO_ROOT / "data" / "metadata" / "now_processed.csv")
 # 结果保存目录
-output_dir = '/home/zlc/crowdfunding/experiments/meta_ml'
-os.makedirs(output_dir, exist_ok=True)
+output_dir = REPO_ROOT / "experiments" / "meta_ml"
+output_dir.mkdir(parents=True, exist_ok=True)
 
 # 提取特征和标签
 X = df.drop(['state', 'project_id', 'time'], axis=1)  # 删除标签列和不需要的列
@@ -92,8 +104,8 @@ sequential_results = evaluate_models(
 all_results = random_results + ["\n"] + sequential_results
 
 # 保存结果到文件
-output_path = os.path.join(output_dir, 'ml_results_report.txt')
-with open(output_path, 'w') as f:
+output_path = output_dir / "ml_results_report.txt"
+with open(output_path, "w", encoding="utf-8") as f:
     f.write('\n'.join(all_results))
 
 print(f"Results saved to {output_path}")

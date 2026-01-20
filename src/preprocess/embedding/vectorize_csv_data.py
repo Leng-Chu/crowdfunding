@@ -7,6 +7,16 @@ import argparse
 from datetime import datetime
 from backends import get_text_backend, get_image_backend 
 
+
+def _get_repo_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if parent.name == "src":
+            return parent.parent
+    return Path.cwd()
+
+
+REPO_ROOT = _get_repo_root()
+
 def _get_vectors_filename(model: str, vector_type: str = "text") -> str:
     """根据模型和向量类型生成文件名"""
     return f"{vector_type}_{model}.npy"
@@ -104,12 +114,12 @@ def main():
     parser.add_argument('--dataset', type=str, default='test', help='数据集名称，默认为 test')
     parser.add_argument('--text-model', type=str, default='siglip', help='文本模型名称，默认为 siglip')
     parser.add_argument('--image-model', type=str, default='siglip', help='图像模型名称，默认为 siglip')
-    # CUDA_VISIBLE_DEVICES=3 TRANSFORMERS_OFFLINE=1 python /home/zlc/crowdfunding/src/preprocess/embedding/vectorize_csv_data.py --dataset 2023 --text-model bge --image-model clip
+    # CUDA_VISIBLE_DEVICES=3 TRANSFORMERS_OFFLINE=1 python src/preprocess/embedding/vectorize_csv_data.py --dataset 2023 --text-model bge --image-model clip
     args = parser.parse_args()
     
     # 读取CSV文件
-    projects_root = Path(f"/home/zlc/crowdfunding/data/projects/{args.dataset}")
-    csv_path = Path(f"/home/zlc/crowdfunding/data/metadata/{args.dataset}.csv")
+    projects_root = REPO_ROOT / "data" / "projects" / args.dataset
+    csv_path = REPO_ROOT / "data" / "metadata" / f"{args.dataset}.csv"
     if not csv_path.exists():
         print(f"错误: CSV文件 {csv_path} 不存在")
         return

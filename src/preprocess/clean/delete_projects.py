@@ -3,6 +3,15 @@ from pathlib import Path
 import shutil
 
 
+def _get_repo_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if parent.name == "src":
+            return parent.parent
+    return Path.cwd()
+
+
+REPO_ROOT = _get_repo_root()
+
 def clean_projects(csv_path, projects_base_path, trash_folder_path=None, check_download_status=True, separate_deleted_rows=True):
     """
     根据CSV中的数据清理项目文件夹，将要删除的文件夹移到垃圾文件夹中
@@ -108,9 +117,9 @@ def clean_projects(csv_path, projects_base_path, trash_folder_path=None, check_d
 
 
 if __name__ == "__main__":
-    CSV_PATH = "/home/zlc/crowdfunding/data/metadata/add_11337.csv"
-    PROJECTS_BASE_PATH = "/home/zlc/crowdfunding/data/projects/add"
-    TRASH_FOLDER_PATH = "/home/zlc/crowdfunding/data/projects/tmp"  # 新增参数，指定垃圾文件夹路径
+    CSV_PATH = REPO_ROOT / "data" / "metadata" / "add_11337.csv"
+    PROJECTS_BASE_PATH = REPO_ROOT / "data" / "projects" / "add"
+    TRASH_FOLDER_PATH = REPO_ROOT / "data" / "projects" / "tmp"  # 指定垃圾文件夹路径
     CHECK_DOWNLOAD_STATUS = True   # 控制是否要判断download_status不为success
     SEPARATE_DELETED_ROWS = True    # 控制是否要将删除的行单独保存到新CSV中
     

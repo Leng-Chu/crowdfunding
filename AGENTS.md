@@ -16,7 +16,7 @@
 
 ## 构建、测试和开发命令
 
-从仓库根目录运行脚本，以便像 `data/...` 这样的相对路径能正确解析。
+从仓库根目录运行脚本；代码已使用以仓库根目录为基准的相对路径。
 
 - 抓取项目页面: `python src/crawlers/crawl_batch.py` (读取 `data/metadata/*.csv`, 写入 `data/projects/...`)
 - 转换 JSON → 表格: `python src/crawlers/json_to_table.py`
