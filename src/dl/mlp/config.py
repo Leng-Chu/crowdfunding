@@ -31,8 +31,8 @@ class MlpConfig:
     # -----------------------------
     # 数据与路径
     # -----------------------------
-    data_csv: str = "data/metadata/now_processed.csv"
-    projects_root: str = "data/projects/now"
+    data_csv: str = "data/metadata/test.csv"
+    projects_root: str = "data/projects/test"
     experiment_root: str = "experiments/mlp"
 
     # -----------------------------
@@ -56,12 +56,15 @@ class MlpConfig:
     # -----------------------------
     # split_mode:
     # - ratio:  按 (train/val/test) 比例切分（可选是否打乱）
-    # - kfold:  打乱后仅动态切分 train/test 做 K 折交叉验证（每折的 val 会复用 train，用于兼容早停/日志）
-    split_mode: str = "ratio"  # ratio / kfold
-    train_ratio: float = 0.7
-    val_ratio: float = 0.15
+    # - kfold:  先固定一个独立测试集（由 test_ratio 决定；可选是否在切分前打乱），
+    #           再对剩余 trainval 做 K 折交叉验证：每折用 k-1 折做 train、1 折做 val。
+    #           注意：测试集不参与任何折、不用于早停/调参。
+    split_mode: str = "kfold"  # ratio / kfold
+    train_ratio: float = 0.68
+    val_ratio: float = 0.17
     test_ratio: float = 0.15
     shuffle_before_split: bool = False
+    # 说明：当 split_mode=kfold 时，train_ratio/val_ratio 不参与切分（val 由 K 折确定），仅使用 test_ratio 固定测试集。
 
     # K 折交叉验证（仅 split_mode=kfold 时生效）
     k_folds: int = 5

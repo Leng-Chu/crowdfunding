@@ -198,11 +198,13 @@ def main() -> int:
     split_mode = str(getattr(cfg, "split_mode", "ratio") or "ratio").strip().lower()
     if split_mode == "kfold":
         logger.info(
-            "启用 K 折交叉验证：k=%d | stratify=%s | shuffle=%s | k_fold_index=%d",
+            "启用 K 折交叉验证：k=%d | stratify=%s | shuffle=%s | k_fold_index=%d | test_ratio=%.4f shuffle_before_split=%s",
             int(getattr(cfg, "k_folds", 5)),
             bool(getattr(cfg, "kfold_stratify", True)),
             bool(getattr(cfg, "kfold_shuffle", True)),
             int(getattr(cfg, "k_fold_index", -1)),
+            float(getattr(cfg, "test_ratio", 0.15)),
+            bool(getattr(cfg, "shuffle_before_split", False)),
         )
 
         save_json(
@@ -215,6 +217,10 @@ def main() -> int:
                     "k_fold_index": int(getattr(cfg, "k_fold_index", -1)),
                     "kfold_stratify": bool(getattr(cfg, "kfold_stratify", True)),
                     "kfold_shuffle": bool(getattr(cfg, "kfold_shuffle", True)),
+                    "holdout_test": {
+                        "test_ratio": float(getattr(cfg, "test_ratio", 0.15)),
+                        "shuffle_before_split": bool(getattr(cfg, "shuffle_before_split", False)),
+                    },
                 },
                 "use_meta": use_meta,
                 "use_image": use_image,
@@ -228,6 +234,9 @@ def main() -> int:
         oof_project_ids: list[str] = []
         oof_y_true: list[int] = []
         oof_y_prob: list[float] = []
+        test_prob_by_id: dict[str, list[float]] = {}
+        test_true_by_id: dict[str, int] = {}
+        test_order: list[str] | None = None
 
         for fold_idx, prepared in iter_multimodal_kfold_data(
             csv_path=csv_path,
@@ -250,9 +259,10 @@ def main() -> int:
             set_global_seed(int(cfg.random_seed) + int(fold_idx))
 
             logger.info(
-                "fold=%d 数据：train=%d test=%d | meta_dim=%d | image_dim=%d text_dim=%d",
+                "fold=%d 数据：train=%d val=%d test=%d | meta_dim=%d | image_dim=%d text_dim=%d",
                 int(fold_idx),
                 int(prepared.y_train.shape[0]),
+                int(prepared.y_val.shape[0]),
                 int(prepared.y_test.shape[0]),
                 int(prepared.meta_dim),
                 int(prepared.image_embedding_dim),
@@ -274,6 +284,8 @@ def main() -> int:
                 rows = []
                 for pid, y in zip(prepared.train_project_ids, prepared.y_train):
                     rows.append({"project_id": pid, "fold": int(fold_idx), "split": "train", "state": int(y)})
+                for pid, y in zip(prepared.val_project_ids, prepared.y_val):
+                    rows.append({"project_id": pid, "fold": int(fold_idx), "split": "val", "state": int(y)})
                 for pid, y in zip(prepared.test_project_ids, prepared.y_test):
                     rows.append({"project_id": pid, "fold": int(fold_idx), "split": "test", "state": int(y)})
                 pd.DataFrame(rows).to_csv(fold_reports_dir / "splits.csv", index=False, encoding="utf-8")
@@ -302,13 +314,12 @@ def main() -> int:
                 X_text_train=prepared.X_text_train,
                 len_text_train=prepared.len_text_train,
                 y_train=prepared.y_train,
-                # 仅 train/test 动态切分：val 复用 train（用于兼容早停/日志）
-                X_meta_val=prepared.X_meta_train,
-                X_image_val=prepared.X_image_train,
-                len_image_val=prepared.len_image_train,
-                X_text_val=prepared.X_text_train,
-                len_text_val=prepared.len_text_train,
-                y_val=prepared.y_train,
+                X_meta_val=prepared.X_meta_val,
+                X_image_val=prepared.X_image_val,
+                len_image_val=prepared.len_image_val,
+                X_text_val=prepared.X_text_val,
+                len_text_val=prepared.len_text_val,
+                y_val=prepared.y_val,
                 cfg=cfg,
                 logger=logger,
             )
@@ -333,6 +344,19 @@ def main() -> int:
                 y=prepared.y_train,
                 cfg=cfg,
             )
+            val_out = evaluate_multimodal_split(
+                best_model,
+                use_meta=use_meta,
+                use_image=use_image,
+                use_text=use_text,
+                X_meta=prepared.X_meta_val,
+                X_image=prepared.X_image_val,
+                len_image=prepared.len_image_val,
+                X_text=prepared.X_text_val,
+                len_text=prepared.len_text_val,
+                y=prepared.y_val,
+                cfg=cfg,
+            )
             test_out = evaluate_multimodal_split(
                 best_model,
                 use_meta=use_meta,
@@ -351,6 +375,7 @@ def main() -> int:
                 "fold": int(fold_idx),
                 "best_info": best_info,
                 "train": train_out["metrics"],
+                "val": val_out["metrics"],
                 "test": test_out["metrics"],
             }
             fold_results.append(fold_result)
@@ -376,6 +401,13 @@ def main() -> int:
 
             try:
                 _save_predictions_csv(
+                    fold_reports_dir / "predictions_val.csv",
+                    prepared.val_project_ids,
+                    prepared.y_val,
+                    val_out["prob"],
+                    threshold=cfg.threshold,
+                )
+                _save_predictions_csv(
                     fold_reports_dir / "predictions_test.csv",
                     prepared.test_project_ids,
                     prepared.y_test,
@@ -383,52 +415,111 @@ def main() -> int:
                     threshold=cfg.threshold,
                 )
             except Exception as e:
-                logger.warning("fold=%d 保存 predictions_test.csv 失败：%s", int(fold_idx), e)
+                logger.warning("fold=%d 保存预测 CSV 失败：%s", int(fold_idx), e)
 
             if cfg.save_plots:
                 plot_history(history, fold_plots_dir / "history.png")
+                plot_roc(prepared.y_val, val_out["prob"], fold_plots_dir / "roc_val.png")
                 plot_roc(prepared.y_test, test_out["prob"], fold_plots_dir / "roc_test.png")
 
-            oof_project_ids.extend([str(x) for x in prepared.test_project_ids])
-            oof_y_true.extend([int(x) for x in prepared.y_test.reshape(-1).tolist()])
-            oof_y_prob.extend([float(x) for x in test_out["prob"].reshape(-1).tolist()])
+            oof_project_ids.extend([str(x) for x in prepared.val_project_ids])
+            oof_y_true.extend([int(x) for x in prepared.y_val.reshape(-1).tolist()])
+            oof_y_prob.extend([float(x) for x in val_out["prob"].reshape(-1).tolist()])
+
+            if test_order is None:
+                test_order = [str(x) for x in prepared.test_project_ids]
+            for pid, y_true, prob in zip(prepared.test_project_ids, prepared.y_test.reshape(-1), test_out["prob"].reshape(-1)):
+                pid = str(pid)
+                test_prob_by_id.setdefault(pid, []).append(float(prob))
+                if pid in test_true_by_id and int(test_true_by_id[pid]) != int(y_true):
+                    logger.warning("fold=%d 测试集标签不一致：project_id=%s", int(fold_idx), pid)
+                test_true_by_id[pid] = int(y_true)
 
         try:
             import numpy as np
 
-            def _mean_metric(key: str):
+            def _mean_metric(split_key: str, metric_key: str):
                 vals = []
                 for fr in fold_results:
-                    v = (fr.get("test", {}) or {}).get(key)
+                    v = (fr.get(split_key, {}) or {}).get(metric_key)
                     if v is None:
                         continue
                     vals.append(float(v))
                 return float(np.mean(vals)) if vals else None
 
+            mean_val = {
+                "accuracy": _mean_metric("val", "accuracy"),
+                "precision": _mean_metric("val", "precision"),
+                "recall": _mean_metric("val", "recall"),
+                "f1": _mean_metric("val", "f1"),
+                "log_loss": _mean_metric("val", "log_loss"),
+                "roc_auc": _mean_metric("val", "roc_auc"),
+            }
             mean_test = {
-                "accuracy": _mean_metric("accuracy"),
-                "precision": _mean_metric("precision"),
-                "recall": _mean_metric("recall"),
-                "f1": _mean_metric("f1"),
-                "log_loss": _mean_metric("log_loss"),
-                "roc_auc": _mean_metric("roc_auc"),
+                "accuracy": _mean_metric("test", "accuracy"),
+                "precision": _mean_metric("test", "precision"),
+                "recall": _mean_metric("test", "recall"),
+                "f1": _mean_metric("test", "f1"),
+                "log_loss": _mean_metric("test", "log_loss"),
+                "roc_auc": _mean_metric("test", "roc_auc"),
             }
         except Exception:
+            mean_val = {}
             mean_test = {}
 
         try:
             import numpy as np
 
-            oof_metrics = compute_binary_metrics(
+            oof_val_metrics = compute_binary_metrics(
                 np.asarray(oof_y_true, dtype=np.int64),
                 np.asarray(oof_y_prob, dtype=np.float64),
                 threshold=cfg.threshold,
             )
         except Exception as e:
             logger.warning("计算 OOF 指标失败：%s", e)
-            oof_metrics = {}
+            oof_val_metrics = {}
 
-        cv_summary = {"run_id": run_id, "folds": fold_results, "mean_test": mean_test, "oof_test": oof_metrics}
+        try:
+            import numpy as np
+
+            if test_order is None:
+                test_order = sorted(test_prob_by_id.keys())
+            else:
+                keys = set(test_prob_by_id.keys())
+                if set(test_order) != keys:
+                    test_order = sorted(keys)
+
+            ens_project_ids: list[str] = []
+            ens_y_true: list[int] = []
+            ens_y_prob: list[float] = []
+            for pid in test_order:
+                probs = test_prob_by_id.get(pid, [])
+                if not probs:
+                    continue
+                ens_project_ids.append(pid)
+                ens_y_true.append(int(test_true_by_id.get(pid, 0)))
+                ens_y_prob.append(float(np.mean(np.asarray(probs, dtype=np.float64))))
+
+            test_ensemble_metrics = compute_binary_metrics(
+                np.asarray(ens_y_true, dtype=np.int64),
+                np.asarray(ens_y_prob, dtype=np.float64),
+                threshold=cfg.threshold,
+            )
+        except Exception as e:
+            logger.warning("计算测试集集成指标失败：%s", e)
+            ens_project_ids = []
+            ens_y_true = []
+            ens_y_prob = []
+            test_ensemble_metrics = {}
+
+        cv_summary = {
+            "run_id": run_id,
+            "folds": fold_results,
+            "mean_val": mean_val,
+            "mean_test": mean_test,
+            "oof_val": oof_val_metrics,
+            "test_ensemble": test_ensemble_metrics,
+        }
         save_json(cv_summary, reports_dir / "cv_metrics.json")
 
         try:
@@ -440,9 +531,22 @@ def main() -> int:
                     "y_true": oof_y_true,
                     "y_prob": oof_y_prob,
                 }
-            ).to_csv(reports_dir / "cv_predictions_test.csv", index=False, encoding="utf-8")
+            ).to_csv(reports_dir / "cv_predictions_val.csv", index=False, encoding="utf-8")
         except Exception as e:
-            logger.warning("保存 cv_predictions_test.csv 失败：%s", e)
+            logger.warning("保存 cv_predictions_val.csv 失败：%s", e)
+
+        try:
+            import pandas as pd
+
+            pd.DataFrame(
+                {
+                    "project_id": ens_project_ids,
+                    "y_true": ens_y_true,
+                    "y_prob": ens_y_prob,
+                }
+            ).to_csv(reports_dir / "test_predictions_ensemble.csv", index=False, encoding="utf-8")
+        except Exception as e:
+            logger.warning("保存 test_predictions_ensemble.csv 失败：%s", e)
 
         try:
             _save_single_row_csv(
@@ -451,11 +555,11 @@ def main() -> int:
                     "mode": mode,
                     "image_embedding_type": cfg.image_embedding_type,
                     "text_embedding_type": cfg.text_embedding_type,
-                    "test_accuracy": oof_metrics.get("accuracy"),
-                    "test_precision": oof_metrics.get("precision"),
-                    "test_recall": oof_metrics.get("recall"),
-                    "test_f1": oof_metrics.get("f1"),
-                    "test_auc": oof_metrics.get("roc_auc"),
+                    "test_accuracy": test_ensemble_metrics.get("accuracy"),
+                    "test_precision": test_ensemble_metrics.get("precision"),
+                    "test_recall": test_ensemble_metrics.get("recall"),
+                    "test_f1": test_ensemble_metrics.get("f1"),
+                    "test_auc": test_ensemble_metrics.get("roc_auc"),
                     "k_fold": int(getattr(cfg, "k_folds", 5)),  # K折交叉验证时填写折数
                 },
             )
@@ -463,7 +567,8 @@ def main() -> int:
             logger.warning("保存 result.csv 失败：%s", e)
 
         logger.info("完成：K 折交叉验证产物已保存到 %s", str(run_dir))
-        logger.info("OOF 测试集指标：%s", oof_metrics)
+        logger.info("OOF 验证集指标：%s", oof_val_metrics)
+        logger.info("测试集集成指标：%s", test_ensemble_metrics)
         return 0
 
     prepared = prepare_multimodal_data(

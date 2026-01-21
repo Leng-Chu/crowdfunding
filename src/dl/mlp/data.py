@@ -34,6 +34,38 @@ def _split_by_ratio(
     return train_df, val_df, test_df
 
 
+def _split_trainval_test_by_test_ratio(
+    df: pd.DataFrame, test_ratio: float, shuffle: bool, seed: int
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    固定独立测试集（holdout test），返回 (trainval_df, test_df)。
+
+    约定：
+    - shuffle=False：按原始顺序取“最后 test_ratio”作为测试集（例如 15%）。
+    - shuffle=True：先打乱，再按上述规则取测试集（保证可复现）。
+    """
+    test_ratio = float(test_ratio)
+    if not (0.0 < test_ratio < 1.0):
+        raise ValueError(f"test_ratio 需要在 (0, 1) 之间，当前={test_ratio}")
+
+    if bool(shuffle):
+        df = df.sample(frac=1.0, random_state=int(seed)).reset_index(drop=True)
+
+    n_total = int(len(df))
+    if n_total <= 0:
+        raise ValueError("数据集为空，无法切分。")
+
+    n_test = int(n_total * test_ratio)
+    n_test = max(1, int(n_test))
+    if n_test >= n_total:
+        raise ValueError(f"test_ratio 过大导致 trainval 为空：n_total={n_total} n_test={n_test}")
+
+    n_trainval = n_total - n_test
+    trainval_df = df.iloc[:n_trainval].copy()
+    test_df = df.iloc[n_trainval:].copy()
+    return trainval_df, test_df
+
+
 def _get_split_mode(cfg: MlpConfig) -> str:
     """获取 split_mode（ratio/kfold），兼容旧规则。"""
     mode = str(getattr(cfg, "split_mode", "ratio") or "ratio").strip().lower()
@@ -763,7 +795,7 @@ def iter_multimodal_kfold_data(
     logger=None,
 ) -> Iterator[Tuple[int, PreparedMultiModalData]]:
     """
-    K 折交叉验证数据迭代器（每折仅切分 train/test；val 复用 train）。
+    K 折交叉验证数据迭代器（固定独立测试集 + 折内 train/val 轮换）。
 
     - cfg.split_mode 必须是 kfold
     - cfg.k_fold_index=-1：遍历全部折；>=0：仅返回指定折
@@ -778,16 +810,23 @@ def iter_multimodal_kfold_data(
     if cfg.target_col not in raw_df.columns:
         raise ValueError(f"CSV 缺少 target_col={cfg.target_col!r}")
 
-    y = None
+    trainval_df, test_df = _split_trainval_test_by_test_ratio(
+        raw_df,
+        test_ratio=float(getattr(cfg, "test_ratio", 0.15)),
+        shuffle=bool(getattr(cfg, "shuffle_before_split", False)),
+        seed=int(getattr(cfg, "random_seed", 42)),
+    )
+
+    y_trainval = None
     if bool(getattr(cfg, "kfold_stratify", True)):
-        y = _encode_binary_target(raw_df[cfg.target_col])
+        y_trainval = _encode_binary_target(trainval_df[cfg.target_col])
 
     pairs = _kfold_split_indices(
-        n_total=int(len(raw_df)),
+        n_total=int(len(trainval_df)),
         n_splits=int(getattr(cfg, "k_folds", 5)),
         shuffle=bool(getattr(cfg, "kfold_shuffle", True)),
         seed=int(getattr(cfg, "random_seed", 42)),
-        y=y,
+        y=y_trainval,
         stratify=bool(getattr(cfg, "kfold_stratify", True)),
     )
 
@@ -797,10 +836,9 @@ def iter_multimodal_kfold_data(
         if fold_idx < 0 or fold_idx >= len(pairs):
             raise ValueError(f"k_fold_index 越界：{fold_idx}，有效范围 0..{len(pairs)-1}")
 
-        train_idx, test_idx = pairs[int(fold_idx)]
-        train_df = raw_df.iloc[train_idx].copy()
-        test_df = raw_df.iloc[test_idx].copy()
-        val_df = train_df  # 仅 train/test 动态切分；val 复用 train
+        train_idx, val_idx = pairs[int(fold_idx)]
+        train_df = trainval_df.iloc[train_idx].copy()
+        val_df = trainval_df.iloc[val_idx].copy()
 
         use_cache = bool(getattr(cfg, "use_cache", False)) and cache_dir is not None
         cache_path: Path | None = None
@@ -848,6 +886,10 @@ def iter_multimodal_kfold_data(
                     "split_mode": "kfold",
                     "fold_index": int(fold_idx),
                     "k_folds": int(getattr(cfg, "k_folds", 5)),
+                    "holdout_test": {
+                        "test_ratio": float(getattr(cfg, "test_ratio", 0.15)),
+                        "shuffle_before_split": bool(getattr(cfg, "shuffle_before_split", False)),
+                    },
                     "modalities": {"meta": bool(use_meta), "image": bool(use_image), "text": bool(use_text)},
                     "config": cfg.to_dict(),
                 }
@@ -1176,7 +1218,7 @@ def prepare_text_data(
 # multimodal（两路/三路，对齐 src/dl/mlp 的数据构建风格）
 # -----------------------------
 
-_MM_CACHE_VERSION = 1
+_MM_CACHE_VERSION = 2
 
 
 @dataclass(frozen=True)
