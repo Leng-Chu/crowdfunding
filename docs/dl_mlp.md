@@ -78,7 +78,7 @@ data/projects/<dataset>/<project_id>/
   - 典型默认：`Linear(F→256) + ReLU + Dropout(0.3)`（作为 encoder 输出定长向量）
 - 初始化：线性层使用 Xavier 初始化。
 
-表格预处理在 `src/dl/mlp/data.py:prepare_meta_data` 中完成（one-hot 编码 + 数值标准化等），并将预处理器与特征名保存到实验产物中，便于复现。
+表格预处理由 `src/dl/mlp/data.py:TabularPreprocessor` 完成，并在 `src/dl/mlp/data.py:prepare_multimodal_data` 中被调用（one-hot 编码 + 数值标准化等）；预处理器与特征名会随实验产物保存，便于复现。
 
 ### 4.2 image 分支（图片向量序列）
 
