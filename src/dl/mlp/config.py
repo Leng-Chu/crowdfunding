@@ -31,8 +31,8 @@ class MlpConfig:
     # -----------------------------
     # 数据与路径
     # -----------------------------
-    data_csv: str = "data/metadata/test.csv"
-    projects_root: str = "data/projects/test"
+    data_csv: str = "data/metadata/now_processed.csv"
+    projects_root: str = "data/projects/now"
     experiment_root: str = "experiments/mlp"
 
     # -----------------------------
