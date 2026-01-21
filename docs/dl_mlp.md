@@ -60,19 +60,12 @@ data/projects/<dataset>/<project_id>/
 - `error`：直接抛错（默认，更利于保证论文实验的数据一致性）。
 - `skip`：跳过该样本（会减少可用数据量；统计信息会记录缺失数量）。
 
-## 3. 数据划分（ratio / kfold）
+## 3. 数据划分
 
-由 `split_mode` 控制：
+按比例切分 train/val/test（可选是否在切分前打乱），对应 `src/dl/mlp/config.py:MlpConfig`：
 
-- `ratio`：按比例切分 train/val/test（默认 `0.7/0.15/0.15`，可选是否在切分前打乱）。
-- `kfold`：K 折交叉验证（实现为轻量级 KFold/StratifiedKFold，不依赖 sklearn）：
-  - 先按 `test_ratio` 固定一个**独立测试集**（可通过 `shuffle_before_split` 控制是否在切分前打乱；若为 `False`，通常等价于取 CSV 最后 `test_ratio` 的样本作为测试集）
-  - 测试集不参与任何折、不用于早停/调参
-  - 在剩余 `trainval` 上做 K 折：每折用 `k-1` 折做 train，用剩余 `1` 折做 val，轮换 `k` 次
-  - `k_folds`：折数
-  - `kfold_shuffle`：是否打乱
-  - `kfold_stratify`：是否按标签分层（默认开启）
-  - `k_fold_index`：`-1` 表示跑全折；指定 `0..k-1` 可只跑某一折（便于调试）
+- `train_ratio / val_ratio / test_ratio`：三段比例（默认 `0.68/0.17/0.15`）
+- `shuffle_before_split`：是否在切分前打乱（默认 `False`）
 
 ## 4. 模型结构（可直接写入论文的实现描述）
 
@@ -167,11 +160,6 @@ data/projects/<dataset>/<project_id>/
 - `artifacts/`：模型权重（`model.pt`）、表格预处理器（`preprocessor.pkl`）等可复现产物
 - `reports/`：`config.json`、`metrics.json`、`history.csv`、`splits.csv`、预测结果 CSV 等
 - `plots/`：训练曲线与 ROC 图（若 `save_plots=True`）
-
-当 `split_mode=kfold` 时，会在 `reports/fold_XX/` 等子目录下写入每折结果，并额外生成：
-- `reports/cv_metrics.json`：汇总每折指标 + OOF 验证集指标 + 测试集集成指标
-- `reports/cv_predictions_val.csv`：OOF 验证集预测（每个样本只在其所属 val 折被预测一次）
-- `reports/test_predictions_ensemble.csv`：固定测试集的集成预测（对每个测试样本汇聚各折模型的概率并取平均）
 
 ## 8. 缓存与工程性细节（简述）
 

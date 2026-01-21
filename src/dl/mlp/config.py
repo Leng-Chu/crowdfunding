@@ -54,23 +54,11 @@ class MlpConfig:
     # -----------------------------
     # 划分策略
     # -----------------------------
-    # split_mode:
-    # - ratio:  按 (train/val/test) 比例切分（可选是否打乱）
-    # - kfold:  先固定一个独立测试集（由 test_ratio 决定；可选是否在切分前打乱），
-    #           再对剩余 trainval 做 K 折交叉验证：每折用 k-1 折做 train、1 折做 val。
-    #           注意：测试集不参与任何折、不用于早停/调参。
-    split_mode: str = "kfold"  # ratio / kfold
-    train_ratio: float = 0.68
-    val_ratio: float = 0.17
-    test_ratio: float = 0.15
+    # 按比例切分 train/val/test（可选是否在切分前打乱）
+    train_ratio: float = 0.6
+    val_ratio: float = 0.2
+    test_ratio: float = 0.2
     shuffle_before_split: bool = False
-    # 说明：当 split_mode=kfold 时，train_ratio/val_ratio 不参与切分（val 由 K 折确定），仅使用 test_ratio 固定测试集。
-
-    # K 折交叉验证（仅 split_mode=kfold 时生效）
-    k_folds: int = 5
-    k_fold_index: int = -1  # -1 表示跑全部折；>=0 表示只跑指定折（便于调试）
-    kfold_shuffle: bool = True
-    kfold_stratify: bool = True  # 二分类任务默认启用分层抽样
 
     # -----------------------------
     # 嵌入配置（图片）

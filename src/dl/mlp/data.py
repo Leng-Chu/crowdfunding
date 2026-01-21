@@ -18,11 +18,28 @@ from config import MlpConfig
 
 
 def _split_by_ratio(
-    df: pd.DataFrame, train_ratio: float, val_ratio: float, shuffle: bool, seed: int
+    df: pd.DataFrame,
+    train_ratio: float,
+    val_ratio: float,
+    test_ratio: float,
+    shuffle: bool,
+    seed: int,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """按比例切分 train/val/test。"""
     if bool(shuffle):
         df = df.sample(frac=1.0, random_state=int(seed)).reset_index(drop=True)
+
+    train_ratio = float(train_ratio)
+    val_ratio = float(val_ratio)
+    test_ratio = float(test_ratio)
+    if train_ratio < 0 or val_ratio < 0 or test_ratio < 0:
+        raise ValueError("train_ratio/val_ratio/test_ratio 不能为负数。")
+    ratio_sum = train_ratio + val_ratio + test_ratio
+    if ratio_sum <= 0:
+        raise ValueError("train_ratio/val_ratio/test_ratio 之和必须大于 0。")
+
+    train_ratio /= ratio_sum
+    val_ratio /= ratio_sum
 
     n_total = int(len(df))
     n_train = int(n_total * float(train_ratio))
@@ -32,109 +49,6 @@ def _split_by_ratio(
     val_df = df.iloc[n_train : n_train + n_val].copy()
     test_df = df.iloc[n_train + n_val :].copy()
     return train_df, val_df, test_df
-
-
-def _split_trainval_test_by_test_ratio(
-    df: pd.DataFrame, test_ratio: float, shuffle: bool, seed: int
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    固定独立测试集（holdout test），返回 (trainval_df, test_df)。
-
-    约定：
-    - shuffle=False：按原始顺序取“最后 test_ratio”作为测试集（例如 15%）。
-    - shuffle=True：先打乱，再按上述规则取测试集（保证可复现）。
-    """
-    test_ratio = float(test_ratio)
-    if not (0.0 < test_ratio < 1.0):
-        raise ValueError(f"test_ratio 需要在 (0, 1) 之间，当前={test_ratio}")
-
-    if bool(shuffle):
-        df = df.sample(frac=1.0, random_state=int(seed)).reset_index(drop=True)
-
-    n_total = int(len(df))
-    if n_total <= 0:
-        raise ValueError("数据集为空，无法切分。")
-
-    n_test = int(n_total * test_ratio)
-    n_test = max(1, int(n_test))
-    if n_test >= n_total:
-        raise ValueError(f"test_ratio 过大导致 trainval 为空：n_total={n_total} n_test={n_test}")
-
-    n_trainval = n_total - n_test
-    trainval_df = df.iloc[:n_trainval].copy()
-    test_df = df.iloc[n_trainval:].copy()
-    return trainval_df, test_df
-
-
-def _get_split_mode(cfg: MlpConfig) -> str:
-    """获取 split_mode（ratio/kfold），兼容旧规则。"""
-    mode = str(getattr(cfg, "split_mode", "ratio") or "ratio").strip().lower()
-    return mode or "ratio"
-
-
-def _kfold_split_indices(
-    n_total: int,
-    n_splits: int,
-    shuffle: bool,
-    seed: int,
-    y: np.ndarray | None = None,
-    stratify: bool = True,
-) -> List[Tuple[np.ndarray, np.ndarray]]:
-    """
-    轻量级 KFold/StratifiedKFold（不依赖 sklearn）。
-
-    返回：[(train_idx, test_idx), ...]，其中 train_idx/test_idx 都是一维 int64 索引数组。
-    """
-    n_total = int(n_total)
-    n_splits = int(n_splits)
-    if n_splits < 2:
-        raise ValueError(f"k_folds 需要 >= 2，当前={n_splits}")
-    if n_total <= 0:
-        raise ValueError("数据集为空，无法做 K 折切分。")
-    if n_total < n_splits:
-        raise ValueError(f"k_folds={n_splits} 大于样本数 {n_total}，无法分折。")
-
-    rng = np.random.RandomState(int(seed))
-    all_idx = np.arange(n_total, dtype=np.int64)
-
-    folds: List[np.ndarray] = []
-    use_stratify = bool(stratify) and y is not None
-    if use_stratify:
-        y = np.asarray(y).astype(int).reshape(-1)
-        if int(y.shape[0]) != int(n_total):
-            raise ValueError(f"y 长度不匹配：{y.shape[0]} vs {n_total}")
-
-        buckets: List[List[int]] = [[] for _ in range(n_splits)]
-        for cls in (0, 1):
-            cls_idx = all_idx[y == int(cls)].copy()
-            if bool(shuffle):
-                rng.shuffle(cls_idx)
-            for j, idx in enumerate(cls_idx.tolist()):
-                buckets[j % n_splits].append(int(idx))
-
-        for b in buckets:
-            arr = np.asarray(b, dtype=np.int64)
-            if arr.size > 1 and bool(shuffle):
-                rng.shuffle(arr)
-            folds.append(arr)
-    else:
-        perm = all_idx.copy()
-        if bool(shuffle):
-            rng.shuffle(perm)
-        folds = [np.asarray(x, dtype=np.int64) for x in np.array_split(perm, n_splits)]
-
-    pairs: List[Tuple[np.ndarray, np.ndarray]] = []
-    for test_idx in folds:
-        if int(test_idx.size) <= 0:
-            continue
-        mask = np.ones((n_total,), dtype=bool)
-        mask[test_idx] = False
-        train_idx = all_idx[mask]
-        pairs.append((train_idx.astype(np.int64, copy=False), test_idx.astype(np.int64, copy=False)))
-
-    if len(pairs) != int(n_splits):
-        raise RuntimeError(f"K 折切分异常：期望 {n_splits} 折，实际得到 {len(pairs)} 折（可能存在空折）。")
-    return pairs
 
 
 def _normalize_project_id(value: Any) -> str:
@@ -308,6 +222,7 @@ def prepare_meta_data(csv_path: Path, cfg: MlpConfig) -> PreparedMetaData:  # no
         df,
         train_ratio=float(getattr(cfg, "train_ratio", 0.7)),
         val_ratio=float(getattr(cfg, "val_ratio", 0.15)),
+        test_ratio=float(getattr(cfg, "test_ratio", 0.15)),
         shuffle=bool(getattr(cfg, "shuffle_before_split", False)),
         seed=int(getattr(cfg, "random_seed", 42)),
     )
@@ -435,7 +350,6 @@ def _image_load_embedding_stack(project_dir: Path, cfg: MlpConfig) -> Tuple[Opti
 
 def _image_make_cache_key(csv_path: Path, projects_root: Path, cfg: MlpConfig) -> str:
     stat = csv_path.stat()
-    split_mode = _get_split_mode(cfg)
     payload = {
         "cache_version": _IMAGE_CACHE_VERSION,
         "data_csv": str(csv_path.as_posix()),
@@ -444,15 +358,11 @@ def _image_make_cache_key(csv_path: Path, projects_root: Path, cfg: MlpConfig) -
         "projects_root": str(projects_root.as_posix()),
         "embedding_type": str(getattr(cfg, "image_embedding_type", "")),
         "missing_strategy": str(getattr(cfg, "missing_strategy", "")),
-        "split_mode": split_mode,
         "train_ratio": float(getattr(cfg, "train_ratio", 0.7)),
         "val_ratio": float(getattr(cfg, "val_ratio", 0.15)),
         "test_ratio": float(getattr(cfg, "test_ratio", 0.15)),
         "shuffle_before_split": bool(getattr(cfg, "shuffle_before_split", False)),
         "random_seed": int(getattr(cfg, "random_seed", 42)),
-        "k_folds": int(getattr(cfg, "k_folds", 5)),
-        "kfold_shuffle": bool(getattr(cfg, "kfold_shuffle", True)),
-        "kfold_stratify": bool(getattr(cfg, "kfold_stratify", True)),
         "max_image_vectors": int(getattr(cfg, "max_image_vectors", 0)),
         "image_select_strategy": str(getattr(cfg, "image_select_strategy", "first")),
     }
@@ -609,6 +519,7 @@ def prepare_image_data(
         raw_df,
         train_ratio=float(getattr(cfg, "train_ratio", 0.7)),
         val_ratio=float(getattr(cfg, "val_ratio", 0.15)),
+        test_ratio=float(getattr(cfg, "test_ratio", 0.15)),
         shuffle=bool(getattr(cfg, "shuffle_before_split", False)),
         seed=int(getattr(cfg, "random_seed", 42)),
     )
@@ -784,125 +695,6 @@ def _mm_prepare_from_splits(
     )
 
 
-def iter_multimodal_kfold_data(
-    csv_path: Path,
-    projects_root: Path,
-    cfg: MlpConfig,
-    use_meta: bool,
-    use_image: bool,
-    use_text: bool,
-    cache_dir: Path | None = None,
-    logger=None,
-) -> Iterator[Tuple[int, PreparedMultiModalData]]:
-    """
-    K 折交叉验证数据迭代器（固定独立测试集 + 折内 train/val 轮换）。
-
-    - cfg.split_mode 必须是 kfold
-    - cfg.k_fold_index=-1：遍历全部折；>=0：仅返回指定折
-    """
-    mode = _get_split_mode(cfg)
-    if mode != "kfold":
-        raise ValueError(f"iter_multimodal_kfold_data 仅支持 split_mode=kfold，当前={mode!r}")
-
-    raw_df = _mm_load_dataframe(csv_path)
-    if cfg.id_col not in raw_df.columns:
-        raise ValueError(f"CSV 缺少 id_col={cfg.id_col!r}")
-    if cfg.target_col not in raw_df.columns:
-        raise ValueError(f"CSV 缺少 target_col={cfg.target_col!r}")
-
-    trainval_df, test_df = _split_trainval_test_by_test_ratio(
-        raw_df,
-        test_ratio=float(getattr(cfg, "test_ratio", 0.15)),
-        shuffle=bool(getattr(cfg, "shuffle_before_split", False)),
-        seed=int(getattr(cfg, "random_seed", 42)),
-    )
-
-    y_trainval = None
-    if bool(getattr(cfg, "kfold_stratify", True)):
-        y_trainval = _encode_binary_target(trainval_df[cfg.target_col])
-
-    pairs = _kfold_split_indices(
-        n_total=int(len(trainval_df)),
-        n_splits=int(getattr(cfg, "k_folds", 5)),
-        shuffle=bool(getattr(cfg, "kfold_shuffle", True)),
-        seed=int(getattr(cfg, "random_seed", 42)),
-        y=y_trainval,
-        stratify=bool(getattr(cfg, "kfold_stratify", True)),
-    )
-
-    only_fold = int(getattr(cfg, "k_fold_index", -1))
-    selected = range(len(pairs)) if only_fold < 0 else [only_fold]
-    for fold_idx in selected:
-        if fold_idx < 0 or fold_idx >= len(pairs):
-            raise ValueError(f"k_fold_index 越界：{fold_idx}，有效范围 0..{len(pairs)-1}")
-
-        train_idx, val_idx = pairs[int(fold_idx)]
-        train_df = trainval_df.iloc[train_idx].copy()
-        val_df = trainval_df.iloc[val_idx].copy()
-
-        use_cache = bool(getattr(cfg, "use_cache", False)) and cache_dir is not None
-        cache_path: Path | None = None
-        if use_cache:
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            cache_key = _mm_make_cache_key(
-                csv_path,
-                projects_root,
-                cfg,
-                use_meta=use_meta,
-                use_image=use_image,
-                use_text=use_text,
-                fold_index=int(fold_idx),
-            )
-            cache_path = cache_dir / f"{cache_key}.npz"
-            if cache_path.exists():
-                try:
-                    prepared = _mm_load_cache(cache_path)
-                    if logger is not None:
-                        logger.info("fold=%d 使用数据缓存：%s", int(fold_idx), str(cache_path))
-                    yield int(fold_idx), prepared
-                    continue
-                except Exception as e:
-                    if logger is not None:
-                        logger.warning("fold=%d 读取缓存失败，将重新构建：%s", int(fold_idx), e)
-
-        prepared = _mm_prepare_from_splits(
-            train_df=train_df,
-            val_df=val_df,
-            test_df=test_df,
-            projects_root=projects_root,
-            cfg=cfg,
-            use_meta=use_meta,
-            use_image=use_image,
-            use_text=use_text,
-        )
-
-        if use_cache and cache_path is not None:
-            try:
-                meta = {
-                    "cache_version": _MM_CACHE_VERSION,
-                    "cache_key": cache_path.stem,
-                    "csv_path": str(csv_path.as_posix()),
-                    "projects_root": str(projects_root.as_posix()),
-                    "split_mode": "kfold",
-                    "fold_index": int(fold_idx),
-                    "k_folds": int(getattr(cfg, "k_folds", 5)),
-                    "holdout_test": {
-                        "test_ratio": float(getattr(cfg, "test_ratio", 0.15)),
-                        "shuffle_before_split": bool(getattr(cfg, "shuffle_before_split", False)),
-                    },
-                    "modalities": {"meta": bool(use_meta), "image": bool(use_image), "text": bool(use_text)},
-                    "config": cfg.to_dict(),
-                }
-                _mm_save_cache(cache_path, prepared, meta=meta)
-                if logger is not None:
-                    logger.info("fold=%d 已写入数据缓存：%s", int(fold_idx), str(cache_path))
-            except Exception as e:
-                if logger is not None:
-                    logger.warning("fold=%d 写入缓存失败：%s", int(fold_idx), e)
-
-        yield int(fold_idx), prepared
-
-
 # -----------------------------
 # text（单分支，对齐 src/dl/text）
 # -----------------------------
@@ -992,7 +784,6 @@ def _text_load_embedding_stack(project_dir: Path, cfg: MlpConfig) -> Tuple[Optio
 
 
 def _text_make_cache_key(csv_path: Path, projects_root: Path, cfg: MlpConfig) -> str:
-    split_mode = _get_split_mode(cfg)
     payload = {
         "cache_version": _TEXT_CACHE_VERSION,
         "csv": str(csv_path.as_posix()),
@@ -1002,15 +793,11 @@ def _text_make_cache_key(csv_path: Path, projects_root: Path, cfg: MlpConfig) ->
         "text_select_strategy": str(getattr(cfg, "text_select_strategy", "")),
         "missing_strategy": str(getattr(cfg, "missing_strategy", "")),
         "split": {
-            "split_mode": split_mode,
             "train_ratio": float(getattr(cfg, "train_ratio", 0.7)),
             "val_ratio": float(getattr(cfg, "val_ratio", 0.15)),
             "test_ratio": float(getattr(cfg, "test_ratio", 0.15)),
             "shuffle_before_split": bool(getattr(cfg, "shuffle_before_split", False)),
             "random_seed": int(getattr(cfg, "random_seed", 42)),
-            "k_folds": int(getattr(cfg, "k_folds", 5)),
-            "kfold_shuffle": bool(getattr(cfg, "kfold_shuffle", True)),
-            "kfold_stratify": bool(getattr(cfg, "kfold_stratify", True)),
         },
     }
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
@@ -1155,6 +942,7 @@ def prepare_text_data(
         raw_df,
         train_ratio=float(getattr(cfg, "train_ratio", 0.7)),
         val_ratio=float(getattr(cfg, "val_ratio", 0.15)),
+        test_ratio=float(getattr(cfg, "test_ratio", 0.15)),
         shuffle=bool(getattr(cfg, "shuffle_before_split", False)),
         seed=int(getattr(cfg, "random_seed", 42)),
     )
@@ -1273,10 +1061,8 @@ def _mm_make_cache_key(
     use_meta: bool,
     use_image: bool,
     use_text: bool,
-    fold_index: int | None = None,
 ) -> str:
     stat = csv_path.stat()
-    split_mode = _get_split_mode(cfg)
     payload = {
         "cache_version": _MM_CACHE_VERSION,
         "data_csv": str(csv_path.as_posix()),
@@ -1291,16 +1077,11 @@ def _mm_make_cache_key(
             "numeric_cols": list(cfg.numeric_cols) if use_meta else [],
         },
         "split": {
-            "split_mode": split_mode,
             "train_ratio": float(getattr(cfg, "train_ratio", 0.7)),
             "val_ratio": float(getattr(cfg, "val_ratio", 0.15)),
             "test_ratio": float(getattr(cfg, "test_ratio", 0.15)),
             "shuffle_before_split": bool(getattr(cfg, "shuffle_before_split", False)),
             "random_seed": int(getattr(cfg, "random_seed", 42)),
-            "k_folds": int(getattr(cfg, "k_folds", 5)),
-            "kfold_shuffle": bool(getattr(cfg, "kfold_shuffle", True)),
-            "kfold_stratify": bool(getattr(cfg, "kfold_stratify", True)),
-            "fold_index": None if fold_index is None else int(fold_index),
         },
         "image": {
             "embedding_type": str(getattr(cfg, "image_embedding_type", "")),
@@ -1731,6 +1512,7 @@ def prepare_multimodal_data(
         raw_df,
         train_ratio=float(getattr(cfg, "train_ratio", 0.7)),
         val_ratio=float(getattr(cfg, "val_ratio", 0.15)),
+        test_ratio=float(getattr(cfg, "test_ratio", 0.15)),
         shuffle=bool(getattr(cfg, "shuffle_before_split", False)),
         seed=int(getattr(cfg, "random_seed", 42)),
     )
