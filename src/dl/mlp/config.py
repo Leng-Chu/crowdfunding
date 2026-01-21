@@ -115,8 +115,8 @@ class MlpConfig:
     # 训练超参
     # -----------------------------
     alpha: float = 5e-4  # weight_decay（L2）
-    learning_rate_init: float = 3e-4
-    batch_size: int = 512
+    learning_rate_init: float = 5e-4
+    batch_size: int = 1024
 
     max_epochs: int = 100
     early_stop_patience: int = 10
