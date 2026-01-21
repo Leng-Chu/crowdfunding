@@ -451,13 +451,12 @@ def main() -> int:
                     "mode": mode,
                     "image_embedding_type": cfg.image_embedding_type,
                     "text_embedding_type": cfg.text_embedding_type,
-                    "cv_k_folds": int(getattr(cfg, "k_folds", 5)),
-                    "cv_oof_accuracy": oof_metrics.get("accuracy"),
-                    "cv_oof_precision": oof_metrics.get("precision"),
-                    "cv_oof_recall": oof_metrics.get("recall"),
-                    "cv_oof_f1": oof_metrics.get("f1"),
-                    "cv_oof_auc": oof_metrics.get("roc_auc"),
-                    "cv_oof_logloss": oof_metrics.get("log_loss"),
+                    "test_accuracy": oof_metrics.get("accuracy"),
+                    "test_precision": oof_metrics.get("precision"),
+                    "test_recall": oof_metrics.get("recall"),
+                    "test_f1": oof_metrics.get("f1"),
+                    "test_auc": oof_metrics.get("roc_auc"),
+                    "k_fold": int(getattr(cfg, "k_folds", 5)),  # K折交叉验证时填写折数
                 },
             )
         except Exception as e:
@@ -682,6 +681,7 @@ def main() -> int:
                 "test_recall": test_metrics.get("recall"),
                 "test_f1": test_metrics.get("f1"),
                 "test_auc": test_metrics.get("roc_auc"),
+                "k_fold": "",  # 普通训练时k_fold列为空
             },
         )
     except Exception as e:
