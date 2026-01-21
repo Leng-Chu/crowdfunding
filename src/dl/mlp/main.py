@@ -34,6 +34,24 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="mlp 训练入口（支持命令行覆盖部分配置）。")
     parser.add_argument("--run-name", default=None, help="实验名称后缀，用于产物目录命名。")
     parser.add_argument(
+        "--use-meta",
+        default=None,
+        action=argparse.BooleanOptionalAction,
+        help="是否启用 meta 分支（出现任一 use_* 参数时，以命令行覆盖配置；未指定的 use_* 视为 False）。",
+    )
+    parser.add_argument(
+        "--use-image",
+        default=None,
+        action=argparse.BooleanOptionalAction,
+        help="是否启用 image 分支（出现任一 use_* 参数时，以命令行覆盖配置；未指定的 use_* 视为 False）。",
+    )
+    parser.add_argument(
+        "--use-text",
+        default=None,
+        action=argparse.BooleanOptionalAction,
+        help="是否启用 text 分支（出现任一 use_* 参数时，以命令行覆盖配置；未指定的 use_* 视为 False）。",
+    )
+    parser.add_argument(
         "--image-embedding-type",
         default=None,
         choices=["clip", "siglip", "resnet"],
@@ -139,6 +157,13 @@ def main() -> int:
 
     if args.run_name is not None:
         cfg = replace(cfg, run_name=str(args.run_name))
+    if args.use_meta is not None or args.use_image is not None or args.use_text is not None:
+        cfg = replace(
+            cfg,
+            use_meta=bool(args.use_meta),
+            use_image=bool(args.use_image),
+            use_text=bool(args.use_text),
+        )
     if args.image_embedding_type is not None:
         cfg = replace(cfg, image_embedding_type=str(args.image_embedding_type))
     if args.text_embedding_type is not None:

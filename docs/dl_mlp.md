@@ -146,12 +146,15 @@ data/projects/<dataset>/<project_id>/
 
 - 默认配置运行：
   - `conda run -n crowdfunding python src/dl/mlp/main.py`
+- 只使用 meta（关闭 image/text）：
+  - `conda run -n crowdfunding python src/dl/mlp/main.py --run-name meta --use-meta --device cuda:2`
 - 指定嵌入类型与设备：
   - `conda run -n crowdfunding python src/dl/mlp/main.py --run-name clip --image-embedding-type clip --text-embedding-type clip --device cuda:0`
 - 仅指定 GPU 序号（等价于 `--device cuda:N`）：
   - `conda run -n crowdfunding python src/dl/mlp/main.py --gpu 1`
 
 命令行参数仅覆盖少数常用项；其余超参建议直接编辑 `src/dl/mlp/config.py` 中的默认值。
+说明：只要命令行出现任一 `--use-meta/--use-image/--use-text`（或 `--no-use-*`），就以命令行为准，未显式指定的分支默认关闭。
 
 ### 7.2 输出目录结构
 
