@@ -391,8 +391,24 @@ class GateBinaryClassifier(nn.Module):
         else:
             self.meta_proj = None
 
+        # 第一印象：title_blurb 与 cover_image 也先过 encoder，再做 MLP 融合
+        self.impression_image_encoder = ImageCNNEncoder(
+            embedding_dim=int(image_embedding_dim),
+            conv_channels=int(image_conv_channels),
+            conv_kernel_size=int(image_conv_kernel_size),
+            input_dropout=float(image_input_dropout),
+            dropout=float(image_dropout),
+            use_batch_norm=bool(image_use_batch_norm),
+        )
+        self.impression_text_encoder = TextCNNEncoder(
+            embedding_dim=int(text_embedding_dim),
+            conv_kernel_size=int(text_conv_kernel_size),
+            input_dropout=float(text_input_dropout),
+            dropout=float(text_dropout),
+            use_batch_norm=bool(text_use_batch_norm),
+        )
         self.impression = MLPProjector(
-            input_dim=int(image_embedding_dim) + int(text_embedding_dim),
+            input_dim=int(self.impression_image_encoder.output_dim) + int(self.impression_text_encoder.output_dim),
             hidden_dim=int(impression_mlp_hidden_dim),
             output_dim=int(gate_dim),
             dropout=float(impression_dropout),
@@ -444,7 +460,9 @@ class GateBinaryClassifier(nn.Module):
         self,
         x_meta: torch.Tensor,
         x_cover: torch.Tensor,
+        len_cover: torch.Tensor,
         x_title_blurb: torch.Tensor,
+        len_title_blurb: torch.Tensor,
         x_image: torch.Tensor,
         len_image: torch.Tensor,
         x_text: torch.Tensor,
@@ -454,7 +472,9 @@ class GateBinaryClassifier(nn.Module):
         if self.meta_proj is not None:
             h_meta = self.meta_proj(h_meta)
 
-        h_impression = self.impression(torch.cat([x_title_blurb, x_cover], dim=1))
+        h_cover = self.impression_image_encoder(x_cover, lengths=len_cover)
+        h_title = self.impression_text_encoder(x_title_blurb, lengths=len_title_blurb)
+        h_impression = self.impression(torch.cat([h_title, h_cover], dim=1))
 
         h_img = self.image_encoder(x_image, lengths=len_image)
         h_txt = self.text_encoder(x_text, lengths=len_text)
@@ -499,4 +519,3 @@ def build_gate_model(
         gate_use_layer_norm=bool(getattr(cfg, "gate_use_layer_norm", True)),
         classifier_dropout=float(getattr(cfg, "classifier_dropout", 0.2)),
     )
-

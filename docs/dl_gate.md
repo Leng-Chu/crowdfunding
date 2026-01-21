@@ -5,7 +5,7 @@
 该模型固定包含三条分支，不再提供选择分支的开关：
 
 1. **meta 分支**：表格元数据（类别 + 数值）→ MLP 编码得到向量。
-2. **第一印象分支**：`title_blurb` 与 `cover_image` 的嵌入向量拼接后，通过两层 MLP 融合得到向量。
+2. **第一印象分支**：`title_blurb` 序列嵌入与 `cover_image` 序列嵌入分别编码（1D CNN + global max pooling），再通过两层 MLP 融合得到向量。
 3. **图文序列分支**：正文 `text` 序列嵌入与正文 `image` 序列嵌入分别编码（1D CNN + global max pooling），再通过两层 MLP 融合得到向量。
 
 最终融合不再使用 MLP，而是使用**两阶段门控网络**融合三路向量：
@@ -54,4 +54,3 @@
 - `--device auto|cpu|cuda|cuda:0 ...` 或 `--gpu N`
 
 默认产物目录：`experiments/gate/<run_id>/`（包含 `artifacts/`、`reports/`、`plots/`）。
-

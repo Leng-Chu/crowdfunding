@@ -42,7 +42,7 @@ class GateConfig:
     # -----------------------------
     id_col: str = "project_id"
     target_col: str = "state"
-    drop_cols: Tuple[str, ...] = ("project_id", "time")
+    drop_cols: Tuple[str, ...] = ("time")
     categorical_cols: Tuple[str, ...] = ("category", "country", "currency")
     numeric_cols: Tuple[str, ...] = ("duration_days", "log_usd_goal")
 

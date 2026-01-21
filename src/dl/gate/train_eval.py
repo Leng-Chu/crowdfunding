@@ -56,7 +56,9 @@ def _positive_proba_gate(
     model: nn.Module,
     X_meta: np.ndarray,
     X_cover: np.ndarray,
+    len_cover: np.ndarray,
     X_title_blurb: np.ndarray,
+    len_title_blurb: np.ndarray,
     X_image: np.ndarray,
     len_image: np.ndarray,
     X_text: np.ndarray,
@@ -68,7 +70,9 @@ def _positive_proba_gate(
     tensors = [
         torch.from_numpy(np.asarray(X_meta, dtype=np.float32)),
         torch.from_numpy(np.asarray(X_cover, dtype=np.float32)),
+        torch.from_numpy(np.asarray(len_cover, dtype=np.int64)),
         torch.from_numpy(np.asarray(X_title_blurb, dtype=np.float32)),
+        torch.from_numpy(np.asarray(len_title_blurb, dtype=np.int64)),
         torch.from_numpy(np.asarray(X_image, dtype=np.float32)),
         torch.from_numpy(np.asarray(len_image, dtype=np.int64)),
         torch.from_numpy(np.asarray(X_text, dtype=np.float32)),
@@ -84,16 +88,20 @@ def _positive_proba_gate(
     for batch in loader:
         xb_meta = batch[0].to(device)
         xb_cover = batch[1].to(device)
-        xb_title = batch[2].to(device)
-        xb_img = batch[3].to(device)
-        xb_len_img = batch[4].to(device)
-        xb_txt = batch[5].to(device)
-        xb_len_txt = batch[6].to(device)
+        xb_len_cover = batch[2].to(device)
+        xb_title = batch[3].to(device)
+        xb_len_title = batch[4].to(device)
+        xb_img = batch[5].to(device)
+        xb_len_img = batch[6].to(device)
+        xb_txt = batch[7].to(device)
+        xb_len_txt = batch[8].to(device)
 
         logits = model(
             x_meta=xb_meta,
             x_cover=xb_cover,
+            len_cover=xb_len_cover,
             x_title_blurb=xb_title,
+            len_title_blurb=xb_len_title,
             x_image=xb_img,
             len_image=xb_len_img,
             x_text=xb_txt,
@@ -111,7 +119,9 @@ def train_gate_with_early_stopping(
     model: nn.Module,
     X_meta_train: np.ndarray,
     X_cover_train: np.ndarray,
+    len_cover_train: np.ndarray,
     X_title_blurb_train: np.ndarray,
+    len_title_blurb_train: np.ndarray,
     X_image_train: np.ndarray,
     len_image_train: np.ndarray,
     X_text_train: np.ndarray,
@@ -119,7 +129,9 @@ def train_gate_with_early_stopping(
     y_train: np.ndarray,
     X_meta_val: np.ndarray,
     X_cover_val: np.ndarray,
+    len_cover_val: np.ndarray,
     X_title_blurb_val: np.ndarray,
+    len_title_blurb_val: np.ndarray,
     X_image_val: np.ndarray,
     len_image_val: np.ndarray,
     X_text_val: np.ndarray,
@@ -134,7 +146,9 @@ def train_gate_with_early_stopping(
     tensors = [
         torch.from_numpy(np.asarray(X_meta_train, dtype=np.float32)),
         torch.from_numpy(np.asarray(X_cover_train, dtype=np.float32)),
+        torch.from_numpy(np.asarray(len_cover_train, dtype=np.int64)),
         torch.from_numpy(np.asarray(X_title_blurb_train, dtype=np.float32)),
+        torch.from_numpy(np.asarray(len_title_blurb_train, dtype=np.int64)),
         torch.from_numpy(np.asarray(X_image_train, dtype=np.float32)),
         torch.from_numpy(np.asarray(len_image_train, dtype=np.int64)),
         torch.from_numpy(np.asarray(X_text_train, dtype=np.float32)),
@@ -179,18 +193,22 @@ def train_gate_with_early_stopping(
         for batch in train_loader:
             xb_meta = batch[0].to(device)
             xb_cover = batch[1].to(device)
-            xb_title = batch[2].to(device)
-            xb_img = batch[3].to(device)
-            xb_len_img = batch[4].to(device)
-            xb_txt = batch[5].to(device)
-            xb_len_txt = batch[6].to(device)
-            yb = batch[7].to(device)
+            xb_len_cover = batch[2].to(device)
+            xb_title = batch[3].to(device)
+            xb_len_title = batch[4].to(device)
+            xb_img = batch[5].to(device)
+            xb_len_img = batch[6].to(device)
+            xb_txt = batch[7].to(device)
+            xb_len_txt = batch[8].to(device)
+            yb = batch[9].to(device)
 
             optimizer.zero_grad(set_to_none=True)
             logits = model(
                 x_meta=xb_meta,
                 x_cover=xb_cover,
+                len_cover=xb_len_cover,
                 x_title_blurb=xb_title,
+                len_title_blurb=xb_len_title,
                 x_image=xb_img,
                 len_image=xb_len_img,
                 x_text=xb_txt,
@@ -215,7 +233,9 @@ def train_gate_with_early_stopping(
             model,
             X_meta=X_meta_train,
             X_cover=X_cover_train,
+            len_cover=len_cover_train,
             X_title_blurb=X_title_blurb_train,
+            len_title_blurb=len_title_blurb_train,
             X_image=X_image_train,
             len_image=len_image_train,
             X_text=X_text_train,
@@ -227,7 +247,9 @@ def train_gate_with_early_stopping(
             model,
             X_meta=X_meta_val,
             X_cover=X_cover_val,
+            len_cover=len_cover_val,
             X_title_blurb=X_title_blurb_val,
+            len_title_blurb=len_title_blurb_val,
             X_image=X_image_val,
             len_image=len_image_val,
             X_text=X_text_val,
@@ -314,7 +336,9 @@ def evaluate_gate_split(
     model: nn.Module,
     X_meta: np.ndarray,
     X_cover: np.ndarray,
+    len_cover: np.ndarray,
     X_title_blurb: np.ndarray,
+    len_title_blurb: np.ndarray,
     X_image: np.ndarray,
     len_image: np.ndarray,
     X_text: np.ndarray,
@@ -328,7 +352,9 @@ def evaluate_gate_split(
         model,
         X_meta=X_meta,
         X_cover=X_cover,
+        len_cover=len_cover,
         X_title_blurb=X_title_blurb,
+        len_title_blurb=len_title_blurb,
         X_image=X_image,
         len_image=len_image,
         X_text=X_text,
@@ -338,4 +364,3 @@ def evaluate_gate_split(
     )
     metrics = compute_binary_metrics(y, prob, threshold=cfg.threshold)
     return {"metrics": metrics, "prob": prob}
-

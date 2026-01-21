@@ -278,13 +278,20 @@ class PreparedGateData:
     preprocessor: TabularPreprocessor
     feature_names: List[str]
 
-    # 第一印象（向量）
+    # 第一印象（序列 + lengths）：供 encoder 编码
     X_cover_train: np.ndarray
+    len_cover_train: np.ndarray
     X_cover_val: np.ndarray
+    len_cover_val: np.ndarray
     X_cover_test: np.ndarray
+    len_cover_test: np.ndarray
+
     X_title_blurb_train: np.ndarray
+    len_title_blurb_train: np.ndarray
     X_title_blurb_val: np.ndarray
+    len_title_blurb_val: np.ndarray
     X_title_blurb_test: np.ndarray
+    len_title_blurb_test: np.ndarray
 
     # 图文序列（序列 + lengths）
     X_image_train: np.ndarray
@@ -307,8 +314,7 @@ class PreparedGateData:
 
     stats: Dict[str, int]
 
-
-_GATE_CACHE_VERSION = 1
+_GATE_CACHE_VERSION = 2
 
 
 def _validate_embedding_types(cfg: GateConfig) -> Tuple[str, str]:
@@ -341,13 +347,13 @@ def _load_required_impression_vectors(
     cfg: GateConfig,
 ) -> Tuple[np.ndarray | None, np.ndarray | None, int, int]:
     """
-    读取第一印象的两个“必需”向量：
+    读取第一印象的两个“必需”向量（保持为“序列”形式，供 encoder 编码）：
     - cover_image_{image_type}.npy
     - title_blurb_{text_type}.npy
 
     返回：
-    - cover_vec: (D_img,) 或 None
-    - title_vec: (D_txt,) 或 None
+    - cover_seq: (L_c, D_img) 或 None
+    - title_seq: (L_t, D_txt) 或 None
     - skipped: 是否跳过（0/1）
     - missing_required: 是否缺失必需文件（0/1）
     """
@@ -369,12 +375,9 @@ def _load_required_impression_vectors(
             missing.append(tb_path.name)
         raise FileNotFoundError(f"项目 {project_dir.name} 缺少必需文件：{', '.join(missing)}")
 
-    cover = _as_2d_embedding(np.load(cover_path), cover_path.name)
-    tb = _as_2d_embedding(np.load(tb_path), tb_path.name)
-
-    cover_vec = np.mean(cover, axis=0).astype(np.float32, copy=False)
-    title_vec = np.mean(tb, axis=0).astype(np.float32, copy=False)
-    return cover_vec, title_vec, 0, 0
+    cover_seq = _as_2d_embedding(np.load(cover_path), cover_path.name)
+    title_seq = _as_2d_embedding(np.load(tb_path), tb_path.name)
+    return cover_seq, title_seq, 0, 0
 
 
 def _load_optional_sequence(
@@ -419,6 +422,8 @@ def _build_features_for_split(
     np.ndarray,
     np.ndarray,
     np.ndarray,
+    np.ndarray,
+    np.ndarray,
     List[str],
     Dict[str, int],
     int,
@@ -433,8 +438,10 @@ def _build_features_for_split(
     kept_ids: List[str] = []
     kept_labels: List[int] = []
 
-    cover_vecs: List[np.ndarray] = []
-    title_vecs: List[np.ndarray] = []
+    cover_seqs: List[np.ndarray] = []
+    cover_lens: List[int] = []
+    title_seqs: List[np.ndarray] = []
+    title_lens: List[int] = []
 
     img_seqs: List[np.ndarray] = []
     img_lens: List[int] = []
@@ -465,24 +472,24 @@ def _build_features_for_split(
                 continue
             raise FileNotFoundError(f"找不到项目目录：{project_dir}")
 
-        cover_vec, title_vec, skipped, missing_required = _load_required_impression_vectors(project_dir, cfg)
+        cover_seq, title_seq, skipped, missing_required = _load_required_impression_vectors(project_dir, cfg)
         if skipped:
             skipped_total += 1
             missing_required_total += int(missing_required)
             continue
-        if cover_vec is None or title_vec is None:
+        if cover_seq is None or title_seq is None:
             skipped_total += 1
             missing_required_total += 1
             continue
 
         if image_dim <= 0:
-            image_dim = int(cover_vec.shape[0])
+            image_dim = int(cover_seq.shape[1])
         if text_dim <= 0:
-            text_dim = int(title_vec.shape[0])
-        if int(cover_vec.shape[0]) != int(image_dim):
-            raise ValueError(f"image_embedding_dim 不一致：期望 {image_dim}，但 {project_dir.name} 为 {cover_vec.shape[0]}")
-        if int(title_vec.shape[0]) != int(text_dim):
-            raise ValueError(f"text_embedding_dim 不一致：期望 {text_dim}，但 {project_dir.name} 为 {title_vec.shape[0]}")
+            text_dim = int(title_seq.shape[1])
+        if int(cover_seq.shape[1]) != int(image_dim):
+            raise ValueError(f"image_embedding_dim 不一致：期望 {image_dim}，但 {project_dir.name} 为 {cover_seq.shape[1]}")
+        if int(title_seq.shape[1]) != int(text_dim):
+            raise ValueError(f"text_embedding_dim 不一致：期望 {text_dim}，但 {project_dir.name} 为 {title_seq.shape[1]}")
 
         seed_base = int(getattr(cfg, "random_seed", 42)) + _stable_hash_int(str(project_dir.name))
         img_seq, missing_img = _load_optional_sequence(
@@ -502,8 +509,10 @@ def _build_features_for_split(
             seed=seed_base + 17,
         )
 
-        cover_vecs.append(cover_vec.reshape(1, -1))
-        title_vecs.append(title_vec.reshape(1, -1))
+        cover_seqs.append(cover_seq.astype(np.float32, copy=False))
+        cover_lens.append(int(cover_seq.shape[0]))
+        title_seqs.append(title_seq.astype(np.float32, copy=False))
+        title_lens.append(int(title_seq.shape[0]))
 
         img_seqs.append(img_seq)
         img_lens.append(int(img_seq.shape[0]))
@@ -524,8 +533,24 @@ def _build_features_for_split(
     idx_arr = np.asarray(kept_idx, dtype=np.int64)
     X_meta = np.asarray(X_meta_all[idx_arr], dtype=np.float32)
 
-    X_cover = np.concatenate(cover_vecs, axis=0).astype(np.float32, copy=False)
-    X_title = np.concatenate(title_vecs, axis=0).astype(np.float32, copy=False)
+    max_cover_len = int(max(cover_lens)) if cover_lens else 0
+    max_title_len = int(max(title_lens)) if title_lens else 0
+    max_cover_len = max(1, max_cover_len)
+    max_title_len = max(1, max_title_len)
+
+    X_cover = np.zeros((len(cover_seqs), max_cover_len, int(image_dim)), dtype=np.float32)
+    for j, seq in enumerate(cover_seqs):
+        L = int(seq.shape[0])
+        if L > 0:
+            X_cover[j, :L, :] = seq
+    len_cover = np.asarray(cover_lens, dtype=np.int64)
+
+    X_title = np.zeros((len(title_seqs), max_title_len, int(text_dim)), dtype=np.float32)
+    for j, seq in enumerate(title_seqs):
+        L = int(seq.shape[0])
+        if L > 0:
+            X_title[j, :L, :] = seq
+    len_title = np.asarray(title_lens, dtype=np.int64)
 
     max_img_len = int(max(img_lens)) if img_lens else 0
     max_txt_len = int(max(txt_lens)) if txt_lens else 0
@@ -556,7 +581,9 @@ def _build_features_for_split(
     return (
         X_meta,
         X_cover,
+        len_cover,
         X_title,
+        len_title,
         X_image,
         len_image,
         X_text,
@@ -597,7 +624,9 @@ def _prepare_from_splits(
     (
         X_meta_train,
         X_cover_train,
+        len_cover_train,
         X_title_train,
+        len_title_train,
         X_img_train,
         len_img_train,
         X_txt_train,
@@ -613,7 +642,9 @@ def _prepare_from_splits(
     (
         X_meta_val,
         X_cover_val,
+        len_cover_val,
         X_title_val,
+        len_title_val,
         X_img_val,
         len_img_val,
         X_txt_val,
@@ -629,7 +660,9 @@ def _prepare_from_splits(
     (
         X_meta_test,
         X_cover_test,
+        len_cover_test,
         X_title_test,
+        len_title_test,
         X_img_test,
         len_img_test,
         X_txt_test,
@@ -667,11 +700,17 @@ def _prepare_from_splits(
         preprocessor=preprocessor,
         feature_names=feature_names,
         X_cover_train=X_cover_train,
+        len_cover_train=len_cover_train,
         X_cover_val=X_cover_val,
+        len_cover_val=len_cover_val,
         X_cover_test=X_cover_test,
+        len_cover_test=len_cover_test,
         X_title_blurb_train=X_title_train,
+        len_title_blurb_train=len_title_train,
         X_title_blurb_val=X_title_val,
+        len_title_blurb_val=len_title_val,
         X_title_blurb_test=X_title_test,
+        len_title_blurb_test=len_title_test,
         X_image_train=X_img_train,
         len_image_train=len_img_train,
         X_image_val=X_img_val,
@@ -754,11 +793,17 @@ def _save_cache(cache_path: Path, prepared: PreparedGateData, meta: Dict[str, An
         "X_meta_val": prepared.X_meta_val.astype(np.float32, copy=False),
         "X_meta_test": prepared.X_meta_test.astype(np.float32, copy=False),
         "X_cover_train": prepared.X_cover_train.astype(np.float32, copy=False),
+        "len_cover_train": prepared.len_cover_train.astype(np.int64, copy=False),
         "X_cover_val": prepared.X_cover_val.astype(np.float32, copy=False),
+        "len_cover_val": prepared.len_cover_val.astype(np.int64, copy=False),
         "X_cover_test": prepared.X_cover_test.astype(np.float32, copy=False),
+        "len_cover_test": prepared.len_cover_test.astype(np.int64, copy=False),
         "X_title_blurb_train": prepared.X_title_blurb_train.astype(np.float32, copy=False),
+        "len_title_blurb_train": prepared.len_title_blurb_train.astype(np.int64, copy=False),
         "X_title_blurb_val": prepared.X_title_blurb_val.astype(np.float32, copy=False),
+        "len_title_blurb_val": prepared.len_title_blurb_val.astype(np.int64, copy=False),
         "X_title_blurb_test": prepared.X_title_blurb_test.astype(np.float32, copy=False),
+        "len_title_blurb_test": prepared.len_title_blurb_test.astype(np.int64, copy=False),
         "X_image_train": prepared.X_image_train.astype(np.float32, copy=False),
         "len_image_train": prepared.len_image_train.astype(np.int64, copy=False),
         "X_image_val": prepared.X_image_val.astype(np.float32, copy=False),
@@ -804,11 +849,17 @@ def _load_cache(cache_path: Path) -> PreparedGateData:
             preprocessor=preprocessor,
             feature_names=[str(x) for x in feature_names],
             X_cover_train=z["X_cover_train"].astype(np.float32, copy=False),
+            len_cover_train=z["len_cover_train"].astype(np.int64, copy=False),
             X_cover_val=z["X_cover_val"].astype(np.float32, copy=False),
+            len_cover_val=z["len_cover_val"].astype(np.int64, copy=False),
             X_cover_test=z["X_cover_test"].astype(np.float32, copy=False),
+            len_cover_test=z["len_cover_test"].astype(np.int64, copy=False),
             X_title_blurb_train=z["X_title_blurb_train"].astype(np.float32, copy=False),
+            len_title_blurb_train=z["len_title_blurb_train"].astype(np.int64, copy=False),
             X_title_blurb_val=z["X_title_blurb_val"].astype(np.float32, copy=False),
+            len_title_blurb_val=z["len_title_blurb_val"].astype(np.int64, copy=False),
             X_title_blurb_test=z["X_title_blurb_test"].astype(np.float32, copy=False),
+            len_title_blurb_test=z["len_title_blurb_test"].astype(np.int64, copy=False),
             X_image_train=z["X_image_train"].astype(np.float32, copy=False),
             len_image_train=z["len_image_train"].astype(np.int64, copy=False),
             X_image_val=z["X_image_val"].astype(np.float32, copy=False),
