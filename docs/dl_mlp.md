@@ -69,14 +69,13 @@ data/projects/<dataset>/<project_id>/
 
 ## 4. 模型结构（可直接写入论文的实现描述）
 
-模型实现位于 `src/dl/mlp/model.py`，包含单分支与多分支融合两类网络，结构为：分支编码器 + 特征拼接 + 融合头。
+模型实现位于 `src/dl/mlp/model.py`，包含多分支融合网络；单/双分支均通过关闭部分分支做三分支消融，结构为：分支编码器 + 特征拼接 + 融合头。
 
 ### 4.1 meta 分支（表格特征）
 
 - 输入：预处理后的表格特征向量 `x_meta ∈ R^{B×F}`。
-- 结构：全连接 MLP（`MLPBinaryClassifier` / `MetaMLPEncoder`）
+- 结构：全连接 MLP（`MetaMLPEncoder`）
   - 典型默认：`Linear(F→256) + ReLU + Dropout(0.3)`（作为 encoder 输出定长向量）
-  - 单分支分类器会在末尾追加 `Linear(·→1)` 输出 logits。
 - 初始化：线性层使用 Xavier 初始化。
 
 表格预处理在 `src/dl/mlp/data.py:prepare_meta_data` 中完成（one-hot 编码 + 数值标准化等），并将预处理器与特征名保存到实验产物中，便于复现。
@@ -84,19 +83,19 @@ data/projects/<dataset>/<project_id>/
 ### 4.2 image 分支（图片向量序列）
 
 - 输入：图片向量序列 `x_image ∈ R^{B×L×D}`，其中 `L` 为序列长度，`D` 为图片向量维度。
-- 结构：两层 1D CNN + 池化 + 全局最大池化（`ImageCNNEncoder` / `ImageCNNBinaryClassifier`）
+- 结构：两层 1D CNN + 池化 + 全局最大池化（`ImageCNNEncoder`）
   - 将输入转置为 `R^{B×D×L}` 后做 `Conv1d`（same padding，kernel size 为奇数）
   - 每层卷积后：`BatchNorm(可选) + ReLU + MaxPool1d(stride=2, ceil_mode=True) + Dropout`
   - 通过 `lengths` 对 padding 位置 mask 后做 **全局最大池化** 得到定长向量
-  - 经过 `Linear + ReLU + Dropout` 后进入分类头（或作为 encoder 输出）
+  - 得到定长向量后与其他分支拼接进入融合头
 - 初始化：卷积层 Kaiming 初始化、线性层 Xavier 初始化。
 
 ### 4.3 text 分支（文本向量序列）
 
 - 输入：文本向量序列 `x_text ∈ R^{B×L×D}`。
-- 结构：与 image 分支类似的 TextCNN（`TextCNNEncoder` / `TextCNNBinaryClassifier`），差异在于文本侧使用三层卷积/池化（以适配更长的序列；具体实现以 `model.py` 为准）。
+- 结构：与 image 分支类似的 TextCNN（`TextCNNEncoder`），差异在于文本侧使用三层卷积/池化（以适配更长的序列；具体实现以 `model.py` 为准）。
 
-### 4.4 多模态融合（两路/三路）
+### 4.4 多模态融合（一路/两路/三路）
 
 - 对启用的分支分别得到定长向量表示：
   - `h_meta ∈ R^{B×d_m}`
