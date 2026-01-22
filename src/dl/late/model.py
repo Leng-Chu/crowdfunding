@@ -16,6 +16,13 @@ import torch.nn as nn
 from config import LateConfig
 
 
+def _normalize_baseline_mode(baseline_mode: str) -> str:
+    mode = str(baseline_mode or "").strip().lower()
+    if mode not in {"attn_pool", "trm_no_pos"}:
+        raise ValueError(f"不支持的 baseline_mode={mode!r}，可选：attn_pool/trm_no_pos")
+    return mode
+
+
 class MetaMLPEncoder(nn.Module):
     """metadata 特征 -> FC -> Dropout，输出一个定长向量（与 mlp baseline 一致）。"""
 
@@ -200,7 +207,7 @@ class LateFusionBinaryClassifier(nn.Module):
         meta_input_dim: int,
         image_embedding_dim: int,
         text_embedding_dim: int,
-        intra_encoder: str = "attn_pool",
+        baseline_mode: str = "attn_pool",
         d_model: int = 256,
         transformer_n_layers: int = 2,
         transformer_n_heads: int = 8,
@@ -223,7 +230,7 @@ class LateFusionBinaryClassifier(nn.Module):
             raise ValueError("fusion_dropout 需要在 [0, 1) 之间")
 
         self.use_meta = bool(use_meta)
-        self.intra_encoder = str(intra_encoder or "").strip().lower()
+        self.baseline_mode = _normalize_baseline_mode(baseline_mode)
         self.d_model = int(d_model)
 
         # 3.1 Modality Projection
@@ -231,10 +238,10 @@ class LateFusionBinaryClassifier(nn.Module):
         self.txt_proj = nn.Linear(int(text_embedding_dim), int(self.d_model))
 
         # 3.2 集合编码（模态内）
-        if self.intra_encoder == "attn_pool":
+        if self.baseline_mode == "attn_pool":
             self.img_encoder = AttentionPoolingSetEncoder(d_model=int(self.d_model))
             self.txt_encoder = AttentionPoolingSetEncoder(d_model=int(self.d_model))
-        elif self.intra_encoder == "transformer_no_pos":
+        elif self.baseline_mode == "trm_no_pos":
             self.img_encoder = TransformerNoPosSetEncoder(
                 d_model=int(self.d_model),
                 n_layers=int(transformer_n_layers),
@@ -250,7 +257,7 @@ class LateFusionBinaryClassifier(nn.Module):
                 dropout=float(transformer_dropout),
             )
         else:
-            raise ValueError(f"不支持的 intra_encoder={self.intra_encoder!r}，可选：attn_pool/transformer_no_pos")
+            raise ValueError(f"不支持的 baseline_mode={self.baseline_mode!r}，可选：attn_pool/trm_no_pos")
 
         # meta 分支（可选）
         self.meta: Optional[MetaMLPEncoder] = None
@@ -345,7 +352,7 @@ def build_late_model(
         meta_input_dim=int(meta_input_dim) if use_meta else 0,
         image_embedding_dim=int(image_embedding_dim),
         text_embedding_dim=int(text_embedding_dim),
-        intra_encoder=str(getattr(cfg, "intra_encoder", "attn_pool")),
+        baseline_mode=str(getattr(cfg, "baseline_mode", "attn_pool")),
         d_model=int(getattr(cfg, "d_model", 256)),
         transformer_n_layers=int(getattr(cfg, "transformer_n_layers", 2)),
         transformer_n_heads=int(getattr(cfg, "transformer_n_heads", 8)),

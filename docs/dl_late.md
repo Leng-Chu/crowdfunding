@@ -116,9 +116,9 @@ data/projects/<dataset>/<project_id>/
 
 ### 5.2 模态内集合编码（不使用顺序）
 
-配置项 `intra_encoder ∈ {attn_pool, transformer_no_pos}`：
+配置项 `baseline_mode ∈ {attn_pool, trm_no_pos}`：
 
-1) `intra_encoder=attn_pool`
+1) `baseline_mode=attn_pool`
 
 - 每个模态一个可学习全局 query：`q_img, q_txt ∈ R^{d_model}`
 - 单头 scaled dot-product attention（手写实现）
@@ -128,7 +128,7 @@ data/projects/<dataset>/<project_id>/
   - `h_img ∈ [B, d_model]`
   - `h_txt ∈ [B, d_model]`
 
-2) `intra_encoder=transformer_no_pos`（容量对照）
+2) `baseline_mode=trm_no_pos`（容量对照）
 
 - 分别对 `Img` 和 `Txt` 使用 `TransformerEncoder`（不使用任何 position encoding）
 - 使用 `src_key_padding_mask`
@@ -137,7 +137,7 @@ data/projects/<dataset>/<project_id>/
   - `h_img ∈ [B, d_model]`
   - `h_txt ∈ [B, d_model]`
 
-通用禁止项（两种 `intra_encoder` 均适用）：
+通用禁止项（两种 `baseline_mode` 均适用）：
 - 不使用 position encoding
 - 不使用跨模态 attention
 - 不进行图文 token 级交互
@@ -175,7 +175,7 @@ data/projects/<dataset>/<project_id>/
 - `--use-meta / --no-use-meta`
 - `--image-embedding-type`
 - `--text-embedding-type`
-- `--intra_encoder`
+- `--baseline-mode`
 - `--device`
 - `--gpu`（等价于 `--device cuda:N`，与 `--device` 互斥）
 
@@ -191,20 +191,20 @@ data/projects/<dataset>/<project_id>/
   - `conda run -n crowdfunding python src/dl/late/main.py --run-name debug`
 - 关闭 meta（只做图文晚期融合）：
   - `conda run -n crowdfunding python src/dl/late/main.py --no-use-meta`
-- 指定嵌入类型 / 集合编码器 / 显卡：
-  - `conda run -n crowdfunding python src/dl/late/main.py --image-embedding-type clip --text-embedding-type bge --intra_encoder attn_pool --device cuda:0`
+- 指定嵌入类型 / baseline 模式 / 显卡：
+  - `conda run -n crowdfunding python src/dl/late/main.py --image-embedding-type clip --text-embedding-type bge --baseline-mode attn_pool --device cuda:0`
 
 ### 8.2 输出目录结构（与 mlp baseline 对齐）
 
-默认写入 `experiments/late/<mode>/<intra_encoder>/<run_id>/`：
+默认写入 `experiments/late/<mode>/<run_id>/`：
 
 - `artifacts/`：模型权重（`model.pt`）、表格预处理器（`preprocessor.pkl`）等可复现产物
 - `reports/`：`config.json`、`metrics.json`、`history.csv`、`splits.csv`、预测结果 CSV 等
 - `plots/`：训练曲线与 ROC 图（若 `save_plots=True`）
 
 其中：
-- `mode` 取 `image+text` 或 `meta+image+text`
-- `intra_encoder` 取 `attn_pool` 或 `transformer_no_pos`
+- `mode` 取 `late_attn_pool` / `late_trm_no_pos`，并按需追加 `+meta`
+- `baseline_mode`（配置项）取 `attn_pool` 或 `trm_no_pos`
 
 ## 9. 缓存与工程性细节（简述）
 

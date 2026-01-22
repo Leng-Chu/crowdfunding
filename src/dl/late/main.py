@@ -2,7 +2,7 @@
 """
 late 主程序入口：
 
-- 图像集合 + 文本集合分别建模（attn_pool / transformer_no_pos）
+- 图像集合 + 文本集合分别建模（attn_pool / trm_no_pos）
 - 晚期融合后做二分类（BCEWithLogitsLoss）
 
 说明：
@@ -11,8 +11,8 @@ late 主程序入口：
 运行（在项目根目录）：
 - 使用默认配置：
   `conda run -n crowdfunding python src/dl/late/main.py`
-- 指定嵌入类型 / 集合编码器 / 显卡：
-  `conda run -n crowdfunding python src/dl/late/main.py --image-embedding-type clip --text-embedding-type bge --intra_encoder attn_pool --device cuda:0`
+- 指定嵌入类型 / baseline 模式 / 显卡：
+  `conda run -n crowdfunding python src/dl/late/main.py --image-embedding-type clip --text-embedding-type bge --baseline-mode attn_pool --device cuda:0`
 """
 
 from __future__ import annotations
@@ -50,10 +50,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="文本嵌入类型（默认读取 config.py）。",
     )
     parser.add_argument(
-        "--intra_encoder",
+        "--baseline-mode",
         default=None,
-        choices=["attn_pool", "transformer_no_pos"],
-        help="模态内集合编码器（默认读取 config.py）。",
+        choices=["attn_pool", "trm_no_pos"],
+        help="baseline 模式（默认读取 config.py）。",
     )
     parser.add_argument(
         "--device",
@@ -113,8 +113,11 @@ def _save_single_row_csv(save_path: Path, row: dict) -> None:
         writer.writerow(row)
 
 
-def _mode_name(use_meta: bool) -> str:
-    return "meta+image+text" if bool(use_meta) else "image+text"
+def _normalize_baseline_mode(baseline_mode: str) -> str:
+    mode = str(baseline_mode or "").strip().lower()
+    if mode not in {"attn_pool", "trm_no_pos"}:
+        raise ValueError(f"不支持的 baseline_mode={mode!r}，可选：attn_pool/trm_no_pos")
+    return mode
 
 
 def main() -> int:
@@ -144,8 +147,8 @@ def main() -> int:
         cfg = replace(cfg, image_embedding_type=str(args.image_embedding_type))
     if args.text_embedding_type is not None:
         cfg = replace(cfg, text_embedding_type=str(args.text_embedding_type))
-    if args.intra_encoder is not None:
-        cfg = replace(cfg, intra_encoder=str(args.intra_encoder))
+    if args.baseline_mode is not None:
+        cfg = replace(cfg, baseline_mode=str(args.baseline_mode))
 
     if args.device is not None:
         cfg = replace(cfg, device=str(args.device))
@@ -159,9 +162,11 @@ def main() -> int:
     projects_root = project_root / cfg.projects_root
     cache_dir = project_root / cfg.cache_dir
 
-    mode = _mode_name(use_meta)
-    intra = str(getattr(cfg, "intra_encoder", "attn_pool"))
-    experiment_root = project_root / cfg.experiment_root / mode / intra
+    baseline_mode_inner = _normalize_baseline_mode(str(getattr(cfg, "baseline_mode", "attn_pool")))
+    cfg = replace(cfg, baseline_mode=baseline_mode_inner)
+    baseline_mode = f"late_{baseline_mode_inner}"
+    mode = baseline_mode + ("+meta" if use_meta else "")
+    experiment_root = project_root / cfg.experiment_root / mode
     experiment_root.mkdir(parents=True, exist_ok=True)
 
     base_run_name = (
@@ -173,7 +178,13 @@ def main() -> int:
 
     logger = setup_logger(run_dir / "train.log")
 
-    logger.info("模式=%s | intra=%s | run_id=%s | run_name=%s | use_meta=%s", mode, intra, run_id, run_name, use_meta)
+    logger.info(
+        "模式=%s | run_id=%s | baseline_mode=%s | use_meta=%s",
+        mode,
+        run_id,
+        baseline_mode,
+        use_meta,
+    )
     logger.info("python=%s | 平台=%s", sys.version.replace("\n", " "), platform.platform())
     logger.info("data_csv=%s", str(csv_path))
     logger.info("projects_root=%s", str(projects_root))
@@ -252,7 +263,7 @@ def main() -> int:
             "run_id": run_id,
             "run_name": str(run_name),
             "mode": mode,
-            "intra_encoder": intra,
+            "baseline_mode": baseline_mode_inner,
             "use_meta": use_meta,
             "meta_dim": int(prepared.meta_dim),
             "image_embedding_dim": int(prepared.image_embedding_dim),
@@ -343,13 +354,13 @@ def main() -> int:
     torch.save(
         {
             "state_dict": best_model.state_dict(),
+            "baseline_mode": baseline_mode_inner,
             "use_meta": bool(use_meta),
             "meta_dim": int(prepared.meta_dim),
             "image_embedding_dim": int(prepared.image_embedding_dim),
             "text_embedding_dim": int(prepared.text_embedding_dim),
             "image_embedding_type": cfg.image_embedding_type,
             "text_embedding_type": cfg.text_embedding_type,
-            "intra_encoder": str(getattr(cfg, "intra_encoder", "")),
             "max_seq_len": int(getattr(cfg, "max_seq_len", 0)),
             "truncation_strategy": str(getattr(cfg, "truncation_strategy", "")),
             "d_model": int(getattr(cfg, "d_model", 0)),
@@ -394,11 +405,9 @@ def main() -> int:
             run_dir / "result.csv",
             {
                 "mode": mode,
-                "intra_encoder": intra,
+                "baseline_mode": baseline_mode,
                 "image_embedding_type": cfg.image_embedding_type,
                 "text_embedding_type": cfg.text_embedding_type,
-                "max_seq_len": int(getattr(cfg, "max_seq_len", 0)),
-                "truncation_strategy": str(getattr(cfg, "truncation_strategy", "")),
                 "threshold": float(best_threshold),
                 "test_accuracy": test_metrics.get("accuracy"),
                 "test_precision": test_metrics.get("precision"),

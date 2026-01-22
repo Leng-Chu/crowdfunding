@@ -7,8 +7,8 @@ late 配置（单文件 / 单类）：
 运行方式（在项目根目录）：
 - 使用默认配置：
   `conda run -n crowdfunding python src/dl/late/main.py`
-- 指定嵌入类型 / 集合编码器 / 显卡：
-  `conda run -n crowdfunding python src/dl/late/main.py --image-embedding-type clip --text-embedding-type bge --intra_encoder attn_pool --device cuda:0`
+- 指定嵌入类型 / baseline 模式 / 显卡：
+  `conda run -n crowdfunding python src/dl/late/main.py --image-embedding-type clip --text-embedding-type bge --baseline-mode attn_pool --device cuda:0`
 - 仅指定 GPU 序号（等价于 --device cuda:N）：
   `conda run -n crowdfunding python src/dl/late/main.py --gpu 1`
 """
@@ -84,11 +84,11 @@ class LateConfig:
     # -----------------------------
     # 模型结构超参
     # -----------------------------
-    intra_encoder: str = "attn_pool"  # attn_pool / transformer_no_pos
+    baseline_mode: str = "attn_pool"  # attn_pool / trm_no_pos
 
     d_model: int = 256
 
-    # transformer_no_pos（容量对照：不使用任何 position encoding）
+    # trm_no_pos（容量对照：不使用任何 position encoding）
     transformer_n_layers: int = 2
     transformer_n_heads: int = 8
     transformer_ffn_dim: int = 512

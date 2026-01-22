@@ -25,16 +25,16 @@ def run_all_experiments():
     # 定义所有实验命令
     all_commands = [
         # 使用meta数据的不同baseline模式
-        ("conda run -n crowdfunding python src/dl/late/main.py --run-name clip --intra_encoder attn_pool --image-embedding-type clip --text-embedding-type clip --use-meta --device cuda:0", 
-         "Late: CLIP Image+Text with Meta - attn_pool"),
-        ("conda run -n crowdfunding python src/dl/late/main.py --run-name clip --intra_encoder transformer_no_pos --image-embedding-type clip --text-embedding-type clip --use-meta --device cuda:1", 
-         "Late: CLIP Image+Text with Meta - transformer_no_pos"),
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name clip --baseline-mode attn_pool --image-embedding-type clip --text-embedding-type clip --use-meta --device cuda:0",
+         "Late: late_attn_pool+meta (CLIP)"),
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name clip --baseline-mode trm_no_pos --image-embedding-type clip --text-embedding-type clip --use-meta --device cuda:1",
+         "Late: late_trm_no_pos+meta (CLIP)"),
          
         # 不使用meta数据的不同baseline模式
-        ("conda run -n crowdfunding python src/dl/late/main.py --run-name clip --intra_encoder attn_pool --image-embedding-type clip --text-embedding-type clip --no-use-meta --device cuda:2", 
-         "Late: CLIP Image+Text - attn_pool"),
-        ("conda run -n crowdfunding python src/dl/late/main.py --run-name clip --intra_encoder transformer_no_pos --image-embedding-type clip --text-embedding-type clip --no-use-meta --device cuda:3", 
-         "Late: CLIP Image+Text - transformer_no_pos")
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name clip --baseline-mode attn_pool --image-embedding-type clip --text-embedding-type clip --no-use-meta --device cuda:2",
+         "Late: late_attn_pool (CLIP)"),
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name clip --baseline-mode trm_no_pos --image-embedding-type clip --text-embedding-type clip --no-use-meta --device cuda:3",
+         "Late: late_trm_no_pos (CLIP)")
     ]
     
     threads = []
