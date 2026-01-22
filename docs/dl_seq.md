@@ -212,7 +212,7 @@ X ∈ R^{B×L×d_model}
 - 评估指标：
   - `accuracy, precision, recall, f1, roc_auc, log_loss`
   - 若某个 split 只包含单一类别，`roc_auc` 可能为 `None`，并在指标里记录 `roc_auc_error`
-- 阈值：`threshold`（默认 0.5）
+- 阈值（工程规范）：最终报告指标时，阈值由验证集选取（最大化 F1），并将该阈值用于测试集评估；详见 `docs/dl_threshold.md`
 
 ---
 

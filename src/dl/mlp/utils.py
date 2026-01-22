@@ -244,6 +244,69 @@ def compute_binary_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: fl
     return out
 
 
+def find_best_f1_threshold(y_true: np.ndarray, y_prob: np.ndarray) -> float:
+    """
+    在验证集上选择阈值：最大化 F1（预测规则：y_pred = y_prob >= threshold）。
+
+    说明：
+    - 为保证可复现与效率，使用排序 + 累积统计的方式遍历所有“分数变化点”的阈值候选。
+    - 若出现多个阈值 F1 相同，选择“阈值更大”的那个（更保守，减少误报），保证确定性。
+    - 若验证集中没有正样本或没有负样本，返回 0.5（避免异常）。
+    """
+    y_true = np.asarray(y_true).astype(int).reshape(-1)
+    y_prob = np.asarray(y_prob).astype(float).reshape(-1)
+    if y_true.shape != y_prob.shape:
+        raise ValueError(f"y_true/y_prob 形状不一致：{y_true.shape} vs {y_prob.shape}")
+
+    n = int(y_true.size)
+    if n == 0:
+        return 0.5
+
+    n_pos = int(np.sum(y_true == 1))
+    n_neg = int(np.sum(y_true == 0))
+    if n_pos == 0 or n_neg == 0:
+        return 0.5
+
+    mask = np.isfinite(y_prob)
+    if int(np.sum(mask)) != n:
+        y_true = y_true[mask]
+        y_prob = y_prob[mask]
+        n = int(y_true.size)
+        if n == 0:
+            return 0.5
+        n_pos = int(np.sum(y_true == 1))
+        n_neg = int(np.sum(y_true == 0))
+        if n_pos == 0 or n_neg == 0:
+            return 0.5
+
+    order = np.argsort(-y_prob, kind="mergesort")
+    y_true_sorted = y_true[order]
+    y_prob_sorted = y_prob[order]
+
+    distinct = np.where(np.diff(y_prob_sorted))[0]
+    thr_idx = np.r_[distinct, y_true_sorted.size - 1]
+
+    cum_tp = np.cumsum(y_true_sorted == 1)[thr_idx]
+    cum_fp = (1 + thr_idx) - cum_tp
+
+    best_f1 = -1.0
+    best_thr = 0.5
+    for tp, fp, idx in zip(cum_tp, cum_fp, thr_idx):
+        tp = int(tp)
+        fp = int(fp)
+        fn = int(n_pos - tp)
+        denom = 2 * tp + fp + fn
+        f1 = (2.0 * tp / denom) if denom > 0 else 0.0
+        thr = float(y_prob_sorted[int(idx)])
+        if f1 > best_f1 or (abs(f1 - best_f1) <= 1e-15 and thr > best_thr):
+            best_f1 = float(f1)
+            best_thr = float(thr)
+
+    if not np.isfinite(best_thr):
+        return 0.5
+    return float(np.clip(best_thr, 0.0, 1.0))
+
+
 def plot_history(history: List[Dict[str, Any]], save_path: Path) -> None:
     """绘制训练曲线（loss/auc）。"""
     if not history:

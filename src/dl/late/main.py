@@ -127,6 +127,8 @@ def main() -> int:
     from model import build_late_model
     from train_eval import evaluate_late_split, train_late_with_early_stopping
     from utils import (
+        compute_binary_metrics,
+        find_best_f1_threshold,
         make_run_dirs,
         plot_history,
         plot_roc,
@@ -321,9 +323,17 @@ def main() -> int:
         cfg=cfg,
     )
 
+    # 用验证集为本次模型选择阈值（最大化 F1），并用该阈值计算 train/val/test 指标。
+    best_threshold = find_best_f1_threshold(prepared.y_val, val_out["prob"])
+    train_out["metrics"] = compute_binary_metrics(prepared.y_train, train_out["prob"], threshold=best_threshold)
+    val_out["metrics"] = compute_binary_metrics(prepared.y_val, val_out["prob"], threshold=best_threshold)
+    test_out["metrics"] = compute_binary_metrics(prepared.y_test, test_out["prob"], threshold=best_threshold)
+    logger.info("阈值选择：best_threshold=%.6f（val_f1=%.6f）", float(best_threshold), float(val_out["metrics"]["f1"]))
+
     results = {
         "run_id": run_id,
         "best_info": best_info,
+        "selected_threshold": float(best_threshold),
         "train": train_out["metrics"],
         "val": val_out["metrics"],
         "test": test_out["metrics"],
@@ -361,14 +371,14 @@ def main() -> int:
             prepared.val_project_ids,
             prepared.y_val,
             val_out["prob"],
-            threshold=cfg.threshold,
+            threshold=float(best_threshold),
         )
         _save_predictions_csv(
             reports_dir / "predictions_test.csv",
             prepared.test_project_ids,
             prepared.y_test,
             test_out["prob"],
-            threshold=cfg.threshold,
+            threshold=float(best_threshold),
         )
     except Exception as e:
         logger.warning("保存预测 CSV 失败：%s", e)
@@ -389,6 +399,7 @@ def main() -> int:
                 "text_embedding_type": cfg.text_embedding_type,
                 "max_seq_len": int(getattr(cfg, "max_seq_len", 0)),
                 "truncation_strategy": str(getattr(cfg, "truncation_strategy", "")),
+                "threshold": float(best_threshold),
                 "test_accuracy": test_metrics.get("accuracy"),
                 "test_precision": test_metrics.get("precision"),
                 "test_recall": test_metrics.get("recall"),

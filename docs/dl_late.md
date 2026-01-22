@@ -161,7 +161,7 @@ data/projects/<dataset>/<project_id>/
   - 权重衰减（L2）：`alpha`
 - 早停：`early_stop_patience`，并支持最小训练轮数 `early_stop_min_epochs`
 - 评估指标：`accuracy, precision, recall, f1, roc_auc, log_loss`
-- 阈值：`threshold`（默认 0.5）
+- 阈值（工程规范）：最终报告指标时，阈值由验证集选取（最大化 F1），并将该阈值用于测试集评估；详见 `docs/dl_threshold.md`
 
 注意：作图时图里不要有中文，因此图标题/坐标轴保持英文（实现见 `src/dl/late/utils.py`）。
 
