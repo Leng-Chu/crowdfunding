@@ -42,11 +42,7 @@ def run_all_experiments():
         ("conda run -n crowdfunding python src/dl/dcan/main.py --run-name bge-clip --image-embedding-type clip --text-embedding-type bge --no-use-meta --device cuda:2", 
          "Image+Text: CLIP Image + BGE Text"),
         ("conda run -n crowdfunding python src/dl/dcan/main.py --run-name bge-siglip --image-embedding-type siglip --text-embedding-type bge --no-use-meta --device cuda:3", 
-         "Image+Text: SigLIP Image + BGE Text"),
-        
-        # meta
-        ("conda run -n crowdfunding python src/dl/dcan/main.py --run-name meta --use-meta --device cuda:0", 
-         "Meta-only: CUDA")
+         "Image+Text: SigLIP Image + BGE Text")
     ]
     
     threads = []
