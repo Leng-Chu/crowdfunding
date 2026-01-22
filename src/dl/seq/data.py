@@ -5,7 +5,7 @@
 - 读取 metadata CSV（与 mlp baseline 对齐的列约定）
 - 读取项目目录下的 content.json，并根据 content_sequence 构造“图文交替统一序列”
 - 读取预计算 embedding：image_{emb_type}.npy / text_{emb_type}.npy
-- 计算每个内容块的属性：文本长度 / 图片面积（由 filename 对应图片解析得到）
+- 计算每个内容块的属性：文本长度 / 图片面积（直接读取 content.json 中预处理好的 content_length/width/height）
 - 支持按 max_seq_len 截断（first/random）并输出 seq_mask
 - 支持 .npz 缓存（cache key 包含 embedding type / max_seq_len / 截断策略）
 
@@ -206,7 +206,7 @@ class TabularPreprocessor:
         return pre
 
 
-_SEQ_CACHE_VERSION = 1
+_SEQ_CACHE_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -426,25 +426,16 @@ def _read_content_sequence(content_json_path: Path) -> List[Dict[str, Any]]:
         raise ValueError(f"content_sequence 不存在或不是 list：{content_json_path}")
     return [dict(x) for x in seq]
 
-
-def _text_len(value: Any) -> int:
-    if value is None:
-        return 0
-    s = str(value).strip()
-    return int(len(s))
-
-
-def _image_area(image_path: Path) -> int:
-    from PIL import Image
-
-    if not image_path.exists():
-        raise FileNotFoundError(f"图片文件不存在：{image_path}")
+def _require_int_field(item: Dict[str, Any], key: str, project_id: str, pos: int) -> int:
+    if key not in item:
+        raise ValueError(f"项目 {project_id} 的 content_sequence 缺少字段 {key!r}（pos={pos}）")
+    v = item.get(key)
+    if v is None:
+        raise ValueError(f"项目 {project_id} 的 content_sequence 字段 {key!r} 为空（pos={pos}）")
     try:
-        with Image.open(image_path) as im:
-            w, h = im.size
-        return int(w) * int(h)
+        return int(v)
     except Exception as e:
-        raise RuntimeError(f"解析图片尺寸失败：{image_path} | {type(e).__name__}: {e}") from e
+        raise ValueError(f"项目 {project_id} 的字段 {key!r} 不是整数：{v!r}（pos={pos}）") from e
 
 
 def _truncate_window(length: int, max_len: int, strategy: str, seed: int) -> Tuple[int, int]:
@@ -463,8 +454,8 @@ def _truncate_window(length: int, max_len: int, strategy: str, seed: int) -> Tup
 
 
 def _build_one_project_sequence(
-    project_dir: Path,
     project_id: str,
+    content_sequence: List[Dict[str, Any]],
     image_emb_path: Path,
     text_emb_path: Path,
     image_dim: int,
@@ -481,9 +472,7 @@ def _build_one_project_sequence(
     - seq_attr: [max_seq_len]（log(length/area)，padding 为 0）
     - seq_mask: [max_seq_len]（True=有效）
     """
-    content_json_path = project_dir / "content.json"
-    seq = _read_content_sequence(content_json_path)
-
+    seq = list(content_sequence)
     n_img_expected = int(sum(1 for x in seq if str(x.get("type", "")).strip().lower() == "image"))
     n_txt_expected = int(sum(1 for x in seq if str(x.get("type", "")).strip().lower() == "text"))
 
@@ -529,7 +518,6 @@ def _build_one_project_sequence(
 
     img_idx = 0
     txt_idx = 0
-    image_area_cache: Dict[str, int] = {}
 
     for pos, item in enumerate(seq):
         t = str(item.get("type", "")).strip().lower()
@@ -539,12 +527,13 @@ def _build_one_project_sequence(
             img_seq[pos] = img_emb[img_idx]
             img_idx += 1
 
-            filename = str(item.get("filename", "") or "").strip()
-            if not filename:
-                raise ValueError(f"项目 {project_id} image 块缺少 filename（pos={pos}）")
-            if filename not in image_area_cache:
-                image_area_cache[filename] = _image_area(project_dir / filename)
-            area = int(image_area_cache[filename])
+            # 图片尺寸已在 content.json 中预处理好：width/height
+            # 不再读取本地图片文件，避免数据加载极慢。
+            w = _require_int_field(item, "width", project_id=project_id, pos=pos)
+            h = _require_int_field(item, "height", project_id=project_id, pos=pos)
+            if int(w) <= 0 or int(h) <= 0:
+                raise ValueError(f"项目 {project_id} 的图片尺寸不合法：width={w} height={h}（pos={pos}）")
+            area = int(w) * int(h)
 
             types.append(1)
             attrs.append(float(np.log(max(1.0, float(area)))))
@@ -554,7 +543,10 @@ def _build_one_project_sequence(
             txt_seq[pos] = txt_emb[txt_idx]
             txt_idx += 1
 
-            length = _text_len(item.get("content", ""))
+            # 文本长度已在 content.json 中预处理好：content_length
+            length = _require_int_field(item, "content_length", project_id=project_id, pos=pos)
+            if int(length) < 0:
+                raise ValueError(f"项目 {project_id} 的文本长度不合法：content_length={length}（pos={pos}）")
             types.append(0)
             attrs.append(float(np.log(max(1.0, float(length)))))
         else:
@@ -697,8 +689,8 @@ def _build_features_for_split(
                 raise FileNotFoundError(f"缺少 text embedding：{text_emb_path}")
 
             pad_img, pad_txt, pad_type, pad_attr, pad_mask = _build_one_project_sequence(
-                project_dir=project_dir,
                 project_id=pid,
+                content_sequence=seq,
                 image_emb_path=image_emb_path,
                 text_emb_path=text_emb_path,
                 image_dim=int(image_dim),

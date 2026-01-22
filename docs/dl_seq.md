@@ -41,20 +41,19 @@ data/projects/<dataset>/<project_id>/
   content.json
   image_{emb_type}.npy
   text_{emb_type}.npy
-  (图片文件若干，用于计算面积；路径由 content.json 的 filename 指向)
 ```
 
 说明：
 - **本实验只使用正文内容块序列**：`image_{emb_type}.npy` 与 `text_{emb_type}.npy`。
-- 图片面积属性需要读取本地图片文件：例如 `filename="photo/story_image_1.jpeg"`，代码会去找 `<project_dir>/photo/story_image_1.jpeg`。
+- 图片尺寸与文本长度属性已预处理写入 `content.json`（见下节字段要求），**代码不再读取本地图片文件**，以避免数据加载速度过慢。
 
 ### 2.3 `content_sequence` 与 embedding 对齐规则
 
 `content.json` 中必须包含字段 `content_sequence`，其为按页面呈现顺序排列的列表；每个元素至少包含：
 
 - `type ∈ {"text", "image"}`
-- 若 `type="text"`：`content` 字段（文本内容）
-- 若 `type="image"`：`filename` 字段（图片相对路径，用于解析尺寸）
+- 若 `type="text"`：必须包含 `content_length`（预处理好的文本长度）；`content` 可选
+- 若 `type="image"`：必须包含 `width/height`（预处理好的图片尺寸）；`filename` 可选
 
 在 data loader 中，根据 `content_sequence` 构造统一的内容块序列：
 
@@ -76,8 +75,13 @@ data/projects/<dataset>/<project_id>/
 
 对每个内容块计算 1 个标量属性，并在模型端做线性映射：
 
-- **文本块**：`length = len(content)`，属性为 `log(max(1, length))`
-- **图片块**：`area = width * height`，属性为 `log(max(1, area))`
+- **文本块**：直接读取 `content_length`（预处理好的文本长度），属性为 `log(max(1, content_length))`
+- **图片块**：直接读取 `width/height`（预处理好的图片尺寸），计算 `area = width * height`，属性为 `log(max(1, area))`
+
+字段要求：
+
+- `type="text"`：必须包含 `content_length`（int）
+- `type="image"`：必须包含 `width` 与 `height`（int）
 
 ### 2.5 截断与 mask
 
