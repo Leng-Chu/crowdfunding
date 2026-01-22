@@ -19,11 +19,13 @@ def find_cover_image_file(project_dir):
             # 获取图片尺寸（如果可能）
             try:
                 from PIL import Image
+                import pillow_avif
                 img = Image.open(file_path)
                 width, height = img.size
             except Exception:
                 # 如果无法获取尺寸，则设为默认值
                 width, height = 0, 0
+                print(f"Error reading image {file_path}: {e}")
             
             # 返回相对路径格式的filename
             relative_filename = os.path.relpath(file_path, start=os.path.dirname(cover_dir))
@@ -152,8 +154,8 @@ def update_content_json(test_csv_path, all_csv_path, projects_base_dir):
 
 
 if __name__ == "__main__":
-    test_csv_path = "data/metadata/move2.csv"
+    test_csv_path = "data/metadata/test.csv"
     all_csv_path = "data/metadata/all.csv"
-    projects_base_dir = "data/projects/move2"
+    projects_base_dir = "data/projects/test"
     
     update_content_json(test_csv_path, all_csv_path, projects_base_dir)
