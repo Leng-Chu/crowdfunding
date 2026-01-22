@@ -67,7 +67,7 @@ class SeqConfig:
     text_embedding_type: str = "clip"  # bge / clip / siglip
 
     # 统一交替序列截断
-    max_seq_len: int = 128
+    max_seq_len: int = 40
     truncation_strategy: str = "first"  # first / random
 
     # -----------------------------
