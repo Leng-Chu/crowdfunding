@@ -64,7 +64,7 @@ class LateConfig:
     # -----------------------------
     # 统一序列截断（按 content_sequence）
     # -----------------------------
-    max_seq_len: int = 20
+    max_seq_len: int = 40
     truncation_strategy: str = "first"  # first / random（random 需可复现）
 
     # -----------------------------
@@ -107,9 +107,9 @@ class LateConfig:
     # -----------------------------
     alpha: float = 5e-4  # weight_decay（L2）
     learning_rate_init: float = 5e-4
-    batch_size: int = 256
+    batch_size: int = 1024
 
-    max_epochs: int = 100
+    max_epochs: int = 50
     early_stop_patience: int = 10
     early_stop_min_epochs: int = 5
     metric_for_best: str = "val_accuracy"  # val_accuracy / val_auc / val_loss
@@ -117,7 +117,7 @@ class LateConfig:
     use_lr_scheduler: bool = True
     lr_scheduler_patience: int = 2
     lr_scheduler_factor: float = 0.5
-    lr_scheduler_min_lr: float = 1e-6
+    lr_scheduler_min_lr: float = 1e-5
     reset_early_stop_on_lr_change: bool = False
 
     max_grad_norm: float = 0.0
