@@ -47,7 +47,7 @@ data/projects/<dataset>/<project_id>/
 - `title_blurb_{model}.npy`：为 `[1, D]` 或 `[2, D]`（取决于 title/blurb 是否同时存在）
 - `text_{model}.npy`：通常为 `[T, D]`（T 为正文文本段数量；可为空但文件可不生成）
 
-训练侧（`src/dl/mlp/data.py`）的读取规则（需要在论文中明确）：
+训练侧（`src/dl/mlp` / `src/dl/seq` / `src/dl/late`）的读取规则（需要在论文中明确）：
 
 - 文本侧：`title_blurb_{text_embedding_type}.npy` **必须存在**；`text_{text_embedding_type}.npy` 可缺失。
 - 图像侧：`cover_image_{image_embedding_type}.npy` **必须存在**；`image_{image_embedding_type}.npy` 可缺失。
@@ -129,4 +129,3 @@ data/projects/<dataset>/<project_id>/
   - `python src/preprocess/embedding/vectorize_csv_data.py --dataset test --text-model bge --image-model clip`
 - 生成正文 text 与 image：
   - `python src/preprocess/embedding/vectorize_content.py --dataset test --text-model bge --image-model clip`
-

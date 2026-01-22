@@ -5,7 +5,10 @@
 - **任务**：Kickstarter 项目二分类（成功/失败）。
 - **标签**：来自表格数据 `state` 字段（`successful` 视为正类，其余为负类；同时兼容 0/1 数值标签）。
 - **输入**：预先计算好的 embedding（不涉及原始模态特征的编码器）。
-  - **内容序列侧**：由 `content.json` 的 `content_sequence` 构造的“图文交替统一序列”，并读取对应的 `image_*.npy / text_*.npy`。
+  - **内容序列侧**：由 `content.json` 的 `title/blurb/cover_image` 与 `content_sequence` 构造的“图文交替统一序列”，并读取对应的 embedding 文件：
+    - 前缀（固定拼在最前面）：`title → blurb → cover_image`
+    - 正文：按 `content_sequence` 的原始顺序追加
+    - 对应向量：`cover_image_*.npy / title_blurb_*.npy / image_*.npy / text_*.npy`
   - **可选 meta**：表格元数据特征（类别 + 数值），仅在分类前与 pooled 表示拼接（`use_meta=True` 时启用）。
 - **输出**：二分类 **logits**（训练使用 `BCEWithLogitsLoss`），推理时对 logits 施加 `sigmoid` 得到正类概率。
 
@@ -39,17 +42,27 @@
 ```
 data/projects/<dataset>/<project_id>/
   content.json
+  cover_image_{emb_type}.npy
+  title_blurb_{emb_type}.npy
   image_{emb_type}.npy
   text_{emb_type}.npy
 ```
 
 说明：
-- **本实验只使用正文内容块序列**：`image_{emb_type}.npy` 与 `text_{emb_type}.npy`。
+- 本实验同时使用 **标题/简介/封面图** 与 **正文内容块序列**：
+  - 封面图：`cover_image_{emb_type}.npy`（必须存在，形状通常为 `[1, D_img]`）
+  - 标题/简介：`title_blurb_{emb_type}.npy`（必须存在，形状为 `[1, D_txt]` 或 `[2, D_txt]`）
+  - 正文：`image_{emb_type}.npy` 与 `text_{emb_type}.npy`（当正文该模态数量为 0 时允许缺失）
 - 图片尺寸与文本长度属性已预处理写入 `content.json`（见下节字段要求），**代码不再读取本地图片文件**，以避免数据加载速度过慢。
 
-### 2.3 `content_sequence` 与 embedding 对齐规则
+### 2.3 统一序列与 embedding 对齐规则
 
-`content.json` 中必须包含字段 `content_sequence`，其为按页面呈现顺序排列的列表；每个元素至少包含：
+`content.json` 中必须包含：
+
+- `title`（字符串，可为空）
+- `blurb`（字符串，可为空）
+- `cover_image`（必须包含 `width/height` 的对象）
+- `content_sequence`：按页面呈现顺序排列的列表；每个元素至少包含：
 
 - `type ∈ {"text", "image"}`
 - 若 `type="text"`：必须包含 `content_length`（预处理好的文本长度）；`content` 可选
@@ -57,6 +70,11 @@ data/projects/<dataset>/<project_id>/
 
 在 data loader 中，根据 `content_sequence` 构造统一的内容块序列：
 
+- 统一序列的输入顺序为：
+  1. `title`（若非空）
+  2. `blurb`（若非空）
+  3. `cover_image`（固定存在）
+  4. `content_sequence`（按原始顺序）
 - 维护两个指针：
   - `img_idx`：遇到 `"image"` 时取 `image_emb[img_idx]`
   - `txt_idx`：遇到 `"text"` 时取 `text_emb[txt_idx]`
@@ -67,16 +85,20 @@ data/projects/<dataset>/<project_id>/
 
 一致性要求（默认严格）：
 
+- `cover_image_{emb_type}.npy` 必须存在，且行数为 1。
+- `title_blurb_{emb_type}.npy` 必须存在，其行数必须等于 `title/blurb` 中非空字段的个数；且顺序固定为 `[title, blurb]`（缺失则不占位）。
 - `content_sequence` 中 `"image"` 数量必须与 `image_{emb_type}.npy` 的行数一致。
 - `content_sequence` 中 `"text"` 数量必须与 `text_{emb_type}.npy` 的行数一致。
 - 不一致默认直接报错并记录项目 id（`missing_strategy=error`）。
 
 ### 2.4 内容块属性（attr）
 
-对每个内容块计算 1 个标量属性，并在模型端做线性映射：
+对每个 token 计算 1 个标量属性，并在模型端做线性映射：
 
-- **文本块**：直接读取 `content_length`（预处理好的文本长度），属性为 `log(max(1, content_length))`
-- **图片块**：直接读取 `width/height`（预处理好的图片尺寸），计算 `area = width * height`，属性为 `log(max(1, area))`
+- **title/blurb**：属性为 `log(max(1, len(text)))`
+- **封面图**：直接读取 `cover_image.width/cover_image.height`，计算 `area = width * height`，属性为 `log(max(1, area))`
+- **正文文本块**：读取 `content_length`，属性为 `log(max(1, content_length))`
+- **正文图片块**：读取 `width/height`，属性为 `log(max(1, area))`
 
 字段要求：
 
@@ -89,6 +111,8 @@ data/projects/<dataset>/<project_id>/
 
 - `truncation_strategy="first"`：取前 `max_seq_len`
 - `truncation_strategy="random"`：在 `[0, L-max_seq_len]` 中随机选取一个窗口（为可复现，随机种子为 `random_seed + hash(project_id)`）
+
+注意：截断发生在 **拼接完 title/blurb/cover_image 前缀之后**，因此当 `max_seq_len` 较小，会优先保留前缀并截掉部分正文 token。
 
 输出：
 

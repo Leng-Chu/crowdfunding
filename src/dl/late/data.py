@@ -4,6 +4,7 @@
 
 - 读取项目目录下的 content.json，并根据 content_sequence 做“统一序列截断”
 - 根据截断后的内容块，映射回 image_{emb}.npy / text_{emb}.npy 的子集（不做顺序建模）
+- 并将 cover_image_{emb}.npy / title_blurb_{emb}.npy 分别拼接到 image/text 集合的最前面
 - 输出：
   - image 集合张量：X_image=[N, L_img, D_img]，len_image=[N]
   - text 集合张量：X_text=[N, L_txt, D_txt]，len_text=[N]
@@ -204,7 +205,7 @@ class TabularPreprocessor:
         return pre
 
 
-_LATE_CACHE_VERSION = 1
+_LATE_CACHE_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -482,14 +483,38 @@ def _late_load_project_keep_sets(
     if txt_type not in {"bge", "clip", "siglip"}:
         raise ValueError(f"不支持的 text_embedding_type={cfg.text_embedding_type!r}，可选：bge/clip/siglip")
 
+    cover_emb_path = project_dir / f"cover_image_{img_type}.npy"
+    title_blurb_emb_path = project_dir / f"title_blurb_{txt_type}.npy"
+
+    if not cover_emb_path.exists():
+        if missing_strategy == "skip":
+            return None, None, 0, 0, 0, 0, 1
+        raise FileNotFoundError(f"缺少 cover_image 嵌入文件：{cover_emb_path}")
+
+    if not title_blurb_emb_path.exists():
+        if missing_strategy == "skip":
+            return None, None, 0, 0, 0, 0, 1
+        raise FileNotFoundError(f"缺少 title_blurb 嵌入文件：{title_blurb_emb_path}")
+
+    cover_emb = _as_2d_embedding(np.load(cover_emb_path), cover_emb_path.name)
+    if int(cover_emb.shape[0]) != 1:
+        raise ValueError(f"项目 {project_id} cover_image 行数不合法：期望 1，但得到 {cover_emb.shape}")
+    img_dim_cover = int(cover_emb.shape[1])
+
+    title_blurb_emb = _as_2d_embedding(np.load(title_blurb_emb_path), title_blurb_emb_path.name)
+    if int(title_blurb_emb.shape[0]) <= 0:
+        raise ValueError(f"项目 {project_id} title_blurb 为空：{title_blurb_emb_path}")
+    txt_dim_tb = int(title_blurb_emb.shape[1])
+
     image_emb_path = project_dir / f"image_{img_type}.npy"
     text_emb_path = project_dir / f"text_{txt_type}.npy"
 
     img_emb = None
-    img_dim = 0
+    img_dim = int(img_dim_cover)
     if image_emb_path.exists():
         img_emb = _as_2d_embedding(np.load(image_emb_path), image_emb_path.name)
-        img_dim = int(img_emb.shape[1])
+        if int(img_emb.shape[1]) != int(img_dim_cover):
+            raise ValueError(f"项目 {project_id} image dim 不一致：cover={img_dim_cover} vs story={img_emb.shape[1]}")
         if int(img_emb.shape[0]) != int(n_img_expected):
             raise ValueError(
                 f"项目 {project_id} image 数量不一致：content_sequence={n_img_expected} vs {image_emb_path.name}={img_emb.shape}"
@@ -502,10 +527,11 @@ def _late_load_project_keep_sets(
             raise FileNotFoundError(f"缺少 image 嵌入文件：{image_emb_path}")
 
     txt_emb = None
-    txt_dim = 0
+    txt_dim = int(txt_dim_tb)
     if text_emb_path.exists():
         txt_emb = _as_2d_embedding(np.load(text_emb_path), text_emb_path.name)
-        txt_dim = int(txt_emb.shape[1])
+        if int(txt_emb.shape[1]) != int(txt_dim_tb):
+            raise ValueError(f"项目 {project_id} text dim 不一致：title_blurb={txt_dim_tb} vs story={txt_emb.shape[1]}")
         if int(txt_emb.shape[0]) != int(n_txt_expected):
             raise ValueError(
                 f"项目 {project_id} text 数量不一致：content_sequence={n_txt_expected} vs {text_emb_path.name}={txt_emb.shape}"
@@ -549,23 +575,27 @@ def _late_load_project_keep_sets(
     if int(txt_idx) != int(n_txt_expected):
         raise ValueError(f"项目 {project_id} text 计数器不一致：{txt_idx} vs expected {n_txt_expected}")
 
-    img_keep = None
-    len_img = 0
     if img_emb is not None:
         if keep_img_indices:
-            img_keep = img_emb[np.asarray(keep_img_indices, dtype=np.int64)]
+            img_keep_story = img_emb[np.asarray(keep_img_indices, dtype=np.int64)]
         else:
-            img_keep = img_emb[:0]
-        len_img = int(img_keep.shape[0])
+            img_keep_story = img_emb[:0]
+    else:
+        img_keep_story = cover_emb[:0]
 
-    txt_keep = None
-    len_txt = 0
+    img_keep = np.concatenate([cover_emb, img_keep_story], axis=0).astype(np.float32, copy=False)
+    len_img = int(img_keep.shape[0])
+
     if txt_emb is not None:
         if keep_txt_indices:
-            txt_keep = txt_emb[np.asarray(keep_txt_indices, dtype=np.int64)]
+            txt_keep_story = txt_emb[np.asarray(keep_txt_indices, dtype=np.int64)]
         else:
-            txt_keep = txt_emb[:0]
-        len_txt = int(txt_keep.shape[0])
+            txt_keep_story = txt_emb[:0]
+    else:
+        txt_keep_story = title_blurb_emb[:0]
+
+    txt_keep = np.concatenate([title_blurb_emb, txt_keep_story], axis=0).astype(np.float32, copy=False)
+    len_txt = int(txt_keep.shape[0])
 
     return img_keep, txt_keep, int(img_dim), int(txt_dim), int(len_img), int(len_txt), 0
 
@@ -591,7 +621,9 @@ def _infer_embedding_dims(projects_root: Path, project_ids: List[str], cfg: Late
             continue
 
         if image_dim <= 0:
-            p = project_dir / f"image_{img_type}.npy"
+            p = project_dir / f"cover_image_{img_type}.npy"
+            if not p.exists():
+                p = project_dir / f"image_{img_type}.npy"
             if p.exists():
                 try:
                     arr = _as_2d_embedding(np.load(p), p.name)
@@ -600,7 +632,9 @@ def _infer_embedding_dims(projects_root: Path, project_ids: List[str], cfg: Late
                     pass
 
         if text_dim <= 0:
-            p = project_dir / f"text_{txt_type}.npy"
+            p = project_dir / f"title_blurb_{txt_type}.npy"
+            if not p.exists():
+                p = project_dir / f"text_{txt_type}.npy"
             if p.exists():
                 try:
                     arr = _as_2d_embedding(np.load(p), p.name)

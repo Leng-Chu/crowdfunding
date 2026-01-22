@@ -5,8 +5,8 @@
 - **任务**：Kickstarter 项目二分类（成功/失败）。
 - **标签**：来自表格数据 `state` 字段（`successful` 视为正类，其余为负类）。
 - **输入**：
-  - `image`：项目正文图片的向量集合（embedding set，不建模顺序）。
-  - `text`：项目正文文本的向量集合（embedding set，不建模顺序）。
+  - `image`：项目图片向量集合（embedding set，不建模顺序），其中 **封面图向量** 会拼接在集合最前面。
+  - `text`：项目文本向量集合（embedding set，不建模顺序），其中 **title/blurb 向量** 会拼接在集合最前面。
   - `meta`（可选）：表格元数据特征（类别 + 数值），开关为 `use_meta`。
 - **输出**：二分类 **logits**（训练使用 `BCEWithLogitsLoss`），推理时对 logits 施加 `sigmoid` 得到正类概率。
 
@@ -38,6 +38,8 @@
 ```
 data/projects/<dataset>/<project_id>/
   content.json
+  cover_image_{emb_type}.npy
+  title_blurb_{emb_type}.npy
   image_{emb_type}.npy
   text_{emb_type}.npy
 ```
@@ -49,11 +51,14 @@ data/projects/<dataset>/<project_id>/
 `src/dl/late/data.py` 约定如下文件名（`{emb_type}` 来自配置项 `image_embedding_type/text_embedding_type`）：
 
 - **图片侧**（`image_embedding_type ∈ {clip, siglip, resnet}`）
+  - `cover_image_{emb_type}.npy`，形状通常为 `[1, D_img]`（必须存在）
   - `image_{emb_type}.npy`，形状 `[N_img, D_img]`
 - **文本侧**（`text_embedding_type ∈ {bge, clip, siglip}`）
+  - `title_blurb_{emb_type}.npy`，形状为 `[1, D_txt]` 或 `[2, D_txt]`（必须存在）
   - `text_{emb_type}.npy`，形状 `[N_txt, D_txt]`
 
 一致性要求（默认严格）：
+- `cover_image_{emb_type}.npy` 与 `title_blurb_{emb_type}.npy` 必须存在，且其维度必须分别与正文 `image/text` 向量维度一致。
 - `content_sequence` 中 `image/text` 的总数量必须与 `image_*.npy / text_*.npy` 的行数一致；不一致默认直接报错并包含项目 id。
 - 若某项目 `content_sequence` 中某一模态的数量为 0，则允许该模态的 `.npy` 文件缺失（该样本该模态集合长度视为 0）。
 
@@ -95,6 +100,13 @@ data/projects/<dataset>/<project_id>/
 
 - `img_keep = image_emb[keep_img_indices]`
 - `txt_keep = text_emb[keep_txt_indices]`
+
+最后将前缀向量拼接到集合最前面：
+
+- `img_keep = concat([cover_image, img_keep])`
+- `txt_keep = concat([title_blurb, txt_keep])`
+
+注意：`cover_image/title_blurb` **不参与** `content_sequence` 的统一序列截断，它们总是被保留。
 
 对 batch 做 padding：
 
