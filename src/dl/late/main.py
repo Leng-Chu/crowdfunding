@@ -140,7 +140,9 @@ def main() -> int:
         set_global_seed,
         setup_logger,
     )
-
+    
+    if args.run_name is not None:
+        cfg = replace(cfg, run_name=str(args.run_name))
     if args.use_meta is not None:
         cfg = replace(cfg, use_meta=bool(args.use_meta))
     if args.image_embedding_type is not None:
@@ -169,11 +171,7 @@ def main() -> int:
     experiment_root = project_root / cfg.experiment_root / mode
     experiment_root.mkdir(parents=True, exist_ok=True)
 
-    base_run_name = (
-        f"img-{cfg.image_embedding_type}_txt-{cfg.text_embedding_type}_L{int(cfg.max_seq_len)}_{cfg.truncation_strategy}"
-    )
-    run_name = base_run_name if args.run_name is None else f"{base_run_name}_{str(args.run_name)}"
-    run_id, artifacts_dir, reports_dir, plots_dir = make_run_dirs(experiment_root, run_name=run_name)
+    run_id, artifacts_dir, reports_dir, plots_dir = make_run_dirs(experiment_root, run_name=cfg.run_name)
     run_dir = reports_dir.parent
 
     logger = setup_logger(run_dir / "train.log")
@@ -261,13 +259,13 @@ def main() -> int:
     save_json(
         {
             "run_id": run_id,
-            "run_name": str(run_name),
             "mode": mode,
             "baseline_mode": baseline_mode_inner,
             "use_meta": use_meta,
             "meta_dim": int(prepared.meta_dim),
             "image_embedding_dim": int(prepared.image_embedding_dim),
             "text_embedding_dim": int(prepared.text_embedding_dim),
+            "max_seq_len": int(prepared.max_seq_len),
             "fusion_hidden_dim": None if fusion_hidden_dim is None else int(fusion_hidden_dim),
             **cfg.to_dict(),
         },
