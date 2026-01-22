@@ -8,7 +8,7 @@ seq 配置（Chapter 1：图文内容块序列建模）：
 
 说明：
 - 本目录代码可独立运行，不得 import 或复用 `src/dl/mlp` 的代码
-- 命令行仅覆盖常用参数：--baseline-mode / --use-meta / --image-embedding-type / --text-embedding-type / --device / --gpu
+- 命令行仅覆盖常用参数：--run-name / --baseline-mode / --use-meta / --image-embedding-type / --text-embedding-type / --device / --gpu
 """
 
 from __future__ import annotations

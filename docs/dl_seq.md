@@ -255,6 +255,8 @@ X ∈ R^{B×L×d_model}
 
 - 默认配置运行：
   - `conda run -n crowdfunding python src/dl/seq/main.py`
+- 指定 run_name（用于产物目录命名）：
+  - `conda run -n crowdfunding python src/dl/seq/main.py --run-name exp1`
 - 切换 baseline（建议只改这一项做横向对比）：
   - `conda run -n crowdfunding python src/dl/seq/main.py --baseline-mode set_mean`
   - `conda run -n crowdfunding python src/dl/seq/main.py --baseline-mode set_attn`
@@ -268,4 +270,3 @@ X ∈ R^{B×L×d_model}
 
 说明：
 - 命令行参数仅覆盖少数常用项；其余超参建议直接编辑 `src/dl/seq/config.py` 的默认值。
-

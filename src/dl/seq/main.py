@@ -28,6 +28,7 @@ from config import SeqConfig
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="seq 训练入口（支持命令行覆盖少量常用配置）。")
+    parser.add_argument("--run-name", default=None, help="实验名称后缀，用于产物目录命名。")
     parser.add_argument(
         "--baseline-mode",
         default=None,
@@ -69,6 +70,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         raise ValueError("参数冲突：--device 与 --gpu 不能同时使用。")
     if args.gpu is not None and int(args.gpu) < 0:
         raise ValueError("--gpu 需要是非负整数。")
+
+    if args.run_name is not None and not str(args.run_name).strip():
+        args.run_name = None
     return args
 
 
@@ -128,6 +132,8 @@ def main() -> int:
         setup_logger,
     )
 
+    if args.run_name is not None:
+        cfg = replace(cfg, run_name=str(args.run_name))
     if args.baseline_mode is not None:
         cfg = replace(cfg, baseline_mode=str(args.baseline_mode))
     if args.use_meta is not None:

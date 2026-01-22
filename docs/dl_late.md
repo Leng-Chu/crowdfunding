@@ -171,6 +171,7 @@ data/projects/<dataset>/<project_id>/
 
 命令行参数仅包括（出现则覆盖配置文件对应项）：
 
+- `--run-name`
 - `--use-meta / --no-use-meta`
 - `--image-embedding-type`
 - `--text-embedding-type`
@@ -186,6 +187,8 @@ data/projects/<dataset>/<project_id>/
 
 - 默认配置运行：
   - `conda run -n crowdfunding python src/dl/late/main.py`
+- 指定 run_name 后缀（用于产物目录命名）：
+  - `conda run -n crowdfunding python src/dl/late/main.py --run-name debug`
 - 关闭 meta（只做图文晚期融合）：
   - `conda run -n crowdfunding python src/dl/late/main.py --no-use-meta`
 - 指定嵌入类型 / 集合编码器 / 显卡：
@@ -210,4 +213,3 @@ data/projects/<dataset>/<project_id>/
 - 开关：`use_cache`
 - 目录：`cache_dir`（默认 `experiments/late/_cache`）
 - cache key 包含：embedding type（image/text）、`max_seq_len`、`truncation_strategy`（以及数据切分/列配置等复现信息）
-

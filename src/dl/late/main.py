@@ -30,6 +30,7 @@ from config import LateConfig
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="late 训练入口（支持命令行覆盖少量配置）。")
+    parser.add_argument("--run-name", default=None, help="实验名称后缀，用于产物目录命名。")
     parser.add_argument(
         "--use-meta",
         default=None,
@@ -71,6 +72,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         raise ValueError("参数冲突：--device 与 --gpu 不能同时使用。")
     if args.gpu is not None and int(args.gpu) < 0:
         raise ValueError("--gpu 需要是非负整数。")
+
+    if args.run_name is not None and not str(args.run_name).strip():
+        args.run_name = None
     return args
 
 
@@ -158,13 +162,16 @@ def main() -> int:
     experiment_root = project_root / cfg.experiment_root / mode / intra
     experiment_root.mkdir(parents=True, exist_ok=True)
 
-    run_name = f"img-{cfg.image_embedding_type}_txt-{cfg.text_embedding_type}_L{int(cfg.max_seq_len)}_{cfg.truncation_strategy}"
+    base_run_name = (
+        f"img-{cfg.image_embedding_type}_txt-{cfg.text_embedding_type}_L{int(cfg.max_seq_len)}_{cfg.truncation_strategy}"
+    )
+    run_name = base_run_name if args.run_name is None else f"{base_run_name}_{str(args.run_name)}"
     run_id, artifacts_dir, reports_dir, plots_dir = make_run_dirs(experiment_root, run_name=run_name)
     run_dir = reports_dir.parent
 
     logger = setup_logger(run_dir / "train.log")
 
-    logger.info("模式=%s | intra=%s | run_id=%s | use_meta=%s", mode, intra, run_id, use_meta)
+    logger.info("模式=%s | intra=%s | run_id=%s | run_name=%s | use_meta=%s", mode, intra, run_id, run_name, use_meta)
     logger.info("python=%s | 平台=%s", sys.version.replace("\n", " "), platform.platform())
     logger.info("data_csv=%s", str(csv_path))
     logger.info("projects_root=%s", str(projects_root))
@@ -241,6 +248,7 @@ def main() -> int:
     save_json(
         {
             "run_id": run_id,
+            "run_name": str(run_name),
             "mode": mode,
             "intra_encoder": intra,
             "use_meta": use_meta,
