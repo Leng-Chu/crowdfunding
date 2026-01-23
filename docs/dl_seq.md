@@ -240,20 +240,9 @@ X ∈ R^{B×L×d_model}
 
 ---
 
-## 7. 缓存与产物目录结构（对齐 mlp baseline）
+## 7. 产物目录结构
 
-### 7.1 数据缓存
-
-为避免每次训练都逐个 `np.load` 读取向量、并重复解析图片尺寸，本实验支持把构建好的 numpy 特征缓存为 `.npz`：
-
-- 开关：`use_cache`
-- 目录：`cache_dir`（默认 `experiments/seq/_cache`）
-- cache key 包含：
-  - `image_embedding_type, text_embedding_type`
-  - `max_seq_len, truncation_strategy`
-  - `CSV mtime/size` 与切分比例、随机种子等
-
-### 7.2 输出目录结构
+### 7.1 输出目录结构
 
 默认写入 `experiments/seq/<mode>/<run_id>/`，其中：
 

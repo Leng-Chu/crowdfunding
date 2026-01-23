@@ -93,7 +93,7 @@ data/projects/<dataset>/<project_id>/
 
 ## 4. 本地 embedding 后端
 
-后端选择由 `src/preprocess/embedding/backends.py` 完成，并带有简单的进程内缓存（同一进程多次调用不重复加载模型）。
+后端选择由 `src/preprocess/embedding/backends.py` 完成。
 
 ### 4.1 文本后端：BGE（`embedding_bge.py`）
 

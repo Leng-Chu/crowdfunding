@@ -217,11 +217,3 @@ data/projects/<dataset>/<project_id>/
 其中：
 - `mode` 取 `late_attn_pool` / `late_trm_no_pos`，并按需追加 `+meta`
 - `baseline_mode`（配置项）取 `attn_pool` 或 `trm_no_pos`
-
-## 9. 缓存与工程性细节（简述）
-
-为避免每次训练都逐个 `np.load` 读取 embedding，`src/dl/late/data.py` 支持将“已构建好的 numpy 特征张量”缓存为 `.npz`：
-
-- 开关：`use_cache`
-- 目录：`cache_dir`（默认 `experiments/late/_cache`）
-- cache key 包含：embedding type（image/text）、`max_seq_len`、`truncation_strategy`（以及数据切分/列配置等复现信息）

@@ -7,7 +7,6 @@
 - 读取预计算 embedding：cover_image_{emb_type}.npy / title_blurb_{emb_type}.npy / image_{emb_type}.npy / text_{emb_type}.npy
 - 计算每个内容块的属性：文本长度 / 图片面积（直接读取 content.json 中预处理好的 content_length/width/height）
 - 支持按 max_seq_len 截断（first/random）并输出 seq_mask
-- 支持 .npz 缓存（cache key 包含 embedding type / max_seq_len / 截断策略）
 
 注意：
 - 本模块不复用 `src/dl/mlp` 的代码，但工程行为需要对齐以便横向对比。
@@ -206,9 +205,6 @@ class TabularPreprocessor:
         return pre
 
 
-_SEQ_CACHE_VERSION = 3
-
-
 @dataclass(frozen=True)
 class PreparedSeqData:
     # labels + ids
@@ -251,156 +247,6 @@ class PreparedSeqData:
     feature_names: List[str]
 
     stats: Dict[str, int]
-
-
-def _seq_make_cache_key(
-    csv_path: Path,
-    projects_root: Path,
-    cfg: SeqConfig,
-    use_meta: bool,
-) -> str:
-    stat = csv_path.stat()
-    payload = {
-        "cache_version": _SEQ_CACHE_VERSION,
-        "data_csv": str(csv_path.as_posix()),
-        "csv_mtime": float(stat.st_mtime),
-        "csv_size": int(stat.st_size),
-        "projects_root": str(projects_root.as_posix()),
-        "use_meta": bool(use_meta),
-        "columns": {
-            "id_col": str(cfg.id_col),
-            "target_col": str(cfg.target_col),
-            "categorical_cols": list(cfg.categorical_cols) if use_meta else [],
-            "numeric_cols": list(cfg.numeric_cols) if use_meta else [],
-        },
-        "split": {
-            "train_ratio": float(getattr(cfg, "train_ratio", 0.7)),
-            "val_ratio": float(getattr(cfg, "val_ratio", 0.15)),
-            "test_ratio": float(getattr(cfg, "test_ratio", 0.15)),
-            "shuffle_before_split": bool(getattr(cfg, "shuffle_before_split", False)),
-            "random_seed": int(getattr(cfg, "random_seed", 42)),
-        },
-        "embedding": {
-            "image_embedding_type": str(getattr(cfg, "image_embedding_type", "")),
-            "text_embedding_type": str(getattr(cfg, "text_embedding_type", "")),
-        },
-        "sequence": {
-            "max_seq_len": int(getattr(cfg, "max_seq_len", 0)),
-            "truncation_strategy": str(getattr(cfg, "truncation_strategy", "first")),
-        },
-        "missing_strategy": str(getattr(cfg, "missing_strategy", "")),
-    }
-    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    h = hashlib.sha1(raw).hexdigest()[:16]
-    return f"seq_{h}"
-
-
-def _seq_save_cache(cache_path: Path, prepared: PreparedSeqData, meta: Dict[str, Any]) -> None:
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    stats_json = json.dumps(prepared.stats, ensure_ascii=False)
-    meta_json = json.dumps(meta, ensure_ascii=False, sort_keys=True)
-
-    arrays: Dict[str, Any] = {
-        "y_train": prepared.y_train.astype(np.int64, copy=False),
-        "train_project_ids": np.asarray(prepared.train_project_ids, dtype=str),
-        "y_val": prepared.y_val.astype(np.int64, copy=False),
-        "val_project_ids": np.asarray(prepared.val_project_ids, dtype=str),
-        "y_test": prepared.y_test.astype(np.int64, copy=False),
-        "test_project_ids": np.asarray(prepared.test_project_ids, dtype=str),
-        "image_embedding_dim": np.asarray(int(prepared.image_embedding_dim), dtype=np.int64),
-        "text_embedding_dim": np.asarray(int(prepared.text_embedding_dim), dtype=np.int64),
-        "max_seq_len": np.asarray(int(prepared.max_seq_len), dtype=np.int64),
-        "feature_names": np.asarray(prepared.feature_names, dtype=str),
-        "meta_dim": np.asarray(int(prepared.meta_dim), dtype=np.int64),
-        "stats_json": np.asarray(stats_json, dtype=str),
-        "meta_json": np.asarray(meta_json, dtype=str),
-        # train
-        "X_img_train": prepared.X_img_train.astype(np.float32, copy=False),
-        "X_txt_train": prepared.X_txt_train.astype(np.float32, copy=False),
-        "seq_type_train": prepared.seq_type_train.astype(np.int64, copy=False),
-        "seq_attr_train": prepared.seq_attr_train.astype(np.float32, copy=False),
-        "seq_mask_train": prepared.seq_mask_train.astype(bool, copy=False),
-        # val
-        "X_img_val": prepared.X_img_val.astype(np.float32, copy=False),
-        "X_txt_val": prepared.X_txt_val.astype(np.float32, copy=False),
-        "seq_type_val": prepared.seq_type_val.astype(np.int64, copy=False),
-        "seq_attr_val": prepared.seq_attr_val.astype(np.float32, copy=False),
-        "seq_mask_val": prepared.seq_mask_val.astype(bool, copy=False),
-        # test
-        "X_img_test": prepared.X_img_test.astype(np.float32, copy=False),
-        "X_txt_test": prepared.X_txt_test.astype(np.float32, copy=False),
-        "seq_type_test": prepared.seq_type_test.astype(np.int64, copy=False),
-        "seq_attr_test": prepared.seq_attr_test.astype(np.float32, copy=False),
-        "seq_mask_test": prepared.seq_mask_test.astype(bool, copy=False),
-    }
-
-    if prepared.X_meta_train is not None:
-        arrays["X_meta_train"] = prepared.X_meta_train.astype(np.float32, copy=False)
-        arrays["X_meta_val"] = prepared.X_meta_val.astype(np.float32, copy=False)
-        arrays["X_meta_test"] = prepared.X_meta_test.astype(np.float32, copy=False)
-        preprocessor_json = json.dumps(
-            prepared.preprocessor.to_state_dict() if prepared.preprocessor else {},
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-        arrays["preprocessor_json"] = np.asarray(preprocessor_json, dtype=str)
-
-    # numpy.savez 会在文件名不是以 ".npz" 结尾时自动追加扩展名；
-    # 因此临时文件必须以 ".npz" 结尾，否则 replace 会找不到实际写出的文件。
-    tmp_path = cache_path.with_name(cache_path.stem + ".tmp.npz")
-    np.savez(tmp_path, **arrays)
-    tmp_path.replace(cache_path)
-
-
-def _seq_load_cache(cache_path: Path) -> PreparedSeqData:
-    with np.load(cache_path, allow_pickle=False) as z:
-        stats = json.loads(str(z["stats_json"].item())) if "stats_json" in z else {}
-        preprocessor = None
-        feature_names: List[str] = []
-        meta_dim = int(z["meta_dim"].item()) if "meta_dim" in z else 0
-        if "preprocessor_json" in z:
-            preprocessor_state = json.loads(str(z["preprocessor_json"].item()))
-            preprocessor = TabularPreprocessor.from_state_dict(preprocessor_state)
-        if "feature_names" in z:
-            feature_names = [str(x) for x in z["feature_names"].tolist()]
-
-        X_meta_train = z["X_meta_train"].astype(np.float32) if "X_meta_train" in z else None
-        X_meta_val = z["X_meta_val"].astype(np.float32) if "X_meta_val" in z else None
-        X_meta_test = z["X_meta_test"].astype(np.float32) if "X_meta_test" in z else None
-
-        return PreparedSeqData(
-            y_train=z["y_train"].astype(np.int64),
-            train_project_ids=[str(x) for x in z["train_project_ids"].tolist()],
-            y_val=z["y_val"].astype(np.int64),
-            val_project_ids=[str(x) for x in z["val_project_ids"].tolist()],
-            y_test=z["y_test"].astype(np.int64),
-            test_project_ids=[str(x) for x in z["test_project_ids"].tolist()],
-            X_img_train=z["X_img_train"].astype(np.float32),
-            X_txt_train=z["X_txt_train"].astype(np.float32),
-            seq_type_train=z["seq_type_train"].astype(np.int64),
-            seq_attr_train=z["seq_attr_train"].astype(np.float32),
-            seq_mask_train=z["seq_mask_train"].astype(bool),
-            X_img_val=z["X_img_val"].astype(np.float32),
-            X_txt_val=z["X_txt_val"].astype(np.float32),
-            seq_type_val=z["seq_type_val"].astype(np.int64),
-            seq_attr_val=z["seq_attr_val"].astype(np.float32),
-            seq_mask_val=z["seq_mask_val"].astype(bool),
-            X_img_test=z["X_img_test"].astype(np.float32),
-            X_txt_test=z["X_txt_test"].astype(np.float32),
-            seq_type_test=z["seq_type_test"].astype(np.int64),
-            seq_attr_test=z["seq_attr_test"].astype(np.float32),
-            seq_mask_test=z["seq_mask_test"].astype(bool),
-            image_embedding_dim=int(z["image_embedding_dim"].item()),
-            text_embedding_dim=int(z["text_embedding_dim"].item()),
-            max_seq_len=int(z["max_seq_len"].item()),
-            X_meta_train=X_meta_train,
-            X_meta_val=X_meta_val,
-            X_meta_test=X_meta_test,
-            meta_dim=int(meta_dim),
-            preprocessor=preprocessor,
-            feature_names=feature_names,
-            stats={k: int(v) for k, v in dict(stats).items()},
-        )
 
 
 def _infer_embedding_dim(projects_root: Path, project_ids: List[str], filename: str) -> int:
@@ -863,26 +709,9 @@ def prepare_seq_data(
     projects_root: Path,
     cfg: SeqConfig,
     use_meta: bool,
-    cache_dir: Path | None = None,
     logger=None,
 ) -> PreparedSeqData:
-    """读 CSV -> 切分 -> 构建 seq（+可选 meta）特征 -> 返回 numpy 数组。支持缓存。"""
-    use_cache = bool(getattr(cfg, "use_cache", False)) and cache_dir is not None
-
-    cache_path: Path | None = None
-    if use_cache:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_key = _seq_make_cache_key(csv_path, projects_root, cfg, use_meta=use_meta)
-        cache_path = cache_dir / f"{cache_key}.npz"
-        if cache_path.exists():
-            try:
-                prepared = _seq_load_cache(cache_path)
-                if logger is not None:
-                    logger.info("使用数据缓存：%s", str(cache_path))
-                return prepared
-            except Exception as e:
-                if logger is not None:
-                    logger.warning("读取缓存失败，将重新构建：%s", e)
+    """读 CSV -> 切分 -> 构建 seq（+可选 meta）特征 -> 返回 numpy 数组。"""
 
     raw_df = pd.read_csv(csv_path)
     if cfg.id_col not in raw_df.columns:
@@ -1042,22 +871,5 @@ def prepare_seq_data(
         feature_names=feature_names,
         stats=stats,
     )
-
-    if use_cache and cache_path is not None:
-        try:
-            meta = {
-                "cache_version": _SEQ_CACHE_VERSION,
-                "cache_key": cache_path.stem,
-                "csv_path": str(csv_path.as_posix()),
-                "projects_root": str(projects_root.as_posix()),
-                "use_meta": bool(use_meta),
-                "config": cfg.to_dict(),
-            }
-            _seq_save_cache(cache_path, prepared, meta=meta)
-            if logger is not None:
-                logger.info("已写入数据缓存：%s", str(cache_path))
-        except Exception as e:
-            if logger is not None:
-                logger.warning("写入缓存失败：%s", e)
 
     return prepared

@@ -1,6 +1,6 @@
 # 表格数据预处理方案（`src/preprocess/table`）说明
 
-本文件描述 `src/preprocess/table` 中用于构建“表格元数据特征（meta）”的数据清洗与特征工程流程，便于论文写作时说明数据处理步骤与可复现产物。实现脚本以一次性处理脚本为主，缓存/搬运等工程细节仅简述。
+本文件描述 `src/preprocess/table` 中用于构建“表格元数据特征（meta）”的数据清洗与特征工程流程，便于论文写作时说明数据处理步骤与可复现产物。实现脚本以一次性处理脚本为主，工程细节仅简述。
 
 ## 1. 输入与输出
 
@@ -105,4 +105,3 @@
   - random split（80/20）
   - sequential split（按 CSV 顺序前 80% 训练，后 20% 测试）
 - 结果保存：`experiments/meta_ml/ml_results_report.txt`
-

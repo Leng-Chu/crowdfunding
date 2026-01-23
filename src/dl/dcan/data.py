@@ -2,7 +2,7 @@
 """
 数据加载与特征构建（dcan）：
 
-- 参考 `src/dl/mlp` 的缓存与数据构建约定，但本模块固定使用 image + text，
+- 参考 `src/dl/mlp` 的数据构建约定，但本模块固定使用 image + text，
   仅保留 use_meta 开关。
 """
 
@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import hashlib
-import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -240,162 +239,8 @@ class PreparedDcanData:
     stats: Dict[str, int]
 
 
-# -----------------------------
-# 缓存（npz）
-# -----------------------------
-
-_DCAN_CACHE_VERSION = 1
-
-
 def _load_dataframe(csv_path: Path) -> pd.DataFrame:
     return pd.read_csv(csv_path)
-
-
-def _make_cache_key(
-    csv_path: Path,
-    projects_root: Path,
-    cfg: DcanConfig,
-    use_meta: bool,
-) -> str:
-    stat = csv_path.stat()
-    payload: Dict[str, Any] = {
-        "cache_version": _DCAN_CACHE_VERSION,
-        "data_csv": str(csv_path.as_posix()),
-        "csv_mtime": float(stat.st_mtime),
-        "csv_size": int(stat.st_size),
-        "projects_root": str(projects_root.as_posix()),
-        "use_meta": bool(use_meta),
-        "columns": {
-            "id_col": str(cfg.id_col),
-            "target_col": str(cfg.target_col),
-            "categorical_cols": list(cfg.categorical_cols) if use_meta else [],
-            "numeric_cols": list(cfg.numeric_cols) if use_meta else [],
-        },
-        "split": {
-            "train_ratio": float(getattr(cfg, "train_ratio", 0.7)),
-            "val_ratio": float(getattr(cfg, "val_ratio", 0.15)),
-            "test_ratio": float(getattr(cfg, "test_ratio", 0.15)),
-            "shuffle_before_split": bool(getattr(cfg, "shuffle_before_split", False)),
-            "random_seed": int(getattr(cfg, "random_seed", 42)),
-        },
-        "image": {
-            "embedding_type": str(getattr(cfg, "image_embedding_type", "")),
-            "max_image_vectors": int(getattr(cfg, "max_image_vectors", 0)),
-            "image_select_strategy": str(getattr(cfg, "image_select_strategy", "first")),
-        },
-        "text": {
-            "embedding_type": str(getattr(cfg, "text_embedding_type", "")),
-            "max_text_vectors": int(getattr(cfg, "max_text_vectors", 0)),
-            "text_select_strategy": str(getattr(cfg, "text_select_strategy", "first")),
-        },
-        "missing_strategy": str(getattr(cfg, "missing_strategy", "")),
-    }
-    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    h = hashlib.sha1(raw).hexdigest()[:16]
-    return f"dcan_{h}"
-
-
-def _save_cache(cache_path: Path, prepared: PreparedDcanData, meta: Dict[str, Any]) -> None:
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    stats_json = json.dumps(prepared.stats, ensure_ascii=False)
-    meta_json = json.dumps(meta, ensure_ascii=False, sort_keys=True)
-
-    arrays: Dict[str, Any] = {
-        "y_train": prepared.y_train.astype(np.int64, copy=False),
-        "train_project_ids": np.asarray(prepared.train_project_ids, dtype=str),
-        "y_val": prepared.y_val.astype(np.int64, copy=False),
-        "val_project_ids": np.asarray(prepared.val_project_ids, dtype=str),
-        "y_test": prepared.y_test.astype(np.int64, copy=False),
-        "test_project_ids": np.asarray(prepared.test_project_ids, dtype=str),
-        "meta_dim": np.asarray(int(prepared.meta_dim), dtype=np.int64),
-        "image_embedding_dim": np.asarray(int(prepared.image_embedding_dim), dtype=np.int64),
-        "text_embedding_dim": np.asarray(int(prepared.text_embedding_dim), dtype=np.int64),
-        "max_image_seq_len": np.asarray(int(prepared.max_image_seq_len), dtype=np.int64),
-        "max_text_seq_len": np.asarray(int(prepared.max_text_seq_len), dtype=np.int64),
-        "feature_names": np.asarray(prepared.feature_names, dtype=str),
-        "stats_json": np.asarray(stats_json, dtype=str),
-        "meta_json": np.asarray(meta_json, dtype=str),
-    }
-
-    if prepared.X_meta_train is not None:
-        arrays["X_meta_train"] = prepared.X_meta_train.astype(np.float32, copy=False)
-        arrays["X_meta_val"] = prepared.X_meta_val.astype(np.float32, copy=False)
-        arrays["X_meta_test"] = prepared.X_meta_test.astype(np.float32, copy=False)
-        preprocessor_json = json.dumps(
-            prepared.preprocessor.to_state_dict() if prepared.preprocessor else {},
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-        arrays["preprocessor_json"] = np.asarray(preprocessor_json, dtype=str)
-
-    arrays["X_image_train"] = prepared.X_image_train.astype(np.float32, copy=False)
-    arrays["len_image_train"] = prepared.len_image_train.astype(np.int64, copy=False)
-    arrays["X_image_val"] = prepared.X_image_val.astype(np.float32, copy=False)
-    arrays["len_image_val"] = prepared.len_image_val.astype(np.int64, copy=False)
-    arrays["X_image_test"] = prepared.X_image_test.astype(np.float32, copy=False)
-    arrays["len_image_test"] = prepared.len_image_test.astype(np.int64, copy=False)
-
-    arrays["X_text_train"] = prepared.X_text_train.astype(np.float32, copy=False)
-    arrays["len_text_train"] = prepared.len_text_train.astype(np.int64, copy=False)
-    arrays["X_text_val"] = prepared.X_text_val.astype(np.float32, copy=False)
-    arrays["len_text_val"] = prepared.len_text_val.astype(np.int64, copy=False)
-    arrays["X_text_test"] = prepared.X_text_test.astype(np.float32, copy=False)
-    arrays["len_text_test"] = prepared.len_text_test.astype(np.int64, copy=False)
-
-    tmp_path = cache_path.with_name(cache_path.name + ".tmp")
-    with tmp_path.open("wb") as f:
-        np.savez(f, **arrays)
-    tmp_path.replace(cache_path)
-
-
-def _load_cache(cache_path: Path) -> PreparedDcanData:
-    with np.load(cache_path, allow_pickle=False) as z:
-        stats_json = z.get("stats_json", np.array("{}", dtype=str)).item()
-        stats = json.loads(stats_json) if isinstance(stats_json, str) else {}
-
-        feature_names = z.get("feature_names", np.asarray([], dtype=str)).astype(str).tolist()
-
-        X_meta_train = z["X_meta_train"].astype(np.float32, copy=False) if "X_meta_train" in z else None
-        X_meta_val = z["X_meta_val"].astype(np.float32, copy=False) if "X_meta_val" in z else None
-        X_meta_test = z["X_meta_test"].astype(np.float32, copy=False) if "X_meta_test" in z else None
-
-        preprocessor = None
-        if "preprocessor_json" in z:
-            pre_json = z.get("preprocessor_json", np.array("{}", dtype=str)).item()
-            pre_state = json.loads(pre_json) if isinstance(pre_json, str) else {}
-            preprocessor = TabularPreprocessor.from_state_dict(pre_state)
-
-        return PreparedDcanData(
-            y_train=z["y_train"].astype(np.int64, copy=False),
-            train_project_ids=z["train_project_ids"].astype(str).tolist(),
-            y_val=z["y_val"].astype(np.int64, copy=False),
-            val_project_ids=z["val_project_ids"].astype(str).tolist(),
-            y_test=z["y_test"].astype(np.int64, copy=False),
-            test_project_ids=z["test_project_ids"].astype(str).tolist(),
-            X_meta_train=X_meta_train,
-            X_meta_val=X_meta_val,
-            X_meta_test=X_meta_test,
-            meta_dim=int(z.get("meta_dim", np.asarray(0, dtype=np.int64)).item()),
-            preprocessor=preprocessor,
-            feature_names=[str(x) for x in feature_names],
-            X_image_train=z["X_image_train"].astype(np.float32, copy=False),
-            len_image_train=z["len_image_train"].astype(np.int64, copy=False),
-            X_image_val=z["X_image_val"].astype(np.float32, copy=False),
-            len_image_val=z["len_image_val"].astype(np.int64, copy=False),
-            X_image_test=z["X_image_test"].astype(np.float32, copy=False),
-            len_image_test=z["len_image_test"].astype(np.int64, copy=False),
-            image_embedding_dim=int(z.get("image_embedding_dim", np.asarray(0, dtype=np.int64)).item()),
-            max_image_seq_len=int(z.get("max_image_seq_len", np.asarray(0, dtype=np.int64)).item()),
-            X_text_train=z["X_text_train"].astype(np.float32, copy=False),
-            len_text_train=z["len_text_train"].astype(np.int64, copy=False),
-            X_text_val=z["X_text_val"].astype(np.float32, copy=False),
-            len_text_val=z["len_text_val"].astype(np.int64, copy=False),
-            X_text_test=z["X_text_test"].astype(np.float32, copy=False),
-            len_text_test=z["len_text_test"].astype(np.int64, copy=False),
-            text_embedding_dim=int(z.get("text_embedding_dim", np.asarray(0, dtype=np.int64)).item()),
-            max_text_seq_len=int(z.get("max_text_seq_len", np.asarray(0, dtype=np.int64)).item()),
-            stats={k: int(v) for k, v in dict(stats).items()},
-        )
 
 
 # -----------------------------
@@ -746,26 +591,9 @@ def prepare_dcan_data(
     projects_root: Path,
     cfg: DcanConfig,
     use_meta: bool,
-    cache_dir: Path | None = None,
     logger=None,
 ) -> PreparedDcanData:
-    """读 CSV -> 切分 -> 构建特征 -> 返回 numpy。支持缓存。"""
-
-    use_cache = bool(getattr(cfg, "use_cache", False)) and cache_dir is not None
-    cache_path: Path | None = None
-    if use_cache:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_key = _make_cache_key(csv_path, projects_root, cfg, use_meta=use_meta)
-        cache_path = cache_dir / f"{cache_key}.npz"
-        if cache_path.exists():
-            try:
-                prepared = _load_cache(cache_path)
-                if logger is not None:
-                    logger.info("使用数据缓存：%s", str(cache_path))
-                return prepared
-            except Exception as e:
-                if logger is not None:
-                    logger.warning("读取缓存失败，将重新构建：%s", e)
+    """读 CSV -> 切分 -> 构建特征 -> 返回 numpy。"""
 
     raw_df = _load_dataframe(csv_path)
     if cfg.id_col not in raw_df.columns:
@@ -796,22 +624,5 @@ def prepare_dcan_data(
         cfg=cfg,
         use_meta=use_meta,
     )
-
-    if use_cache and cache_path is not None:
-        try:
-            meta = {
-                "cache_version": _DCAN_CACHE_VERSION,
-                "cache_key": cache_path.stem,
-                "csv_path": str(csv_path.as_posix()),
-                "projects_root": str(projects_root.as_posix()),
-                "use_meta": bool(use_meta),
-                "config": cfg.to_dict(),
-            }
-            _save_cache(cache_path, prepared, meta=meta)
-            if logger is not None:
-                logger.info("已写入数据缓存：%s", str(cache_path))
-        except Exception as e:
-            if logger is not None:
-                logger.warning("写入缓存失败：%s", e)
 
     return prepared

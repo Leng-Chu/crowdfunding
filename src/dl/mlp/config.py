@@ -83,12 +83,6 @@ class MlpConfig:
     missing_strategy: str = "error"
 
     # -----------------------------
-    # 数据缓存（加速：避免每次逐个 np.load）
-    # -----------------------------
-    use_cache: bool = True
-    cache_dir: str = "experiments/mlp/_cache"
-
-    # -----------------------------
     # 模型结构超参
     # -----------------------------
     # meta 分支

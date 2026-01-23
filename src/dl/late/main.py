@@ -162,7 +162,6 @@ def main() -> int:
     project_root = Path(__file__).resolve().parents[3]
     csv_path = project_root / cfg.data_csv
     projects_root = project_root / cfg.projects_root
-    cache_dir = project_root / cfg.cache_dir
 
     baseline_mode_inner = _normalize_baseline_mode(str(getattr(cfg, "baseline_mode", "attn_pool")))
     cfg = replace(cfg, baseline_mode=baseline_mode_inner)
@@ -194,11 +193,6 @@ def main() -> int:
         int(getattr(cfg, "max_seq_len", 0)),
         str(getattr(cfg, "truncation_strategy", "")),
     )
-    logger.info(
-        "缓存：use_cache=%s | cache_dir=%s（默认不刷新、不压缩）",
-        bool(getattr(cfg, "use_cache", False)),
-        str(cache_dir),
-    )
 
     set_global_seed(cfg.random_seed)
 
@@ -207,7 +201,6 @@ def main() -> int:
         projects_root=projects_root,
         cfg=cfg,
         use_meta=use_meta,
-        cache_dir=cache_dir,
         logger=logger,
     )
     logger.info(

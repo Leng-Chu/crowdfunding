@@ -76,12 +76,6 @@ class SeqConfig:
     missing_strategy: str = "error"  # skip / error
 
     # -----------------------------
-    # 数据缓存（加速：避免每次逐个 np.load / 解析图片）
-    # -----------------------------
-    use_cache: bool = True
-    cache_dir: str = "experiments/seq/_cache"
-
-    # -----------------------------
     # 模型结构超参
     # -----------------------------
     d_model: int = 256
