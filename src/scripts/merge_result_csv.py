@@ -3,11 +3,11 @@ import pandas as pd
 
 def merge_result_csv():
     """
-    遍历experiments/late目录下除_cache外的所有子文件夹的子文件夹，
+    遍历experiments/new目录下除_cache外的所有子文件夹的子文件夹，
     找到其中的result.csv文件，合并为一个CSV文件并按test_f1排序
     """
     # 定义根目录路径
-    base_dir = "experiments/late"
+    base_dir = "experiments/new"
     
     # 存储所有CSV数据的列表
     all_csv_data = []
@@ -56,7 +56,7 @@ def merge_result_csv():
         print("警告: 没有找到test_f1列，将按原始顺序输出")
     
     # 保存合并后的CSV文件
-    output_path = "experiments/late/merged_results.csv"
+    output_path = "experiments/new/new.csv"
     merged_df.to_csv(output_path, index=False)
     print(f"已将所有result.csv文件合并到: {output_path}")
     print(f"总共包含 {len(merged_df)} 行数据")
