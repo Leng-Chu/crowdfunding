@@ -42,7 +42,15 @@ def run_all_experiments():
         ("conda run -n crowdfunding python src/dl/gate/main.py --run-name stage2_only --baseline-mode stage2_only --image-embedding-type clip --text-embedding-type clip --no-use-meta --device cuda:2", 
          "GATE: Stage 2 Only without Meta"),
         ("conda run -n crowdfunding python src/dl/gate/main.py --run-name two_stage --baseline-mode two_stage --image-embedding-type clip --text-embedding-type clip --no-use-meta --device cuda:3", 
-         "GATE: Two Stage without Meta")
+         "GATE: Two Stage without Meta"),
+         
+        # 三种新的单分支baseline-mode (这些模式本身就已经确定了使用的分支，不需要额外指定use-meta)
+        ("conda run -n crowdfunding python src/dl/gate/main.py --run-name seq_only --baseline-mode seq_only --image-embedding-type clip --text-embedding-type clip --device cuda:0", 
+         "GATE: Seq Only"),
+        ("conda run -n crowdfunding python src/dl/gate/main.py --run-name key_only --baseline-mode key_only --image-embedding-type clip --text-embedding-type clip --device cuda:1", 
+         "GATE: Key Only"),
+        ("conda run -n crowdfunding python src/dl/gate/main.py --run-name meta_only --baseline-mode meta_only --image-embedding-type clip --text-embedding-type clip --device cuda:2", 
+         "GATE: Meta Only")
     ]
     
     threads = []
