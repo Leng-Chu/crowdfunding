@@ -81,27 +81,33 @@ class GateConfig:
     # -----------------------------
     # 模型结构超参
     # -----------------------------
-    d_model: int = 256
-    token_dropout: float = 0.0
+    d_model: int = 192
+    token_dropout: float = 0.15
 
     transformer_num_layers: int = 2
     transformer_num_heads: int = 4
-    transformer_dim_feedforward: int = 512
-    transformer_dropout: float = 0.1
+    transformer_dim_feedforward: int = 384
+    transformer_dropout: float = 0.2
+
+    # First Impression（title/blurb/cover）分支的 dropout
+    key_dropout: float = 0.2
+
+    # 融合表征的 dropout
+    fusion_dropout: float = 0.2
 
     # MetaEncoder：Linear(d_meta_in->d)->ReLU->Dropout->Linear(d->d)->ReLU
-    meta_dropout: float = 0.3
+    meta_dropout: float = 0.4
 
     # Head：Linear(d->d_head)->ReLU->Dropout->Linear(d_head->1)
     head_hidden_dim: int = 0  # <=0 表示自动取 2 * d_model
-    head_dropout: float = 0.9
+    head_dropout: float = 0.6
 
     # -----------------------------
     # 训练超参（与 seq 训练流程对齐）
     # -----------------------------
-    alpha: float = 5e-4  # weight_decay（L2）
-    learning_rate_init: float = 5e-4
-    batch_size: int = 512
+    alpha: float = 5e-3  # weight_decay（L2）
+    learning_rate_init: float = 2e-4
+    batch_size: int = 1024
 
     max_epochs: int = 50
     early_stop_patience: int = 10
@@ -114,7 +120,7 @@ class GateConfig:
     lr_scheduler_min_lr: float = 1e-5
     reset_early_stop_on_lr_change: bool = False
 
-    max_grad_norm: float = 0.0
+    max_grad_norm: float = 1.0
 
     threshold: float = 0.5
     random_seed: int = 42
@@ -122,4 +128,3 @@ class GateConfig:
 
     def to_dict(self) -> dict:
         return asdict(self)
-

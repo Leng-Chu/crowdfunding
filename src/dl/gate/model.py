@@ -170,7 +170,13 @@ class FirstImpressionEncoder(nn.Module):
     - v_key ∈ R^{B×d}
     """
 
-    def __init__(self, image_embedding_dim: int, text_embedding_dim: int, d_model: int) -> None:
+    def __init__(
+        self,
+        image_embedding_dim: int,
+        text_embedding_dim: int,
+        d_model: int,
+        dropout: float = 0.0,
+    ) -> None:
         super().__init__()
         if image_embedding_dim <= 0:
             raise ValueError(f"image_embedding_dim 需要 > 0，但得到 {image_embedding_dim}")
@@ -178,10 +184,13 @@ class FirstImpressionEncoder(nn.Module):
             raise ValueError(f"text_embedding_dim 需要 > 0，但得到 {text_embedding_dim}")
         if d_model <= 0:
             raise ValueError(f"d_model 需要 > 0，但得到 {d_model}")
+        if float(dropout) < 0.0 or float(dropout) >= 1.0:
+            raise ValueError("dropout 需要在 [0, 1) 之间")
 
         # TextProj / CoverProj
         self.text_proj = nn.Linear(int(text_embedding_dim), int(d_model))
         self.cover_proj = nn.Linear(int(image_embedding_dim), int(d_model))
+        self.drop = nn.Dropout(p=float(dropout))
 
         # Cover <- Text gated pooling
         self.alpha_fc = nn.Linear(int(3 * d_model), 1)
@@ -219,6 +228,9 @@ class FirstImpressionEncoder(nn.Module):
         # TextProj / CoverProj
         T = torch.relu(self.text_proj(title_blurb))  # [B, 2, d]
         c = torch.relu(self.cover_proj(cover))  # [B, d]
+        # 该分支输入 token 数量很少（2+1），容易记忆训练集；这里显式加 dropout 做正则化。
+        T = self.drop(T)
+        c = self.drop(c)
         c2 = c.unsqueeze(1).expand(-1, 2, -1)  # [B, 2, d]
 
         # Cover <- Text gated pooling
@@ -235,10 +247,12 @@ class FirstImpressionEncoder(nn.Module):
         # TextAgg: concat+proj + LN
         t_cat = torch.cat([T1[:, 0, :], T1[:, 1, :]], dim=-1)  # [B, 2d]
         t1 = self.text_agg_ln(self.text_agg_fc(t_cat))  # [B, d]
+        t1 = self.drop(t1)
 
         # v_key: LN(Linear(concat(t1, c1, t1*c1)))
         key_in = torch.cat([t1, c1, t1 * c1], dim=-1)  # [B, 3d]
         v_key = self.key_ln(self.key_fc(key_in))  # [B, d]
+        v_key = self.drop(v_key)
         return v_key
 
 
@@ -308,12 +322,14 @@ class GateBinaryClassifier(nn.Module):
         text_embedding_dim: int,
         d_model: int,
         token_dropout: float,
+        key_dropout: float,
         max_seq_len: int,
         transformer_num_layers: int,
         transformer_num_heads: int,
         transformer_dim_feedforward: int,
         transformer_dropout: float,
         meta_dropout: float,
+        fusion_dropout: float,
         head_hidden_dim: int,
         head_dropout: float,
     ) -> None:
@@ -331,6 +347,7 @@ class GateBinaryClassifier(nn.Module):
             image_embedding_dim=int(image_embedding_dim),
             text_embedding_dim=int(text_embedding_dim),
             d_model=int(d_model),
+            dropout=float(key_dropout),
         )
 
         self.seq = ContentSeqEncoder(
@@ -350,6 +367,9 @@ class GateBinaryClassifier(nn.Module):
             if int(meta_input_dim) <= 0:
                 raise ValueError("use_meta=True 时 meta_input_dim 需要 > 0。")
             self.meta = MetaEncoder(int(meta_input_dim), int(d_model), dropout=float(meta_dropout))
+
+        # 融合表征 dropout：在进入 head 前做一次正则化（与 head_dropout 相互补充）。
+        self.fusion_drop = nn.Dropout(p=float(fusion_dropout))
 
         # -----------------------------
         # 融合（Two-stage gated fusion）与 baseline
@@ -448,6 +468,7 @@ class GateBinaryClassifier(nn.Module):
         else:
             raise RuntimeError(f"未覆盖的 baseline_mode：{self.baseline_mode!r}")
 
+        h = self.fusion_drop(h)
         z = torch.relu(self.head_fc(h))
         z = self.head_drop(z)
         logits = self.head_out(z).squeeze(-1)
@@ -468,12 +489,14 @@ def build_gate_model(
         text_embedding_dim=int(text_embedding_dim),
         d_model=int(getattr(cfg, "d_model", 256)),
         token_dropout=float(getattr(cfg, "token_dropout", 0.0)),
+        key_dropout=float(getattr(cfg, "key_dropout", 0.0)),
         max_seq_len=int(getattr(cfg, "max_seq_len", 128)),
         transformer_num_layers=int(getattr(cfg, "transformer_num_layers", 2)),
         transformer_num_heads=int(getattr(cfg, "transformer_num_heads", 4)),
         transformer_dim_feedforward=int(getattr(cfg, "transformer_dim_feedforward", 512)),
         transformer_dropout=float(getattr(cfg, "transformer_dropout", 0.1)),
         meta_dropout=float(getattr(cfg, "meta_dropout", 0.3)),
+        fusion_dropout=float(getattr(cfg, "fusion_dropout", 0.0)),
         head_hidden_dim=int(getattr(cfg, "head_hidden_dim", 0)),
         head_dropout=float(getattr(cfg, "head_dropout", 0.9)),
     )
