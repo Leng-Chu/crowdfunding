@@ -335,9 +335,18 @@ class GateBinaryClassifier(nn.Module):
     ) -> None:
         super().__init__()
         self.baseline_mode = str(baseline_mode or "").strip().lower()
-        if self.baseline_mode not in {"late_concat", "stage1_only", "stage2_only", "two_stage"}:
+        if self.baseline_mode not in {
+            "late_concat",
+            "stage1_only",
+            "stage2_only",
+            "two_stage",
+            "seq_only",
+            "key_only",
+            "meta_only",
+        }:
             raise ValueError(
-                f"不支持的 baseline_mode={self.baseline_mode!r}，可选：late_concat/stage1_only/stage2_only/two_stage"
+                f"不支持的 baseline_mode={self.baseline_mode!r}，可选："
+                "late_concat/stage1_only/stage2_only/two_stage/seq_only/key_only/meta_only"
             )
         self.use_meta = bool(use_meta)
         self.d_model = int(d_model)
@@ -450,23 +459,35 @@ class GateBinaryClassifier(nn.Module):
         seq_mask: torch.Tensor,
         x_meta: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        v_key = self.key(title_blurb=title_blurb, cover=cover)
-        v_meta = self._get_v_meta(x_meta=x_meta, ref=v_key)
-        h_seq = self.seq(x_img=x_img, x_txt=x_txt, seq_type=seq_type, seq_attr=seq_attr, seq_mask=seq_mask)
-
-        if self.baseline_mode == "late_concat":
-            h = self.late_fc(torch.cat([h_seq, v_key, v_meta], dim=1))
-        elif self.baseline_mode == "stage1_only":
-            p = self._stage1_prior(v_key=v_key, v_meta=v_meta)
-            h = self.stage1only_fuse_ln(self.stage1only_fuse_fc(torch.cat([h_seq, p], dim=1)))
-        elif self.baseline_mode == "stage2_only":
-            p0 = self.stage2only_p_ln(self.stage2only_p_fc(torch.cat([v_key, v_meta], dim=1)))
-            h = self._stage2_fuse(h_seq=h_seq, p=p0)
-        elif self.baseline_mode == "two_stage":
-            p = self._stage1_prior(v_key=v_key, v_meta=v_meta)
-            h = self._stage2_fuse(h_seq=h_seq, p=p)
+        # 单分支对照：只使用某一个分支的输出做分类，便于评估各分支的独立贡献。
+        if self.baseline_mode == "seq_only":
+            h = self.seq(x_img=x_img, x_txt=x_txt, seq_type=seq_type, seq_attr=seq_attr, seq_mask=seq_mask)
+        elif self.baseline_mode == "key_only":
+            h = self.key(title_blurb=title_blurb, cover=cover)
+        elif self.baseline_mode == "meta_only":
+            if not self.use_meta:
+                raise ValueError("baseline_mode=meta_only 需要 use_meta=True。")
+            if self.meta is None or x_meta is None:
+                raise ValueError("baseline_mode=meta_only 但 x_meta 为空。")
+            h = self.meta(x_meta)
         else:
-            raise RuntimeError(f"未覆盖的 baseline_mode：{self.baseline_mode!r}")
+            v_key = self.key(title_blurb=title_blurb, cover=cover)
+            v_meta = self._get_v_meta(x_meta=x_meta, ref=v_key)
+            h_seq = self.seq(x_img=x_img, x_txt=x_txt, seq_type=seq_type, seq_attr=seq_attr, seq_mask=seq_mask)
+
+            if self.baseline_mode == "late_concat":
+                h = self.late_fc(torch.cat([h_seq, v_key, v_meta], dim=1))
+            elif self.baseline_mode == "stage1_only":
+                p = self._stage1_prior(v_key=v_key, v_meta=v_meta)
+                h = self.stage1only_fuse_ln(self.stage1only_fuse_fc(torch.cat([h_seq, p], dim=1)))
+            elif self.baseline_mode == "stage2_only":
+                p0 = self.stage2only_p_ln(self.stage2only_p_fc(torch.cat([v_key, v_meta], dim=1)))
+                h = self._stage2_fuse(h_seq=h_seq, p=p0)
+            elif self.baseline_mode == "two_stage":
+                p = self._stage1_prior(v_key=v_key, v_meta=v_meta)
+                h = self._stage2_fuse(h_seq=h_seq, p=p)
+            else:
+                raise RuntimeError(f"未覆盖的 baseline_mode：{self.baseline_mode!r}")
 
         h = self.fusion_drop(h)
         z = torch.relu(self.head_fc(h))

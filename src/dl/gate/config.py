@@ -39,7 +39,7 @@ class GateConfig:
     # 模式（实验组）
     # -----------------------------
     # 仅修改 baseline_mode 即可复现实验组（其余保持一致）
-    baseline_mode: str = "two_stage"  # late_concat / stage1_only / stage2_only / two_stage
+    baseline_mode: str = "two_stage"  # late_concat / stage1_only / stage2_only / two_stage / seq_only / key_only / meta_only
 
     # -----------------------------
     # meta 分支开关

@@ -104,6 +104,9 @@ Head：
 - `stage1_only`：只计算 `p`，不做 Stage2；使用 `LN(Linear(concat(h_seq,p)))` 再接 head
 - `stage2_only`：不做 Stage1；`p0=LN(Linear(concat(v_key,v_meta)))`，再做 Stage2 得 `h_final` 接 head
 - `two_stage`：完整 Two-stage（主模型）
+- `seq_only`：只使用 Content Seq 分支（`h_seq`）接 head
+- `key_only`：只使用 First Impression 分支（`v_key`）接 head
+- `meta_only`：只使用 Meta 分支（`v_meta`）接 head（主程序会强制 `use_meta=True`）
 
 要求：除融合逻辑外，其余三分支完全一致。
 
@@ -123,7 +126,8 @@ Head：
 
 默认写入 `experiments/gate/<mode>/<run_id>/`，其中：
 
-- `mode = baseline_mode` 或 `baseline_mode+meta`（当 `use_meta=True`）
+- `mode = baseline_mode`（单分支对照 `seq_only/key_only/meta_only` 固定如此）
+- `mode = baseline_mode+meta`（其余 baseline 且 `use_meta=True` 时）
 
 目录结构：
 
@@ -153,6 +157,8 @@ Head：
   - `conda run -n crowdfunding python src/dl/gate/main.py --baseline-mode stage1_only`
   - `conda run -n crowdfunding python src/dl/gate/main.py --baseline-mode stage2_only`
   - `conda run -n crowdfunding python src/dl/gate/main.py --baseline-mode late_concat`
+  - `conda run -n crowdfunding python src/dl/gate/main.py --baseline-mode seq_only`
+  - `conda run -n crowdfunding python src/dl/gate/main.py --baseline-mode key_only`
+  - `conda run -n crowdfunding python src/dl/gate/main.py --baseline-mode meta_only`
 - 指定嵌入类型与设备：
   - `conda run -n crowdfunding python src/dl/gate/main.py --baseline-mode two_stage --image-embedding-type clip --text-embedding-type bge --device cuda:0`
-

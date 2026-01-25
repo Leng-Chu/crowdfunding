@@ -32,7 +32,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--baseline-mode",
         default=None,
-        choices=["late_concat", "stage1_only", "stage2_only", "two_stage"],
+        choices=["late_concat", "stage1_only", "stage2_only", "two_stage", "seq_only", "key_only", "meta_only"],
         help="实验组：仅修改该参数即可切换 baseline（其余配置保持一致）。",
     )
     parser.add_argument(
@@ -151,7 +151,27 @@ def main() -> int:
         cfg = replace(cfg, device=f"cuda:{int(args.gpu)}")
 
     baseline_mode = str(getattr(cfg, "baseline_mode", "two_stage")).strip().lower()
-    mode = baseline_mode + ("+meta" if bool(getattr(cfg, "use_meta", False)) else "")
+
+    # 单分支对照：强制只启用该分支，避免“伪单分支”（例如 seq_only 还开启 meta）。
+    forced_messages: list[str] = []
+    if baseline_mode in {"seq_only", "key_only"}:
+        if bool(getattr(cfg, "use_meta", False)):
+            forced_messages.append(
+                f"baseline_mode={baseline_mode} 为单分支对照，已强制 use_meta=False（忽略配置/命令行的 use_meta）。"
+            )
+        cfg = replace(cfg, use_meta=False)
+    elif baseline_mode == "meta_only":
+        if not bool(getattr(cfg, "use_meta", False)):
+            forced_messages.append(
+                "baseline_mode=meta_only 需要 meta 分支，已强制 use_meta=True（忽略配置/命令行的 use_meta）。"
+            )
+        cfg = replace(cfg, use_meta=True)
+
+    # 产物目录命名：单分支对照不再附加 +meta（避免歧义）。
+    if baseline_mode in {"seq_only", "key_only", "meta_only"}:
+        mode = baseline_mode
+    else:
+        mode = baseline_mode + ("+meta" if bool(getattr(cfg, "use_meta", False)) else "")
 
     project_root = Path(__file__).resolve().parents[3]
     csv_path = project_root / cfg.data_csv
@@ -164,6 +184,9 @@ def main() -> int:
     run_dir = reports_dir.parent
 
     logger = setup_logger(run_dir / "train.log")
+
+    for msg in forced_messages:
+        logger.info(msg)
 
     logger.info("模式=%s | run_id=%s | baseline_mode=%s | use_meta=%s", mode, run_id, baseline_mode, bool(cfg.use_meta))
     logger.info("python=%s | 平台=%s", sys.version.replace("\n", " "), platform.platform())
