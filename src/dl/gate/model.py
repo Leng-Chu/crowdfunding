@@ -14,6 +14,7 @@ import torch
 import torch.nn as nn
 
 from config import GateConfig
+from utils import baseline_uses_meta
 
 
 class _GateStatsAccumulator:
@@ -371,7 +372,6 @@ class GateBinaryClassifier(nn.Module):
     def __init__(
         self,
         baseline_mode: str,
-        use_meta: bool,
         meta_input_dim: int,
         image_embedding_dim: int,
         text_embedding_dim: int,
@@ -404,7 +404,7 @@ class GateBinaryClassifier(nn.Module):
                 f"不支持的 baseline_mode={self.baseline_mode!r}，可选："
                 "late_concat/stage1_only/stage2_only/two_stage/seq_only/key_only/meta_only"
             )
-        self.use_meta = bool(use_meta)
+        self.meta_enabled = baseline_uses_meta(self.baseline_mode)
         self.d_model = int(d_model)
         self.debug_gate_stats = bool(debug_gate_stats)
 
@@ -429,9 +429,9 @@ class GateBinaryClassifier(nn.Module):
         )
 
         self.meta: Optional[MetaEncoder] = None
-        if self.use_meta:
+        if self.meta_enabled:
             if int(meta_input_dim) <= 0:
-                raise ValueError("use_meta=True 时 meta_input_dim 需要 > 0。")
+                raise ValueError("当前模式需要 meta 特征，但 meta_input_dim <= 0。")
             self.meta = MetaEncoder(int(meta_input_dim), int(d_model), dropout=float(meta_dropout))
 
         # 融合表征 dropout：在进入 head 前做一次正则化（与 head_dropout 相互补充）。
@@ -577,9 +577,9 @@ class GateBinaryClassifier(nn.Module):
         return self
 
     def _get_v_meta(self, x_meta: torch.Tensor | None, ref: torch.Tensor) -> torch.Tensor:
-        if self.use_meta:
+        if self.meta_enabled:
             if self.meta is None or x_meta is None:
-                raise ValueError("use_meta=True 但 x_meta 为空。")
+                raise ValueError("当前模式需要 meta 特征，但 x_meta 为空。")
             return self.meta(x_meta)
         # 不使用 metadata 时，按约定用 0 向量占位，保持融合公式不变。
         return torch.zeros((int(ref.shape[0]), int(self.d_model)), device=ref.device, dtype=ref.dtype)
@@ -619,10 +619,8 @@ class GateBinaryClassifier(nn.Module):
         elif self.baseline_mode == "key_only":
             h = self.key(title_blurb=title_blurb, cover=cover)
         elif self.baseline_mode == "meta_only":
-            if not self.use_meta:
-                raise ValueError("baseline_mode=meta_only 需要 use_meta=True。")
             if self.meta is None or x_meta is None:
-                raise ValueError("baseline_mode=meta_only 但 x_meta 为空。")
+                raise ValueError("baseline_mode=meta_only 时 x_meta 不能为空。")
             h = self.meta(x_meta)
         else:
             v_key = self.key(title_blurb=title_blurb, cover=cover)
@@ -662,10 +660,12 @@ def build_gate_model(
         if env and env not in {"0", "false", "no", "off"}:
             debug_gate_stats = True
 
+    baseline_mode = str(getattr(cfg, "baseline_mode", "two_stage") or "").strip().lower()
+    meta_enabled = baseline_uses_meta(baseline_mode)
+
     return GateBinaryClassifier(
-        baseline_mode=str(getattr(cfg, "baseline_mode", "two_stage")),
-        use_meta=bool(getattr(cfg, "use_meta", False)),
-        meta_input_dim=int(meta_input_dim) if bool(getattr(cfg, "use_meta", False)) else 0,
+        baseline_mode=baseline_mode,
+        meta_input_dim=int(meta_input_dim) if meta_enabled else 0,
         image_embedding_dim=int(image_embedding_dim),
         text_embedding_dim=int(text_embedding_dim),
         d_model=int(getattr(cfg, "d_model", 256)),

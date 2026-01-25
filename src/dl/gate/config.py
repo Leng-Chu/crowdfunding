@@ -5,13 +5,13 @@ gate 配置（Chapter 2：三分支 + Two-stage gated fusion）：
 - 任务：Kickstarter 项目二分类（成功/失败），loss = BCEWithLogitsLoss
 - 输入：预先计算好的 image/text embedding（不涉及原始模态特征）
 - 三分支：
-  1) Meta 分支（可选 use_meta）：表格特征 one-hot + 数值标准化 + 2 层 MLP
+  1) Meta 分支（除 seq_only/key_only 外均启用）：表格特征 one-hot + 数值标准化 + 2 层 MLP
   2) First Impression 分支：title+blurb 与 cover 的跨模态交互
   3) Content Seq 分支：仅正文 content_sequence 的 trm_pos（sinusoidal PE + Transformer + masked mean）
 
 说明：
 - 本目录代码可独立运行，不得 import 或复用 `src/dl/seq` 的代码
-- 命令行仅覆盖常用参数：--run-name / --baseline-mode / --use-meta / --image-embedding-type / --text-embedding-type / --device / --gpu
+- 命令行仅覆盖常用参数：--run-name / --baseline-mode / --image-embedding-type / --text-embedding-type / --device / --gpu
 """
 
 from __future__ import annotations
@@ -40,11 +40,6 @@ class GateConfig:
     # -----------------------------
     # 仅修改 baseline_mode 即可复现实验组（其余保持一致）
     baseline_mode: str = "two_stage"  # late_concat / stage1_only / stage2_only / two_stage / seq_only / key_only / meta_only
-
-    # -----------------------------
-    # meta 分支开关
-    # -----------------------------
-    use_meta: bool = True
 
     # -----------------------------
     # 列配置（CSV，与 mlp/seq 对齐）

@@ -26,6 +26,7 @@ import numpy as np
 import pandas as pd
 
 from config import GateConfig
+from utils import baseline_uses_meta
 
 
 def _split_by_ratio(
@@ -471,7 +472,7 @@ def _build_features_for_split(
     X_meta_all: Optional[np.ndarray],
     projects_root: Path,
     cfg: GateConfig,
-    use_meta: bool,
+    meta_enabled: bool,
     image_dim: int,
     text_dim: int,
     logger=None,
@@ -625,7 +626,7 @@ def _build_features_for_split(
 
         kept_ids.append(pid)
         kept_y.append(int(y_arr[i]))
-        if use_meta:
+        if meta_enabled:
             kept_meta_idx.append(int(i))
 
         title_blurb_list.append(title_blurb)
@@ -649,9 +650,9 @@ def _build_features_for_split(
     y = np.asarray(kept_y, dtype=np.int64)
 
     X_meta = None
-    if use_meta:
+    if meta_enabled:
         if X_meta_all is None:
-            raise ValueError("use_meta=True 时，X_meta_all 不能为空。")
+            raise ValueError("需要 meta 特征时，X_meta_all 不能为空。")
         X_meta = X_meta_all[np.asarray(kept_meta_idx, dtype=np.int64)].astype(np.float32, copy=False)
 
     return X_meta, title_blurb_arr, cover_arr, X_img, X_txt, seq_type, seq_attr, seq_mask, y, kept_ids, stats
@@ -661,7 +662,6 @@ def prepare_gate_data(
     csv_path: Path,
     projects_root: Path,
     cfg: GateConfig,
-    use_meta: bool,
     logger=None,
 ) -> PreparedGateData:
     """读 CSV -> 切分 -> 构建三分支特征 -> 返回 numpy 数组。"""
@@ -672,7 +672,10 @@ def prepare_gate_data(
     if cfg.target_col not in raw_df.columns:
         raise ValueError(f"CSV 缺少 target_col={cfg.target_col!r}")
 
-    if use_meta:
+    baseline_mode = str(getattr(cfg, "baseline_mode", "two_stage") or "").strip().lower()
+    meta_enabled = baseline_uses_meta(baseline_mode)
+
+    if meta_enabled:
         feature_cols = [*cfg.categorical_cols, *cfg.numeric_cols]
         for col in feature_cols:
             if col not in raw_df.columns:
@@ -693,7 +696,7 @@ def prepare_gate_data(
     X_meta_train_all = None
     X_meta_val_all = None
     X_meta_test_all = None
-    if use_meta:
+    if meta_enabled:
         preprocessor = TabularPreprocessor(
             categorical_cols=list(cfg.categorical_cols),
             numeric_cols=list(cfg.numeric_cols),
@@ -742,7 +745,7 @@ def prepare_gate_data(
         X_meta_train_all,
         projects_root,
         cfg,
-        use_meta=use_meta,
+        meta_enabled=meta_enabled,
         image_dim=int(image_dim),
         text_dim=int(text_dim),
         logger=logger,
@@ -764,7 +767,7 @@ def prepare_gate_data(
         X_meta_val_all,
         projects_root,
         cfg,
-        use_meta=use_meta,
+        meta_enabled=meta_enabled,
         image_dim=int(image_dim),
         text_dim=int(text_dim),
         logger=logger,
@@ -786,7 +789,7 @@ def prepare_gate_data(
         X_meta_test_all,
         projects_root,
         cfg,
-        use_meta=use_meta,
+        meta_enabled=meta_enabled,
         image_dim=int(image_dim),
         text_dim=int(text_dim),
         logger=logger,
@@ -831,7 +834,7 @@ def prepare_gate_data(
         X_meta_train=X_meta_train,
         X_meta_val=X_meta_val,
         X_meta_test=X_meta_test,
-        meta_dim=int(meta_dim) if use_meta else 0,
+        meta_dim=int(meta_dim) if meta_enabled else 0,
         preprocessor=preprocessor,
         feature_names=feature_names,
         stats=stats,

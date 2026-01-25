@@ -23,6 +23,12 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 
+def baseline_uses_meta(baseline_mode: str) -> bool:
+    """判断某个 baseline_mode 是否需要 meta 分支。"""
+    m = str(baseline_mode or "").strip().lower()
+    return m not in {"seq_only", "key_only"}
+
+
 def set_global_seed(seed: int) -> None:
     """设置全局随机种子（numpy/random/torch）。"""
     random.seed(seed)

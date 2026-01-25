@@ -36,12 +36,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="实验组：仅修改该参数即可切换 baseline（其余配置保持一致）。",
     )
     parser.add_argument(
-        "--use-meta",
-        default=None,
-        action=argparse.BooleanOptionalAction,
-        help="是否启用 meta 分支（出现该参数时，以命令行覆盖配置）。",
-    )
-    parser.add_argument(
         "--image-embedding-type",
         default=None,
         choices=["clip", "siglip", "resnet"],
@@ -123,6 +117,7 @@ def main() -> int:
     from model import build_gate_model
     from train_eval import evaluate_gate_split, train_gate_with_early_stopping
     from utils import (
+        baseline_uses_meta,
         compute_binary_metrics,
         find_best_f1_threshold,
         make_run_dirs,
@@ -138,8 +133,6 @@ def main() -> int:
         cfg = replace(cfg, run_name=str(args.run_name))
     if args.baseline_mode is not None:
         cfg = replace(cfg, baseline_mode=str(args.baseline_mode))
-    if args.use_meta is not None:
-        cfg = replace(cfg, use_meta=bool(args.use_meta))
     if args.image_embedding_type is not None:
         cfg = replace(cfg, image_embedding_type=str(args.image_embedding_type))
     if args.text_embedding_type is not None:
@@ -151,27 +144,13 @@ def main() -> int:
         cfg = replace(cfg, device=f"cuda:{int(args.gpu)}")
 
     baseline_mode = str(getattr(cfg, "baseline_mode", "two_stage")).strip().lower()
-
-    # 单分支对照：强制只启用该分支，避免“伪单分支”（例如 seq_only 还开启 meta）。
-    forced_messages: list[str] = []
-    if baseline_mode in {"seq_only", "key_only"}:
-        if bool(getattr(cfg, "use_meta", False)):
-            forced_messages.append(
-                f"baseline_mode={baseline_mode} 为单分支对照，已强制 use_meta=False（忽略配置/命令行的 use_meta）。"
-            )
-        cfg = replace(cfg, use_meta=False)
-    elif baseline_mode == "meta_only":
-        if not bool(getattr(cfg, "use_meta", False)):
-            forced_messages.append(
-                "baseline_mode=meta_only 需要 meta 分支，已强制 use_meta=True（忽略配置/命令行的 use_meta）。"
-            )
-        cfg = replace(cfg, use_meta=True)
+    meta_enabled = baseline_uses_meta(baseline_mode)
 
     # 产物目录命名：单分支对照不再附加 +meta（避免歧义）。
     if baseline_mode in {"seq_only", "key_only", "meta_only"}:
         mode = baseline_mode
     else:
-        mode = baseline_mode + ("+meta" if bool(getattr(cfg, "use_meta", False)) else "")
+        mode = f"{baseline_mode}+meta"
 
     project_root = Path(__file__).resolve().parents[3]
     csv_path = project_root / cfg.data_csv
@@ -185,10 +164,7 @@ def main() -> int:
 
     logger = setup_logger(run_dir / "train.log")
 
-    for msg in forced_messages:
-        logger.info(msg)
-
-    logger.info("模式=%s | run_id=%s | baseline_mode=%s | use_meta=%s", mode, run_id, baseline_mode, bool(cfg.use_meta))
+    logger.info("模式=%s | run_id=%s | baseline_mode=%s | meta_enabled=%s", mode, run_id, baseline_mode, bool(meta_enabled))
     logger.info("python=%s | 平台=%s", sys.version.replace("\n", " "), platform.platform())
     logger.info("data_csv=%s", str(csv_path))
     logger.info("projects_root=%s", str(projects_root))
@@ -207,7 +183,6 @@ def main() -> int:
         csv_path=csv_path,
         projects_root=projects_root,
         cfg=cfg,
-        use_meta=bool(cfg.use_meta),
         logger=logger,
     )
     logger.info(
@@ -223,7 +198,7 @@ def main() -> int:
     if prepared.stats:
         logger.info("统计信息：%s", prepared.stats)
 
-    if cfg.use_meta and prepared.preprocessor is not None:
+    if meta_enabled and prepared.preprocessor is not None:
         with (artifacts_dir / "preprocessor.pkl").open("wb") as f:
             pickle.dump(prepared.preprocessor, f)
         if prepared.feature_names:
@@ -258,7 +233,7 @@ def main() -> int:
             "run_id": run_id,
             "mode": mode,
             "baseline_mode": baseline_mode,
-            "use_meta": bool(cfg.use_meta),
+            "meta_enabled": bool(meta_enabled),
             "meta_dim": int(prepared.meta_dim),
             "image_embedding_dim": int(prepared.image_embedding_dim),
             "text_embedding_dim": int(prepared.text_embedding_dim),
@@ -271,7 +246,6 @@ def main() -> int:
 
     best_model, history, best_info = train_gate_with_early_stopping(
         model,
-        use_meta=bool(cfg.use_meta),
         X_meta_train=prepared.X_meta_train,
         title_blurb_train=prepared.title_blurb_train,
         cover_train=prepared.cover_train,
@@ -305,7 +279,6 @@ def main() -> int:
 
     train_out = evaluate_gate_split(
         best_model,
-        use_meta=bool(cfg.use_meta),
         X_meta=prepared.X_meta_train,
         title_blurb=prepared.title_blurb_train,
         cover=prepared.cover_train,
@@ -320,7 +293,6 @@ def main() -> int:
     )
     val_out = evaluate_gate_split(
         best_model,
-        use_meta=bool(cfg.use_meta),
         X_meta=prepared.X_meta_val,
         title_blurb=prepared.title_blurb_val,
         cover=prepared.cover_val,
@@ -335,7 +307,6 @@ def main() -> int:
     )
     test_out = evaluate_gate_split(
         best_model,
-        use_meta=bool(cfg.use_meta),
         X_meta=prepared.X_meta_test,
         title_blurb=prepared.title_blurb_test,
         cover=prepared.cover_test,
@@ -370,7 +341,7 @@ def main() -> int:
         {
             "state_dict": best_model.state_dict(),
             "baseline_mode": baseline_mode,
-            "use_meta": bool(cfg.use_meta),
+            "meta_enabled": bool(meta_enabled),
             "meta_dim": int(prepared.meta_dim),
             "image_embedding_dim": int(prepared.image_embedding_dim),
             "text_embedding_dim": int(prepared.text_embedding_dim),

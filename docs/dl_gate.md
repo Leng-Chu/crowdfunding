@@ -12,7 +12,7 @@
     - `content.json` 的 `content_sequence`（按页面顺序）
     - `image_{img_emb_type}.npy`：形状 `[N_img, D_img]`
     - `text_{txt_emb_type}.npy`：形状 `[N_txt, D_txt]`
-  - **可选 meta**：表格元数据特征（类别 one-hot + 数值标准化），`use_meta=True` 时启用。
+  - **meta**：表格元数据特征（类别 one-hot + 数值标准化），除 `seq_only` / `key_only` 外均启用。
 - **输出**：二分类 **logits**（训练使用 `BCEWithLogitsLoss`），推理时对 logits 施加 `sigmoid` 得到正类概率。
 
 > 与 `docs/dl_seq.md` 的主要区别：本章内容序列分支不再包含 title/blurb/cover，它们只属于 First Impression 分支。
@@ -106,7 +106,7 @@ Head：
 - `two_stage`：完整 Two-stage（主模型）
 - `seq_only`：只使用 Content Seq 分支（`h_seq`）接 head
 - `key_only`：只使用 First Impression 分支（`v_key`）接 head
-- `meta_only`：只使用 Meta 分支（`v_meta`）接 head（主程序会强制 `use_meta=True`）
+- `meta_only`：只使用 Meta 分支（`v_meta`）接 head
 
 要求：除融合逻辑外，其余三分支完全一致。
 
@@ -127,13 +127,13 @@ Head：
 默认写入 `experiments/gate/<mode>/<run_id>/`，其中：
 
 - `mode = baseline_mode`（单分支对照 `seq_only/key_only/meta_only` 固定如此）
-- `mode = baseline_mode+meta`（其余 baseline 且 `use_meta=True` 时）
+- `mode = baseline_mode+meta`（除 `seq_only/key_only/meta_only` 外均如此）
 
 目录结构：
 
 - `artifacts/`
   - `model.pt`
-  - `preprocessor.pkl` / `feature_names.txt`（仅 `use_meta=True`）
+  - `preprocessor.pkl` / `feature_names.txt`（除 `seq_only/key_only` 外均会生成）
 - `reports/`
   - `config.json`
   - `metrics.json`

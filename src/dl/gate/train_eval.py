@@ -60,7 +60,6 @@ def _get_device(cfg: GateConfig) -> torch.device:
 class GateDataset(Dataset):
     def __init__(
         self,
-        use_meta: bool,
         X_meta: Optional[np.ndarray],
         title_blurb: np.ndarray,
         cover: np.ndarray,
@@ -73,7 +72,6 @@ class GateDataset(Dataset):
         project_ids: List[str],
     ) -> None:
         super().__init__()
-        self.use_meta = bool(use_meta)
         self.X_meta = X_meta
         self.title_blurb = title_blurb
         self.cover = cover
@@ -98,9 +96,7 @@ class GateDataset(Dataset):
             raise ValueError("project_ids 长度与样本数不一致。")
         if int(self.y.shape[0]) != n:
             raise ValueError("y 长度与样本数不一致。")
-        if self.use_meta and self.X_meta is None:
-            raise ValueError("use_meta=True 但 X_meta 为空。")
-        if self.use_meta and int(self.X_meta.shape[0]) != n:
+        if self.X_meta is not None and int(self.X_meta.shape[0]) != n:
             raise ValueError("X_meta 样本数与 seq 不一致。")
 
     def __len__(self) -> int:
@@ -118,16 +114,16 @@ class GateDataset(Dataset):
         m = torch.from_numpy(self.seq_mask[i])
         y = torch.tensor(float(self.y[i]), dtype=torch.float32)
 
-        if self.use_meta:
+        if self.X_meta is None:
+            x_meta = torch.empty((0,), dtype=torch.float32)
+        else:
             x_meta = torch.from_numpy(self.X_meta[i])
-            return x_meta, tb, c, x_img, x_txt, t, a, m, y
-        return tb, c, x_img, x_txt, t, a, m, y
+        return x_meta, tb, c, x_img, x_txt, t, a, m, y
 
 
 @torch.no_grad()
 def _positive_proba_gate(
     model: nn.Module,
-    use_meta: bool,
     X_meta: np.ndarray | None,
     title_blurb: np.ndarray,
     cover: np.ndarray,
@@ -144,7 +140,6 @@ def _positive_proba_gate(
 ) -> np.ndarray:
     model.eval()
     ds = GateDataset(
-        use_meta=bool(use_meta),
         X_meta=X_meta,
         title_blurb=title_blurb,
         cover=cover,
@@ -160,13 +155,7 @@ def _positive_proba_gate(
 
     probs: List[np.ndarray] = []
     for batch in loader:
-        if use_meta:
-            x_meta, tb, c, x_img, x_txt, t, a, m, _y = batch
-            x_meta = x_meta.to(device)
-        else:
-            tb, c, x_img, x_txt, t, a, m, _y = batch
-            x_meta = None
-
+        x_meta, tb, c, x_img, x_txt, t, a, m, _y = batch
         logits = model(
             title_blurb=tb.to(device),
             cover=c.to(device),
@@ -175,7 +164,7 @@ def _positive_proba_gate(
             seq_type=t.to(device),
             seq_attr=a.to(device),
             seq_mask=m.to(device),
-            x_meta=x_meta,
+            x_meta=x_meta.to(device),
         )
         prob = torch.sigmoid(logits).detach().cpu().numpy().astype(np.float64, copy=False)
         probs.append(prob)
@@ -187,7 +176,6 @@ def _positive_proba_gate(
 
 def train_gate_with_early_stopping(
     model: nn.Module,
-    use_meta: bool,
     X_meta_train: np.ndarray | None,
     title_blurb_train: np.ndarray,
     cover_train: np.ndarray,
@@ -216,7 +204,6 @@ def train_gate_with_early_stopping(
     model = model.to(device)
 
     ds_train = GateDataset(
-        use_meta=bool(use_meta),
         X_meta=X_meta_train,
         title_blurb=title_blurb_train,
         cover=cover_train,
@@ -259,13 +246,7 @@ def train_gate_with_early_stopping(
         n_seen = 0
 
         for batch in train_loader:
-            if use_meta:
-                x_meta, tb, c, x_img, x_txt, t, a, m, yb = batch
-                x_meta = x_meta.to(device)
-            else:
-                tb, c, x_img, x_txt, t, a, m, yb = batch
-                x_meta = None
-
+            x_meta, tb, c, x_img, x_txt, t, a, m, yb = batch
             optimizer.zero_grad(set_to_none=True)
             logits = model(
                 title_blurb=tb.to(device),
@@ -275,7 +256,7 @@ def train_gate_with_early_stopping(
                 seq_type=t.to(device),
                 seq_attr=a.to(device),
                 seq_mask=m.to(device),
-                x_meta=x_meta,
+                x_meta=x_meta.to(device),
             )
             yb = yb.to(device)
             loss = criterion(logits, yb)
@@ -295,7 +276,6 @@ def train_gate_with_early_stopping(
 
         train_prob = _positive_proba_gate(
             model,
-            use_meta=use_meta,
             X_meta=X_meta_train,
             title_blurb=title_blurb_train,
             cover=cover_train,
@@ -312,7 +292,6 @@ def train_gate_with_early_stopping(
         )
         val_prob = _positive_proba_gate(
             model,
-            use_meta=use_meta,
             X_meta=X_meta_val,
             title_blurb=title_blurb_val,
             cover=cover_val,
@@ -404,7 +383,6 @@ def train_gate_with_early_stopping(
 
 def evaluate_gate_split(
     model: nn.Module,
-    use_meta: bool,
     X_meta: np.ndarray | None,
     title_blurb: np.ndarray,
     cover: np.ndarray,
@@ -421,7 +399,6 @@ def evaluate_gate_split(
     model = model.to(device)
     prob = _positive_proba_gate(
         model,
-        use_meta=use_meta,
         X_meta=X_meta,
         title_blurb=title_blurb,
         cover=cover,
