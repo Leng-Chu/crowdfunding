@@ -126,8 +126,7 @@ Head：
 
 默认写入 `experiments/gate/<mode>/<run_id>/`，其中：
 
-- `mode = baseline_mode`（单分支对照 `seq_only/key_only/meta_only` 固定如此）
-- `mode = baseline_mode+meta`（除 `seq_only/key_only/meta_only` 外均如此）
+- `mode = baseline_mode`（除 `seq_only` / `key_only` 外默认都使用 meta，因此不再额外区分）
 
 目录结构：
 
@@ -162,3 +161,15 @@ Head：
   - `conda run -n crowdfunding python src/dl/gate/main.py --baseline-mode meta_only`
 - 指定嵌入类型与设备：
   - `conda run -n crowdfunding python src/dl/gate/main.py --baseline-mode two_stage --image-embedding-type clip --text-embedding-type bge --device cuda:0`
+
+---
+
+## 8. Optuna 自动调参（黑盒）
+
+本仓库提供 `src/dl/gate/optuna_search.py` 作为调参入口：每个 trial 会直接调用现有 `src/dl/gate/main.py` CLI 进行一次完整训练，然后读取 `result.csv`（或回退读取 `reports/metrics.json`）得到目标值。
+
+- 典型用法（调 `two_stage`，目标最大化 `test_f1`）：
+  - `conda run -n crowdfunding python src/dl/gate/optuna_search.py --baseline-mode two_stage --device cuda:0 --n-trials 30`
+- 输出目录：
+  - `experiments/gate/optuna/<study_name>/summary.csv`：每个 trial 的汇总（trial_id、params、objective、run_dir、关键 test 指标）
+  - `experiments/gate/optuna/<study_name>/best.json`：最优 trial 的参数与 run_dir
