@@ -25,7 +25,7 @@ class GateConfig:
     # -----------------------------
     # 运行相关
     # -----------------------------
-    run_name: Optional[str] = "clip_bge"
+    run_name: Optional[str] = "clip"
     device: str = "auto"  # auto / cpu / cuda / cuda:0 / cuda:1 ...
 
     # -----------------------------
@@ -67,7 +67,7 @@ class GateConfig:
     # 嵌入配置
     # -----------------------------
     image_embedding_type: str = "clip"  # clip / siglip / resnet
-    text_embedding_type: str = "bge"  # bge / clip / siglip
+    text_embedding_type: str = "clip"  # bge / clip / siglip
 
     # 正文 content_sequence 截断（仅作用于正文 tokens）
     max_seq_len: int = 40
@@ -121,6 +121,7 @@ class GateConfig:
     reset_early_stop_on_lr_change: bool = False
 
     max_grad_norm: float = 1.0
+    debug_gate_stats: bool = True
 
     threshold: float = 0.5
     random_seed: int = 42

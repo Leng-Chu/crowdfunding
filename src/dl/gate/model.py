@@ -5,13 +5,68 @@
 
 from __future__ import annotations
 
+import logging
 import math
+import os
 from typing import Optional
 
 import torch
 import torch.nn as nn
 
 from config import GateConfig
+
+
+class _GateStatsAccumulator:
+    """门控张量统计（用于 debug_gate_stats，仅 eval 且每个 epoch 打一次）。"""
+
+    def __init__(self, name: str, d_model: int) -> None:
+        self.name = str(name)
+        self.d_model = int(d_model)
+        self.reset()
+
+    def reset(self) -> None:
+        self.sample_count = 0
+        self.elem_count = 0
+        self.sum = 0.0
+        self.sum_sq = 0.0
+        self.min_val = float("inf")
+        self.max_val = -float("inf")
+        self.channel_sum = torch.zeros((int(self.d_model),), dtype=torch.float64)
+        self.has_data = False
+
+    def update(self, g: torch.Tensor) -> None:
+        if g.ndim != 2 or int(g.shape[1]) != int(self.d_model):
+            return
+        g_cpu = g.detach().to(device="cpu", dtype=torch.float64)
+        self.sample_count += int(g_cpu.shape[0])
+        self.elem_count += int(g_cpu.numel())
+
+        self.sum += float(g_cpu.sum().item())
+        self.sum_sq += float((g_cpu * g_cpu).sum().item())
+        self.min_val = min(self.min_val, float(g_cpu.min().item()))
+        self.max_val = max(self.max_val, float(g_cpu.max().item()))
+        self.channel_sum += g_cpu.sum(dim=0)
+        self.has_data = True
+
+    def summary(self) -> Optional[dict]:
+        if (not self.has_data) or int(self.elem_count) <= 0 or int(self.sample_count) <= 0:
+            return None
+
+        mean = float(self.sum / float(self.elem_count))
+        var = float(self.sum_sq / float(self.elem_count) - mean * mean)
+        if var < 0.0:
+            var = 0.0
+        std = float(math.sqrt(var))
+
+        channel_mean = self.channel_sum / float(self.sample_count)
+        channel_mean_std = float(channel_mean.std(unbiased=False).item())
+        return {
+            "mean": mean,
+            "std": std,
+            "min": float(self.min_val),
+            "max": float(self.max_val),
+            "channel_mean_std": channel_mean_std,
+        }
 
 
 class MetaEncoder(nn.Module):
@@ -332,6 +387,7 @@ class GateBinaryClassifier(nn.Module):
         fusion_dropout: float,
         head_hidden_dim: int,
         head_dropout: float,
+        debug_gate_stats: bool = False,
     ) -> None:
         super().__init__()
         self.baseline_mode = str(baseline_mode or "").strip().lower()
@@ -350,6 +406,7 @@ class GateBinaryClassifier(nn.Module):
             )
         self.use_meta = bool(use_meta)
         self.d_model = int(d_model)
+        self.debug_gate_stats = bool(debug_gate_stats)
 
         # 三个分支
         self.key = FirstImpressionEncoder(
@@ -385,11 +442,17 @@ class GateBinaryClassifier(nn.Module):
         # -----------------------------
         # Stage1
         self.stage1_gate_fc = nn.Linear(int(2 * d_model), int(d_model))  # g1
+        # gate 输入归一化（仅用于门控计算，不复用其它 LN）
+        self.ln_gate1_key = nn.LayerNorm(int(d_model))
+        self.ln_gate1_meta = nn.LayerNorm(int(d_model))
         self.stage1_p_fc = nn.Linear(int(3 * d_model), int(d_model))  # concat(v_key, v_meta2, v_key*v_meta2)
         self.stage1_p_ln = nn.LayerNorm(int(d_model))
 
         # Stage2
         self.stage2_gate_fc = nn.Linear(int(2 * d_model), int(d_model))  # g2
+        # gate 输入归一化（仅用于门控计算，不复用其它 LN）
+        self.ln_gate2_p = nn.LayerNorm(int(d_model))
+        self.ln_gate2_seq = nn.LayerNorm(int(d_model))
         self.stage2_ln = nn.LayerNorm(int(d_model))
 
         # baselines
@@ -411,6 +474,17 @@ class GateBinaryClassifier(nn.Module):
         self.head_out = nn.Linear(int(head_hidden_dim), 1)
         self.head_hidden_dim = int(head_hidden_dim)
 
+        # debug：验证集门控统计（每个 epoch 最多打印一次）
+        self._debug_eval_call = 0
+        self._debug_collect_val = False
+        self._debug_pending = False
+        self._debug_g1: Optional[_GateStatsAccumulator] = (
+            _GateStatsAccumulator("g1", int(d_model)) if self.debug_gate_stats else None
+        )
+        self._debug_g2: Optional[_GateStatsAccumulator] = (
+            _GateStatsAccumulator("g2", int(d_model)) if self.debug_gate_stats else None
+        )
+
         self._init_weights()
 
     def _init_weights(self) -> None:
@@ -428,6 +502,80 @@ class GateBinaryClassifier(nn.Module):
             if m.bias is not None:
                 nn.init.zeros_(m.bias)
 
+    def _debug_flush_gate_stats(self) -> None:
+        if not bool(getattr(self, "debug_gate_stats", False)):
+            return
+        if not bool(getattr(self, "_debug_pending", False)):
+            return
+
+        g1 = self._debug_g1.summary() if self._debug_g1 is not None else None
+        g2 = self._debug_g2.summary() if self._debug_g2 is not None else None
+
+        logger = logging.getLogger("gate")
+        if g1 is None and g2 is None:
+            logger.info(
+                "[debug_gate_stats] baseline_mode=%s | 未收集到 g1/g2（该 baseline 可能不包含 gate 或验证集为空）。",
+                str(getattr(self, "baseline_mode", "")),
+            )
+        else:
+            parts = []
+            if g1 is not None:
+                parts.append(
+                    "g1 mean={mean:.6f} std={std:.6f} min={min:.6f} max={max:.6f} ch_mean_std={channel_mean_std:.6f}".format(
+                        **g1
+                    )
+                )
+            if g2 is not None:
+                parts.append(
+                    "g2 mean={mean:.6f} std={std:.6f} min={min:.6f} max={max:.6f} ch_mean_std={channel_mean_std:.6f}".format(
+                        **g2
+                    )
+                )
+            logger.info("[debug_gate_stats] baseline_mode=%s | %s", str(getattr(self, "baseline_mode", "")), " | ".join(parts))
+
+        self._debug_pending = False
+        self._debug_collect_val = False
+        if self._debug_g1 is not None:
+            self._debug_g1.reset()
+        if self._debug_g2 is not None:
+            self._debug_g2.reset()
+
+    def _debug_update_gate(self, name: str, g: torch.Tensor) -> None:
+        if not bool(getattr(self, "debug_gate_stats", False)):
+            return
+        if bool(getattr(self, "training", False)):
+            return
+        if not bool(getattr(self, "_debug_collect_val", False)):
+            return
+        if name == "g1" and self._debug_g1 is not None:
+            self._debug_g1.update(g)
+        elif name == "g2" and self._debug_g2 is not None:
+            self._debug_g2.update(g)
+
+    def train(self, mode: bool = True):
+        if bool(mode) and bool(getattr(self, "debug_gate_stats", False)):
+            # epoch 开始前，打印上一轮验证集门控统计（不影响训练）。
+            self._debug_flush_gate_stats()
+            self._debug_eval_call = 0
+            self._debug_collect_val = False
+        return super().train(mode)
+
+    def eval(self):
+        if bool(getattr(self, "debug_gate_stats", False)):
+            # 当训练提前结束且不再进入下一个 epoch 时，下一次 eval 会触发上一轮验证统计的输出。
+            self._debug_flush_gate_stats()
+        super().eval()
+        if bool(getattr(self, "debug_gate_stats", False)):
+            self._debug_eval_call += 1
+            self._debug_collect_val = bool(self._debug_eval_call == 2)
+            if self._debug_collect_val:
+                self._debug_pending = True
+                if self._debug_g1 is not None:
+                    self._debug_g1.reset()
+                if self._debug_g2 is not None:
+                    self._debug_g2.reset()
+        return self
+
     def _get_v_meta(self, x_meta: torch.Tensor | None, ref: torch.Tensor) -> torch.Tensor:
         if self.use_meta:
             if self.meta is None or x_meta is None:
@@ -437,14 +585,20 @@ class GateBinaryClassifier(nn.Module):
         return torch.zeros((int(ref.shape[0]), int(self.d_model)), device=ref.device, dtype=ref.dtype)
 
     def _stage1_prior(self, v_key: torch.Tensor, v_meta: torch.Tensor) -> torch.Tensor:
-        g1 = torch.sigmoid(self.stage1_gate_fc(torch.cat([v_key, v_meta], dim=1)))
+        a = self.ln_gate1_key(v_key)
+        b = self.ln_gate1_meta(v_meta)
+        g1 = torch.sigmoid(self.stage1_gate_fc(torch.cat([a, b], dim=1)))
+        self._debug_update_gate("g1", g1)
         v_meta2 = g1 * v_meta
         p_in = torch.cat([v_key, v_meta2, v_key * v_meta2], dim=1)
         p = self.stage1_p_ln(self.stage1_p_fc(p_in))
         return p
 
     def _stage2_fuse(self, h_seq: torch.Tensor, p: torch.Tensor) -> torch.Tensor:
-        g2 = torch.sigmoid(self.stage2_gate_fc(torch.cat([p, h_seq], dim=1)))
+        a = self.ln_gate2_p(p)
+        b = self.ln_gate2_seq(h_seq)
+        g2 = torch.sigmoid(self.stage2_gate_fc(torch.cat([a, b], dim=1)))
+        self._debug_update_gate("g2", g2)
         h_final = self.stage2_ln(h_seq + g2 * p)
         return h_final
 
@@ -502,6 +656,12 @@ def build_gate_model(
     image_embedding_dim: int,
     text_embedding_dim: int,
 ) -> GateBinaryClassifier:
+    debug_gate_stats = bool(getattr(cfg, "debug_gate_stats", False))
+    if not debug_gate_stats:
+        env = str(os.getenv("GATE_DEBUG_GATE_STATS", "")).strip().lower()
+        if env and env not in {"0", "false", "no", "off"}:
+            debug_gate_stats = True
+
     return GateBinaryClassifier(
         baseline_mode=str(getattr(cfg, "baseline_mode", "two_stage")),
         use_meta=bool(getattr(cfg, "use_meta", False)),
@@ -520,4 +680,5 @@ def build_gate_model(
         fusion_dropout=float(getattr(cfg, "fusion_dropout", 0.0)),
         head_hidden_dim=int(getattr(cfg, "head_hidden_dim", 0)),
         head_dropout=float(getattr(cfg, "head_dropout", 0.9)),
+        debug_gate_stats=bool(debug_gate_stats),
     )
