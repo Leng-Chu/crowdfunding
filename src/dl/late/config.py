@@ -24,6 +24,7 @@ class LateConfig:
     # -----------------------------
     # 运行相关
     # -----------------------------
+    run_name: Optional[str] = "clip"
     device: str = "auto"  # auto / cpu / cuda / cuda:0 / cuda:1 ...
 
     # -----------------------------
@@ -31,7 +32,7 @@ class LateConfig:
     # -----------------------------
     data_csv: str = "data/metadata/now_processed.csv"
     projects_root: str = "data/projects/now"
-    experiment_root: str = "experiments/late"
+    experiment_root: str = "experiments/ch1"
 
     # -----------------------------
     # 分支开关
@@ -117,7 +118,7 @@ class LateConfig:
     max_grad_norm: float = 0.0
 
     threshold: float = 0.5
-    random_seed: int = 42
+    random_seed: int = 22
     save_plots: bool = True
 
     def to_dict(self) -> dict:

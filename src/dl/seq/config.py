@@ -30,7 +30,7 @@ class SeqConfig:
     # -----------------------------
     data_csv: str = "data/metadata/now_processed.csv"
     projects_root: str = "data/projects/now"
-    experiment_root: str = "experiments/seq"
+    experiment_root: str = "experiments/ch1"
 
     # -----------------------------
     # 模式（实验组）
@@ -115,7 +115,7 @@ class SeqConfig:
     max_grad_norm: float = 0.0
 
     threshold: float = 0.5
-    random_seed: int = 42
+    random_seed: int = 22
     save_plots: bool = True
 
     def to_dict(self) -> dict:
