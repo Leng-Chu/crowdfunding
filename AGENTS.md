@@ -46,3 +46,4 @@
 - 工程规范：`src/dl/*` 二分类任务最终报告指标时，阈值必须在验证集上选择（最大化 F1），并用该阈值计算测试集指标（详见 `docs/dl_threshold.md`）。
 - 每次修改代码后需要检查 `AGENTS.md` 是否需要更新。
 - 只参考当前要求参考的内容，其余没有提到的项目中的内容默认与当前任务无关。
+- 操作终端默认为Windows Powershell，代码可能会在Windows Powershell和Linux终端上运行。
