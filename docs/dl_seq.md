@@ -53,7 +53,7 @@ data/projects/<dataset>/<project_id>/
   - 封面图：`cover_image_{emb_type}.npy`（必须存在，形状通常为 `[1, D_img]`）
   - 标题/简介：`title_blurb_{emb_type}.npy`（必须存在，形状为 `[1, D_txt]` 或 `[2, D_txt]`）
   - 正文：`image_{emb_type}.npy` 与 `text_{emb_type}.npy`（当正文该模态数量为 0 时允许缺失）
-- 图片尺寸与文本长度属性已预处理写入 `content.json`（见下节字段要求），**代码不再读取本地图片文件**，以避免数据加载速度过慢。
+- 图片尺寸与文本长度属性已预处理写入 `content.json`（见下节字段要求），代码不读取本地图片文件，以避免数据加载速度过慢。
 
 ### 2.3 统一序列与 embedding 对齐规则
 
@@ -236,7 +236,7 @@ X ∈ R^{B×L×d_model}
 - 评估指标：
   - `accuracy, precision, recall, f1, roc_auc, log_loss`
   - 若某个 split 只包含单一类别，`roc_auc` 可能为 `None`，并在指标里记录 `roc_auc_error`
-- 阈值（工程规范）：最终报告指标时，阈值由验证集选取（最大化 F1），并将该阈值用于测试集评估；详见 `docs/dl_threshold.md`
+- 阈值（工程规范）：最终报告指标时，阈值由验证集选取（最大化 F1），并将该阈值用于测试集评估
 
 ---
 
