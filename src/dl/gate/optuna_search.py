@@ -156,11 +156,10 @@ def _suggest_params(trial, baseline_mode: str) -> Dict[str, Any]:
     head_dropout = trial.suggest_float("head_dropout", 0.2, 0.85)
 
     # # head_hidden_dim：0 表示自动（2*d_model）
-    # head_hidden_dim = trial.suggest_categorical(
-    #     "head_hidden_dim",
-    #     [0, int(d_model), int(2 * d_model), int(4 * d_model)],
-    # )
-    head_hidden_dim = 0
+    head_hidden_dim = trial.suggest_categorical(
+        "head_hidden_dim",
+        [int(d_model), int(2 * d_model), int(4 * d_model)],
+    )
 
     # 早停相关（不建议调太大；否则 trial 太慢）
     early_stop_patience = trial.suggest_int("early_stop_patience", 5, 15)

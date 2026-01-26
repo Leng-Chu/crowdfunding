@@ -94,7 +94,7 @@ class GateConfig:
     meta_dropout: float = 0.55
 
     # Head：Linear(d->d_head)->ReLU->Dropout->Linear(d_head->1)
-    head_hidden_dim: int = 0  # <=0 表示自动取 2 * d_model
+    head_hidden_dim: int = 512
     head_dropout: float = 0.5
 
     # -----------------------------

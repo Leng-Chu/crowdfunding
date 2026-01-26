@@ -172,11 +172,10 @@ def _suggest_params(trial) -> Dict[str, Any]:
     fusion_dropout = trial.suggest_float("fusion_dropout", 0.0, 0.9)
 
     # fusion_hidden_dim：0 表示自动（2 * fusion_in_dim）
-    # fusion_hidden_dim = trial.suggest_categorical(
-    #     "fusion_hidden_dim",
-    #     [0, int(d_model), int(2 * d_model), int(4 * d_model)],
-    # )
-    fusion_hidden_dim = 0
+    fusion_hidden_dim = trial.suggest_categorical(
+        "fusion_hidden_dim",
+        [int(d_model), int(2 * d_model), int(4 * d_model)],
+    )
 
     # 早停相关（不建议调太大；否则 trial 太慢）
     early_stop_patience = trial.suggest_int("early_stop_patience", 5, 15)

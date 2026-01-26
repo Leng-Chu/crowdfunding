@@ -91,7 +91,7 @@ class SeqConfig:
     meta_dropout: float = 0.3
 
     # 分类头（与 mlp baseline 对齐：Linear -> ReLU -> Dropout -> Linear(->1)）
-    fusion_hidden_dim: int = 0  # <=0 表示自动取 2 * fusion_in_dim
+    fusion_hidden_dim: int = 512
     fusion_dropout: float = 0.5
 
     # -----------------------------

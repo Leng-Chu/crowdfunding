@@ -91,15 +91,19 @@ class AttentionPoolingSetEncoder(nn.Module):
     每个模态一个可学习全局 query：q ∈ R^{d_model}。
     """
 
-    def __init__(self, d_model: int) -> None:
+    def __init__(self, d_model: int, dropout: float = 0.0) -> None:
         super().__init__()
         if d_model <= 0:
             raise ValueError(f"d_model 需要 > 0，但得到 {d_model}")
+
+        if dropout < 0.0 or dropout >= 1.0:
+            raise ValueError("dropout 必须在 [0, 1) 范围内")
 
         self.d_model = int(d_model)
         self.q = nn.Parameter(torch.empty(self.d_model))
         self.k = nn.Linear(self.d_model, self.d_model)
         self.v = nn.Linear(self.d_model, self.d_model)
+        self.drop = nn.Dropout(p=float(dropout))
         self._init_weights()
 
     def _init_weights(self) -> None:
@@ -124,12 +128,14 @@ class AttentionPoolingSetEncoder(nn.Module):
         if int(S) <= 0:
             return x.new_zeros((int(B), int(D)))
 
+        x = self.drop(x)
         K = self.k(x)
         V = self.v(x)
         q = self.q.view(1, 1, int(D)).expand(int(B), 1, int(D))
         scores = (K * q).sum(dim=-1) / math.sqrt(float(D))  # [B, S]
         weights = _masked_softmax(scores, mask=mask)  # [B, S]
         pooled = (weights.unsqueeze(-1) * V).sum(dim=1)  # [B, D]
+        pooled = self.drop(pooled)
         return pooled
 
 
@@ -241,8 +247,8 @@ class LateFusionBinaryClassifier(nn.Module):
 
         # 3.2 集合编码（模态内）
         if self.baseline_mode == "attn_pool":
-            self.img_encoder = AttentionPoolingSetEncoder(d_model=int(self.d_model))
-            self.txt_encoder = AttentionPoolingSetEncoder(d_model=int(self.d_model))
+            self.img_encoder = AttentionPoolingSetEncoder(d_model=int(self.d_model), dropout=float(transformer_dropout))
+            self.txt_encoder = AttentionPoolingSetEncoder(d_model=int(self.d_model), dropout=float(transformer_dropout))
         elif self.baseline_mode == "trm_no_pos":
             self.img_encoder = TransformerNoPosSetEncoder(
                 d_model=int(self.d_model),
