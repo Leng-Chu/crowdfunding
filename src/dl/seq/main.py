@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import pickle
 import platform
 import sys
@@ -24,6 +25,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from config import SeqConfig
+from env_overrides import apply_config_overrides_from_env
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -150,6 +152,9 @@ def main() -> int:
     elif args.gpu is not None:
         cfg = replace(cfg, device=f"cuda:{int(args.gpu)}")
 
+    # 允许通过环境变量覆盖少量超参（主要用于自动化调参脚本；不影响默认训练）。
+    cfg = apply_config_overrides_from_env(cfg)
+
     baseline_mode = str(getattr(cfg, "baseline_mode", "set_mean")).strip().lower()
     mode = baseline_mode + ("+meta" if bool(getattr(cfg, "use_meta", False)) else "")
 
@@ -162,6 +167,16 @@ def main() -> int:
 
     run_id, artifacts_dir, reports_dir, plots_dir = make_run_dirs(experiment_root, run_name=cfg.run_name)
     run_dir = reports_dir.parent
+
+    # 供外部脚本（如 Optuna）可靠地拿到本次 run_dir。
+    run_dir_file = str(os.getenv("SEQ_RUN_DIR_FILE", "") or "").strip()
+    if run_dir_file:
+        try:
+            p = Path(run_dir_file)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(str(run_dir), encoding="utf-8")
+        except Exception as e:
+            print(f"写入 SEQ_RUN_DIR_FILE 失败：{e}", file=sys.stderr)
 
     logger = setup_logger(run_dir / "train.log")
 

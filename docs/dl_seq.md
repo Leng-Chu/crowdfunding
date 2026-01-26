@@ -287,3 +287,20 @@ X ∈ R^{B×L×d_model}
 
 说明：
 - 命令行参数仅覆盖少数常用项；其余超参建议直接编辑 `src/dl/seq/config.py` 的默认值。
+
+### 8.1 Optuna 自动化调参（仅 `trm_pos+meta`）
+
+本仓库提供 `src/dl/seq/optuna_search.py` 用于自动化调参（黑盒调用现有训练入口 `src/dl/seq/main.py`）。
+
+- 安装依赖：
+  - `pip install optuna`
+- 运行示例（默认最大化 `val_f1`）：
+  - `conda run -n crowdfunding python src/dl/seq/optuna_search.py --device cuda:0 --n-trials 30`
+- 切换优化目标（可选）：
+  - `--objective val_auc` 或 `--objective val_accuracy`（也支持 `test_*`，但不建议用测试集做调参目标）
+- 为所有 trial 固定覆盖项（可选，便于加速调参）：
+  - `--fixed-overrides "{\"max_epochs\": 20, \"early_stop_min_epochs\": 3}"`
+
+输出：
+- Optuna 产物：`experiments/seq/optuna/<study_name>/summary.csv`、`best.json`、`study.db`、`trial_logs/`
+- 每个 trial 的训练产物仍会写入：`experiments/ch1/trm_pos+meta/<run_id>/...`
