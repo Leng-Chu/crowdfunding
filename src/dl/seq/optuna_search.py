@@ -153,9 +153,9 @@ def _suggest_params(trial) -> Dict[str, Any]:
     返回的是 SeqConfig 字段名/值，最终通过环境变量覆盖到训练脚本。
     本搜索只针对 trm_pos+meta，因此不提供 baseline_mode/use_meta 的搜索分支。
     """
-    lr = trial.suggest_float("learning_rate_init", 1e-5, 5e-4, log=True)
+    lr = trial.suggest_float("learning_rate_init", 1e-5, 8e-4, log=True)
     wd = trial.suggest_float("alpha", 1e-6, 1e-2, log=True)
-    batch_size = trial.suggest_categorical("batch_size", [128, 256, 512, 1024])
+    batch_size = trial.suggest_categorical("batch_size", [256, 512, 1024, 2048])
 
     d_model = trial.suggest_categorical("d_model", [128, 192, 256])
     # nn.TransformerEncoderLayer 要求 d_model % nhead == 0
@@ -172,10 +172,11 @@ def _suggest_params(trial) -> Dict[str, Any]:
     fusion_dropout = trial.suggest_float("fusion_dropout", 0.0, 0.9)
 
     # fusion_hidden_dim：0 表示自动（2 * fusion_in_dim）
-    fusion_hidden_dim = trial.suggest_categorical(
-        "fusion_hidden_dim",
-        [0, int(d_model), int(2 * d_model), int(4 * d_model)],
-    )
+    # fusion_hidden_dim = trial.suggest_categorical(
+    #     "fusion_hidden_dim",
+    #     [0, int(d_model), int(2 * d_model), int(4 * d_model)],
+    # )
+    fusion_hidden_dim = 0
 
     # 早停相关（不建议调太大；否则 trial 太慢）
     early_stop_patience = trial.suggest_int("early_stop_patience", 5, 15)
