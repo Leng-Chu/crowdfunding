@@ -9,7 +9,7 @@ Optuna 超参搜索（gate）。
 - 自动汇总：输出 summary.csv（trial_id、params、objective、run_dir、关键 test 指标）。
 
 推荐运行方式（从仓库根目录）：
-  conda run -n crowdfunding python src/dl/gate/optuna_search.py --baseline-mode two_stage --device cuda:0 --n-trials 30
+  conda run -n crowdfunding python src/dl/gate/optuna_search.py --baseline-mode two_stage --device cuda:0 --n-trials 60
 """
 
 from __future__ import annotations
@@ -155,11 +155,12 @@ def _suggest_params(trial, baseline_mode: str) -> Dict[str, Any]:
     meta_dropout = trial.suggest_float("meta_dropout", 0.0, 0.7)
     head_dropout = trial.suggest_float("head_dropout", 0.2, 0.85)
 
-    # head_hidden_dim：0 表示自动（2*d_model）
-    head_hidden_dim = trial.suggest_categorical(
-        "head_hidden_dim",
-        [0, int(d_model), int(2 * d_model), int(4 * d_model)],
-    )
+    # # head_hidden_dim：0 表示自动（2*d_model）
+    # head_hidden_dim = trial.suggest_categorical(
+    #     "head_hidden_dim",
+    #     [0, int(d_model), int(2 * d_model), int(4 * d_model)],
+    # )
+    head_hidden_dim = 0
 
     # 早停相关（不建议调太大；否则 trial 太慢）
     early_stop_patience = trial.suggest_int("early_stop_patience", 5, 15)

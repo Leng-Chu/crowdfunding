@@ -30,7 +30,7 @@ class SeqConfig:
     # -----------------------------
     data_csv: str = "data/metadata/now_processed.csv"
     projects_root: str = "data/projects/now"
-    experiment_root: str = "experiments/ch1"
+    experiment_root: str = "experiments/test"
 
     # -----------------------------
     # 模式（实验组）
@@ -92,7 +92,7 @@ class SeqConfig:
 
     # 分类头（与 mlp baseline 对齐：Linear -> ReLU -> Dropout -> Linear(->1)）
     fusion_hidden_dim: int = 0  # <=0 表示自动取 2 * fusion_in_dim
-    fusion_dropout: float = 0.9
+    fusion_dropout: float = 0.5
 
     # -----------------------------
     # 训练超参（与 mlp baseline 训练流程对齐）

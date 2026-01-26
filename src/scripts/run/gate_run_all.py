@@ -25,24 +25,14 @@ def run_all_experiments():
     # 定义所有实验命令
     all_commands = [
         # GATE模型的四种baseline-mode
-        ("conda run -n crowdfunding python src/dl/gate/main.py --run-name late_concat --baseline-mode late_concat --image-embedding-type clip --text-embedding-type clip --use-meta --device cuda:0", 
+        ("conda run -n crowdfunding python src/dl/gate/main.py --run-name late_concat --baseline-mode late_concat --image-embedding-type clip --text-embedding-type clip --device cuda:0", 
          "GATE: Late Concat with Meta"),
-        ("conda run -n crowdfunding python src/dl/gate/main.py --run-name stage1_only --baseline-mode stage1_only --image-embedding-type clip --text-embedding-type clip --use-meta --device cuda:1", 
+        ("conda run -n crowdfunding python src/dl/gate/main.py --run-name stage1_only --baseline-mode stage1_only --image-embedding-type clip --text-embedding-type clip --device cuda:1", 
          "GATE: Stage 1 Only with Meta"),
-        ("conda run -n crowdfunding python src/dl/gate/main.py --run-name stage2_only --baseline-mode stage2_only --image-embedding-type clip --text-embedding-type clip --use-meta --device cuda:2", 
+        ("conda run -n crowdfunding python src/dl/gate/main.py --run-name stage2_only --baseline-mode stage2_only --image-embedding-type clip --text-embedding-type clip --device cuda:2", 
          "GATE: Stage 2 Only with Meta"),
-        ("conda run -n crowdfunding python src/dl/gate/main.py --run-name two_stage --baseline-mode two_stage --image-embedding-type clip --text-embedding-type clip --use-meta --device cuda:3", 
+        ("conda run -n crowdfunding python src/dl/gate/main.py --run-name two_stage --baseline-mode two_stage --image-embedding-type clip --text-embedding-type clip --device cuda:3", 
          "GATE: Two Stage with Meta"),
-         
-        # 不使用meta数据的四种baseline-mode
-        ("conda run -n crowdfunding python src/dl/gate/main.py --run-name late_concat --baseline-mode late_concat --image-embedding-type clip --text-embedding-type clip --no-use-meta --device cuda:0", 
-         "GATE: Late Concat without Meta"),
-        ("conda run -n crowdfunding python src/dl/gate/main.py --run-name stage1_only --baseline-mode stage1_only --image-embedding-type clip --text-embedding-type clip --no-use-meta --device cuda:1", 
-         "GATE: Stage 1 Only without Meta"),
-        ("conda run -n crowdfunding python src/dl/gate/main.py --run-name stage2_only --baseline-mode stage2_only --image-embedding-type clip --text-embedding-type clip --no-use-meta --device cuda:2", 
-         "GATE: Stage 2 Only without Meta"),
-        ("conda run -n crowdfunding python src/dl/gate/main.py --run-name two_stage --baseline-mode two_stage --image-embedding-type clip --text-embedding-type clip --no-use-meta --device cuda:3", 
-         "GATE: Two Stage without Meta"),
          
         # 三种新的单分支baseline-mode (这些模式本身就已经确定了使用的分支，不需要额外指定use-meta)
         ("conda run -n crowdfunding python src/dl/gate/main.py --run-name seq_only --baseline-mode seq_only --image-embedding-type clip --text-embedding-type clip --device cuda:0", 
