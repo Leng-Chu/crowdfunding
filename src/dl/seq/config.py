@@ -44,6 +44,11 @@ class SeqConfig:
     use_meta: bool = True
 
     # -----------------------------
+    # prefix token 开关
+    # -----------------------------
+    use_prefix: bool = True  # 是否使用 title_blurb 和 cover_image 作为 prefix token
+
+    # -----------------------------
     # 列配置（CSV，与 mlp baseline 对齐）
     # -----------------------------
     id_col: str = "project_id"
@@ -119,4 +124,5 @@ class SeqConfig:
     save_plots: bool = True
 
     def to_dict(self) -> dict:
+        """将配置转换为字典格式"""
         return asdict(self)

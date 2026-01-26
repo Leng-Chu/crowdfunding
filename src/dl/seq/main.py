@@ -44,6 +44,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="是否启用 meta 分支（出现该参数时，以命令行覆盖配置）。",
     )
     parser.add_argument(
+        "--use-prefix",
+        default=None,
+        action=argparse.BooleanOptionalAction,
+        help="是否使用 title_blurb 和 cover_image 作为 prefix token（默认为 True）。",
+    )
+    parser.add_argument(
         "--image-embedding-type",
         default=None,
         choices=["clip", "siglip", "resnet"],
@@ -142,6 +148,8 @@ def main() -> int:
         cfg = replace(cfg, baseline_mode=str(args.baseline_mode))
     if args.use_meta is not None:
         cfg = replace(cfg, use_meta=bool(args.use_meta))
+    if args.use_prefix is not None:
+        cfg = replace(cfg, use_prefix=bool(args.use_prefix))
     if args.image_embedding_type is not None:
         cfg = replace(cfg, image_embedding_type=str(args.image_embedding_type))
     if args.text_embedding_type is not None:
@@ -157,6 +165,7 @@ def main() -> int:
 
     baseline_mode = str(getattr(cfg, "baseline_mode", "set_mean")).strip().lower()
     mode = baseline_mode + ("+meta" if bool(getattr(cfg, "use_meta", False)) else "")
+    mode = mode + ("+prefix" if bool(getattr(cfg, "use_prefix", True)) else "")
 
     project_root = Path(__file__).resolve().parents[3]
     csv_path = project_root / cfg.data_csv

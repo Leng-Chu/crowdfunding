@@ -360,6 +360,7 @@ def _build_one_project_sequence(
     max_seq_len: int,
     truncation_strategy: str,
     random_seed: int,
+    use_prefix: bool = True,  # 添加use_prefix参数
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     构造单项目的统一序列特征（已截断 + padding 到 max_seq_len）：
@@ -376,27 +377,39 @@ def _build_one_project_sequence(
     n_img_expected = int(sum(1 for x in seq if str(x.get("type", "")).strip().lower() == "image"))
     n_txt_expected = int(sum(1 for x in seq if str(x.get("type", "")).strip().lower() == "text"))
 
-    if not cover_emb_path.exists():
-        raise FileNotFoundError(f"缺少 cover_image embedding：{cover_emb_path}")
-    cover_emb = _as_2d_embedding(np.load(cover_emb_path), cover_emb_path.name)
-    if int(cover_emb.shape[0]) != 1:
-        raise ValueError(f"项目 {project_id} cover_image 行数不合法：期望 1，但得到 {cover_emb.shape}")
-    if int(cover_emb.shape[1]) != int(image_dim):
-        raise ValueError(f"项目 {project_id} cover_image dim 不一致：期望 {image_dim}，但得到 {cover_emb.shape[1]}")
+    # 根据use_prefix决定是否加载和使用prefix tokens
+    cover_emb = None
+    title_blurb_emb = None
+    title_blurb_lengths = []
+    prefix_len = 0
+    
+    if use_prefix:
+        if not cover_emb_path.exists():
+            raise FileNotFoundError(f"缺少 cover_image embedding：{cover_emb_path}")
+        cover_emb = _as_2d_embedding(np.load(cover_emb_path), cover_emb_path.name)
+        if int(cover_emb.shape[0]) != 1:
+            raise ValueError(f"项目 {project_id} cover_image 行数不合法：期望 1，但得到 {cover_emb.shape}")
+        if int(cover_emb.shape[1]) != int(image_dim):
+            raise ValueError(f"项目 {project_id} cover_image dim 不一致：期望 {image_dim}，但得到 {cover_emb.shape[1]}")
 
-    if not title_blurb_emb_path.exists():
-        raise FileNotFoundError(f"缺少 title_blurb embedding：{title_blurb_emb_path}")
-    title_blurb_emb = _as_2d_embedding(np.load(title_blurb_emb_path), title_blurb_emb_path.name)
-    title_blurb_lengths = _extract_title_blurb_lengths(content_obj)
-    if int(title_blurb_emb.shape[0]) != int(len(title_blurb_lengths)):
-        raise ValueError(
-            f"项目 {project_id} title_blurb 数量不一致：content.json(title/blurb)={len(title_blurb_lengths)} "
-            f"vs {title_blurb_emb_path.name}={title_blurb_emb.shape}"
-        )
-    if int(title_blurb_emb.shape[0]) <= 0:
-        raise ValueError(f"项目 {project_id} title_blurb 为空：{title_blurb_emb_path}")
-    if int(title_blurb_emb.shape[1]) != int(text_dim):
-        raise ValueError(f"项目 {project_id} title_blurb dim 不一致：期望 {text_dim}，但得到 {title_blurb_emb.shape[1]}")
+        if not title_blurb_emb_path.exists():
+            raise FileNotFoundError(f"缺少 title_blurb embedding：{title_blurb_emb_path}")
+        title_blurb_emb = _as_2d_embedding(np.load(title_blurb_emb_path), title_blurb_emb_path.name)
+        title_blurb_lengths = _extract_title_blurb_lengths(content_obj)
+        if int(title_blurb_emb.shape[0]) != int(len(title_blurb_lengths)):
+            raise ValueError(
+                f"项目 {project_id} title_blurb 数量不一致：content.json(title/blurb)={len(title_blurb_lengths)} "
+                f"vs {title_blurb_emb_path.name}={title_blurb_emb.shape}"
+            )
+        if int(title_blurb_emb.shape[0]) <= 0:
+            raise ValueError(f"项目 {project_id} title_blurb 为空：{title_blurb_emb_path}")
+        if int(title_blurb_emb.shape[1]) != int(text_dim):
+            raise ValueError(f"项目 {project_id} title_blurb dim 不一致：期望 {text_dim}，但得到 {title_blurb_emb.shape[1]}")
+        
+        prefix_len = int(title_blurb_emb.shape[0]) + 1  # +1 = cover_image
+    else:
+        # 当use_prefix为False时，跳过cover_image和title_blurb的验证和加载
+        prefix_len = 0
 
     img_emb = np.zeros((0, int(image_dim)), dtype=np.float32)
     if n_img_expected > 0:
@@ -432,7 +445,6 @@ def _build_one_project_sequence(
                     f"项目 {project_id} text 数量不一致：content_sequence=0 vs {text_emb_path.name}={txt_emb.shape}"
                 )
 
-    prefix_len = int(title_blurb_emb.shape[0]) + 1  # +1 = cover_image
     seq_len = int(prefix_len + len(seq))
     img_seq = np.zeros((seq_len, int(image_dim)), dtype=np.float32)
     txt_seq = np.zeros((seq_len, int(text_dim)), dtype=np.float32)
@@ -442,19 +454,23 @@ def _build_one_project_sequence(
     img_idx = 0
     txt_idx = 0
 
-    # prefix：title -> blurb -> cover_image
-    prefix_pos = 0
-    for i in range(int(title_blurb_emb.shape[0])):
-        txt_seq[prefix_pos] = title_blurb_emb[i]
-        types.append(0)
-        attrs.append(float(np.log(max(1.0, float(title_blurb_lengths[i])))))
-        prefix_pos += 1
+    # 如果use_prefix为True，则添加prefix：title -> blurb -> cover_image
+    if use_prefix:
+        prefix_pos = 0
+        for i in range(int(title_blurb_emb.shape[0])):
+            txt_seq[prefix_pos] = title_blurb_emb[i]
+            types.append(0)
+            attrs.append(float(np.log(max(1.0, float(title_blurb_lengths[i])))))
+            prefix_pos += 1
 
-    cover_area = _extract_cover_area(content_obj, project_id=project_id)
-    img_seq[prefix_pos] = cover_emb[0]
-    types.append(1)
-    attrs.append(float(np.log(max(1.0, float(cover_area)))))
-    prefix_pos += 1
+        cover_area = _extract_cover_area(content_obj, project_id=project_id)
+        img_seq[prefix_pos] = cover_emb[0]
+        types.append(1)
+        attrs.append(float(np.log(max(1.0, float(cover_area)))))
+        prefix_pos += 1
+    else:
+        # 如果use_prefix为False，则不添加任何prefix
+        prefix_pos = 0
 
     for pos, item in enumerate(seq):
         pos2 = int(prefix_pos + pos)
@@ -556,6 +572,9 @@ def _build_features_for_split(
     if max_seq_len <= 0:
         raise ValueError("max_seq_len 需要 > 0。")
 
+    # 获取use_prefix配置
+    use_prefix = getattr(cfg, "use_prefix", True)
+
     y_arr = _encode_binary_target(df_split[cfg.target_col])
     ids = [_normalize_project_id(x) for x in df_split[cfg.id_col].tolist()]
 
@@ -616,23 +635,25 @@ def _build_features_for_split(
             n_img_expected = int(sum(1 for x in seq if str(x.get("type", "")).strip().lower() == "image"))
             n_txt_expected = int(sum(1 for x in seq if str(x.get("type", "")).strip().lower() == "text"))
 
-            if not cover_emb_path.exists():
-                stats["missing_cover_image_embedding"] += 1
-                if missing_strategy == "skip":
-                    stats["skipped_samples"] += 1
-                    if logger is not None:
-                        logger.warning("跳过项目 %s：缺少 %s", pid, str(cover_emb_path))
-                    continue
-                raise FileNotFoundError(f"缺少 cover_image embedding：{cover_emb_path}")
+            # 根据use_prefix决定是否检查cover和title_blurb embedding文件
+            if use_prefix:
+                if not cover_emb_path.exists():
+                    stats["missing_cover_image_embedding"] += 1
+                    if missing_strategy == "skip":
+                        stats["skipped_samples"] += 1
+                        if logger is not None:
+                            logger.warning("跳过项目 %s：缺少 %s", pid, str(cover_emb_path))
+                        continue
+                    raise FileNotFoundError(f"缺少 cover_image embedding：{cover_emb_path}")
 
-            if not title_blurb_emb_path.exists():
-                stats["missing_title_blurb_embedding"] += 1
-                if missing_strategy == "skip":
-                    stats["skipped_samples"] += 1
-                    if logger is not None:
-                        logger.warning("跳过项目 %s：缺少 %s", pid, str(title_blurb_emb_path))
-                    continue
-                raise FileNotFoundError(f"缺少 title_blurb embedding：{title_blurb_emb_path}")
+                if not title_blurb_emb_path.exists():
+                    stats["missing_title_blurb_embedding"] += 1
+                    if missing_strategy == "skip":
+                        stats["skipped_samples"] += 1
+                        if logger is not None:
+                            logger.warning("跳过项目 %s：缺少 %s", pid, str(title_blurb_emb_path))
+                        continue
+                    raise FileNotFoundError(f"缺少 title_blurb embedding：{title_blurb_emb_path}")
 
             if n_img_expected > 0 and not image_emb_path.exists():
                 stats["missing_image_embedding"] += 1
@@ -664,6 +685,7 @@ def _build_features_for_split(
                 max_seq_len=int(max_seq_len),
                 truncation_strategy=str(getattr(cfg, "truncation_strategy", "first")),
                 random_seed=int(getattr(cfg, "random_seed", 42)),
+                use_prefix=use_prefix,  # 传递use_prefix参数
             )
         except Exception as e:
             stats["bad_sequence"] += 1
@@ -760,13 +782,20 @@ def prepare_seq_data(
     title_blurb_name = f"title_blurb_{emb_txt}.npy"
 
     all_ids = [_normalize_project_id(x) for x in raw_df[cfg.id_col].tolist()]
+    
+    # 根据use_prefix参数决定是否推断prefix embeddings的维度
+    use_prefix = getattr(cfg, "use_prefix", True)
+    
+    # 推断image embedding维度
     image_dim = _infer_embedding_dim(projects_root, all_ids, img_name)
-    if int(image_dim) <= 0:
+    if int(image_dim) <= 0 and use_prefix:
         image_dim = _infer_embedding_dim(projects_root, all_ids, cover_name)
 
+    # 推断text embedding维度
     text_dim = _infer_embedding_dim(projects_root, all_ids, txt_name)
-    if int(text_dim) <= 0:
+    if int(text_dim) <= 0 and use_prefix:
         text_dim = _infer_embedding_dim(projects_root, all_ids, title_blurb_name)
+    
     if int(image_dim) <= 0:
         raise RuntimeError(f"无法推断 image embedding dim：未找到任何 {img_name} 或 {cover_name}")
     if int(text_dim) <= 0:
