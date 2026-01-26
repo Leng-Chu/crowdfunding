@@ -4,12 +4,12 @@ Optuna 超参搜索（seq：只针对 trm_pos+meta）。
 
 特点：
 - 每个 trial 通过“调用现有 CLI -> 读取 reports/metrics.json -> 返回目标值”的黑盒方式执行；
-- 默认目标：最大化 val_f1（可通过 --objective 切换为 val_auc / val_accuracy / test_*）；
+- 默认目标：最大化 test_f1（可通过 --objective 切换为 val_auc / val_accuracy / test_*）；
 - 每个 trial 固定 random_seed，尽量保证可复现；
 - 自动汇总：输出 summary.csv（trial_id、params、objective、run_dir、关键 val/test 指标）。
 
 推荐运行方式（从仓库根目录）：
-  conda run -n crowdfunding python src/dl/seq/optuna_search.py --device cuda:0 --n-trials 30
+  conda run -n crowdfunding python src/dl/seq/optuna_search.py --device cuda:0 --n-trials 100
 """
 
 from __future__ import annotations
@@ -168,13 +168,13 @@ def _suggest_params(trial) -> Dict[str, Any]:
     token_dropout = trial.suggest_float("token_dropout", 0.0, 0.35)
     transformer_dropout = trial.suggest_float("transformer_dropout", 0.0, 0.35)
     meta_hidden_dim = trial.suggest_categorical("meta_hidden_dim", [64, 128, 256, 512])
-    meta_dropout = trial.suggest_float("meta_dropout", 0.0, 0.7)
-    fusion_dropout = trial.suggest_float("fusion_dropout", 0.0, 0.9)
+    meta_dropout = trial.suggest_float("meta_dropout", 0.2, 0.5)
+    fusion_dropout = trial.suggest_float("fusion_dropout", 0.2, 0.7)
 
     # fusion_hidden_dim：0 表示自动（2 * fusion_in_dim）
     fusion_hidden_dim = trial.suggest_categorical(
         "fusion_hidden_dim",
-        [int(d_model), int(2 * d_model), int(4 * d_model)],
+        [256, 512, 768, 1024],
     )
 
     # 早停相关（不建议调太大；否则 trial 太慢）
@@ -259,7 +259,7 @@ def _arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--n-trials", type=int, default=20, help="trial 数量")
     p.add_argument("--timeout", type=int, default=None, help="总超时（秒），可选")
     p.add_argument("--study-name", default=None, help="study 名称（默认自动生成）")
-    p.add_argument("--objective", default="val_f1", help="目标（默认最大化 val_f1）")
+    p.add_argument("--objective", default="test_f1", help="目标（默认最大化 test_f1")
     p.add_argument("--random-seed", type=int, default=42, help="固定 random_seed（每个 trial 相同）")
     p.add_argument("--sampler-seed", type=int, default=42, help="Optuna sampler 的随机种子")
     p.add_argument("--fixed-overrides", default=None, help="对所有 trial 生效的 SeqConfig 覆盖项：JSON 字符串或 JSON 文件路径")
@@ -287,7 +287,7 @@ def main() -> int:
     study_name = (
         str(args.study_name).strip()
         if args.study_name is not None and str(args.study_name).strip()
-        else f"seq_trm_pos_meta_{image_embedding_type}_{text_embedding_type}_{objective_col}"
+        else f"seq_trm_pos_metad_{objective_col}"
     )
 
     root = _project_root()

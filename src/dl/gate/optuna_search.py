@@ -9,7 +9,7 @@ Optuna 超参搜索（gate）。
 - 自动汇总：输出 summary.csv（trial_id、params、objective、run_dir、关键 test 指标）。
 
 推荐运行方式（从仓库根目录）：
-  conda run -n crowdfunding python src/dl/gate/optuna_search.py --baseline-mode two_stage --device cuda:0 --n-trials 60
+  conda run -n crowdfunding python src/dl/gate/optuna_search.py --baseline-mode two_stage --device cuda:1 --n-trials 100
 """
 
 from __future__ import annotations
@@ -136,7 +136,7 @@ def _suggest_params(trial, baseline_mode: str) -> Dict[str, Any]:
     """
     baseline_mode = str(baseline_mode or "").strip().lower()
 
-    lr = trial.suggest_float("learning_rate_init", 1e-5, 5e-4, log=True)
+    lr = trial.suggest_float("learning_rate_init", 1e-5, 8e-4, log=True)
     wd = trial.suggest_float("alpha", 1e-6, 1e-2, log=True)
     batch_size = trial.suggest_categorical("batch_size", [256, 512, 1024, 2048])
 
@@ -150,15 +150,15 @@ def _suggest_params(trial, baseline_mode: str) -> Dict[str, Any]:
 
     token_dropout = trial.suggest_float("token_dropout", 0.0, 0.35)
     transformer_dropout = trial.suggest_float("transformer_dropout", 0.0, 0.35)
-    key_dropout = trial.suggest_float("key_dropout", 0.0, 0.35)
-    fusion_dropout = trial.suggest_float("fusion_dropout", 0.0, 0.35)
-    meta_dropout = trial.suggest_float("meta_dropout", 0.0, 0.7)
-    head_dropout = trial.suggest_float("head_dropout", 0.2, 0.85)
+    key_dropout = trial.suggest_float("key_dropout", 0.2, 0.5)
+    fusion_dropout = trial.suggest_float("fusion_dropout", 0.2, 0.7)
+    meta_dropout = trial.suggest_float("meta_dropout", 0.2, 0.5)
+    head_dropout = trial.suggest_float("head_dropout", 0.3, 0.7)
 
     # # head_hidden_dim：0 表示自动（2*d_model）
     head_hidden_dim = trial.suggest_categorical(
         "head_hidden_dim",
-        [int(d_model), int(2 * d_model), int(4 * d_model)],
+        [256, 512, 768, 1024],  # 固定选项列表，覆盖所有可能的值
     )
 
     # 早停相关（不建议调太大；否则 trial 太慢）
