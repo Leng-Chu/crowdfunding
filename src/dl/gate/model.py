@@ -248,6 +248,9 @@ class FirstImpressionEncoder(nn.Module):
         # TextProj / CoverProj
         self.text_proj = nn.Linear(int(text_embedding_dim), int(d_model))
         self.cover_proj = nn.Linear(int(image_embedding_dim), int(d_model))
+        self.text_ln = nn.LayerNorm(int(d_model))
+        self.cover_ln = nn.LayerNorm(int(d_model))
+        self.c1_ln = nn.LayerNorm(int(d_model))
         self.drop = nn.Dropout(p=float(dropout))
 
         # Cover <- Text gated pooling
@@ -283,9 +286,9 @@ class FirstImpressionEncoder(nn.Module):
         if int(title_blurb.shape[0]) != int(cover.shape[0]):
             raise ValueError(f"title_blurb/cover batch size 不一致：{tuple(title_blurb.shape)} vs {tuple(cover.shape)}")
 
-        # TextProj / CoverProj
-        T = torch.relu(self.text_proj(title_blurb))  # [B, 2, d]
-        c = torch.relu(self.cover_proj(cover))  # [B, d]
+        # TextProj / CoverProj（先 LN 再 Dropout：更稳且更不容易过拟合）
+        T = self.text_ln(torch.relu(self.text_proj(title_blurb)))  # [B, 2, d]
+        c = self.cover_ln(torch.relu(self.cover_proj(cover)))  # [B, d]
         # 该分支输入 token 数量很少（2+1），容易记忆训练集；这里显式加 dropout 做正则化。
         T = self.drop(T)
         c = self.drop(c)
@@ -293,22 +296,26 @@ class FirstImpressionEncoder(nn.Module):
 
         # Cover <- Text gated pooling
         alpha_in = torch.cat([T, c2, T * c2], dim=-1)  # [B, 2, 3d]
-        alpha = torch.sigmoid(self.alpha_fc(alpha_in))  # [B, 2, 1]
+        # 温和缩放，避免 gate 过早饱和导致过拟合（不引入新超参）
+        alpha = torch.sigmoid(0.5 * self.alpha_fc(alpha_in))  # [B, 2, 1]
         t_tilde = torch.sum(alpha * T, dim=1)  # [B, d]
-        c1 = c + t_tilde  # [B, d]
+        c1 = self.c1_ln(c + t_tilde)  # [B, d]
+        c1 = self.drop(c1)
 
         # Text <- Cover gated update
         beta_in = torch.cat([c2, T, c2 * T], dim=-1)  # [B, 2, 3d]
-        beta = torch.sigmoid(self.beta_fc(beta_in))  # [B, 2, 1]
+        beta = torch.sigmoid(0.5 * self.beta_fc(beta_in))  # [B, 2, 1]
         T1 = T + beta * c2  # [B, 2, d]
+        T1 = self.drop(T1)
 
         # TextAgg: concat+proj + LN
         t_cat = torch.cat([T1[:, 0, :], T1[:, 1, :]], dim=-1)  # [B, 2d]
         t1 = self.text_agg_ln(self.text_agg_fc(t_cat))  # [B, d]
         t1 = self.drop(t1)
 
-        # v_key: LN(Linear(concat(t1, c1, t1*c1)))
-        key_in = torch.cat([t1, c1, t1 * c1], dim=-1)  # [B, 3d]
+        # v_key: LN(Linear(concat(t1, c1, 0.5*(t1*c1))))
+        # 交互项容量很大，容易记忆训练集；这里固定缩放以降低过拟合风险。
+        key_in = torch.cat([t1, c1, 0.5 * (t1 * c1)], dim=-1)  # [B, 3d]
         v_key = self.key_ln(self.key_fc(key_in))  # [B, d]
         v_key = self.drop(v_key)
         return v_key
@@ -590,20 +597,23 @@ class GateBinaryClassifier(nn.Module):
     def _stage1_prior(self, v_key: torch.Tensor, v_meta: torch.Tensor) -> torch.Tensor:
         a = self.ln_gate1_key(v_key)
         b = self.ln_gate1_meta(v_meta)
-        g1 = torch.sigmoid(self.stage1_gate_fc(torch.cat([a, b], dim=1)))
+        g1 = torch.sigmoid(0.5 * self.stage1_gate_fc(torch.cat([a, b], dim=1)))
         self._debug_update_gate("g1", g1)
         # residual + 温和缩放：避免 gate 退化为硬开关（范围约为 [0.5, 1.5]）
         v_meta2 = (0.5 + g1) * v_meta
-        p_in = torch.cat([v_key, v_meta2, v_key * v_meta2], dim=1)
+        p_in = torch.cat([v_key, v_meta2, 0.5 * (v_key * v_meta2)], dim=1)
+        p_in = self.fusion_drop(p_in)
         p = self.stage1_p_ln(self.stage1_p_fc(p_in))
+        p = self.fusion_drop(p)
         return p
 
     def _stage2_fuse(self, h_seq: torch.Tensor, p: torch.Tensor) -> torch.Tensor:
         a = self.ln_gate2_p(p)
         b = self.ln_gate2_seq(h_seq)
-        g2 = torch.sigmoid(self.stage2_gate_fc(torch.cat([a, b], dim=1)))
+        g2 = torch.sigmoid(0.5 * self.stage2_gate_fc(torch.cat([a, b], dim=1)))
         self._debug_update_gate("g2", g2)
-        h_final = self.stage2_ln(h_seq + g2 * p)
+        p2 = self.fusion_drop(p)
+        h_final = self.stage2_ln(h_seq + g2 * p2)
         return h_final
 
     def forward(
@@ -632,12 +642,18 @@ class GateBinaryClassifier(nn.Module):
             h_seq = self.seq(x_img=x_img, x_txt=x_txt, seq_type=seq_type, seq_attr=seq_attr, seq_mask=seq_mask)
 
             if self.baseline_mode == "late_concat":
-                h = self.late_fc(torch.cat([h_seq, v_key, v_meta], dim=1))
+                z = torch.cat([h_seq, v_key, v_meta], dim=1)
+                z = self.fusion_drop(z)
+                h = self.late_fc(z)
             elif self.baseline_mode == "stage1_only":
                 p = self._stage1_prior(v_key=v_key, v_meta=v_meta)
-                h = self.stage1only_fuse_ln(self.stage1only_fuse_fc(torch.cat([h_seq, p], dim=1)))
+                z = torch.cat([h_seq, p], dim=1)
+                z = self.fusion_drop(z)
+                h = self.stage1only_fuse_ln(self.stage1only_fuse_fc(z))
             elif self.baseline_mode == "stage2_only":
-                p0 = self.stage2only_p_ln(self.stage2only_p_fc(torch.cat([v_key, v_meta], dim=1)))
+                z = torch.cat([v_key, v_meta], dim=1)
+                z = self.fusion_drop(z)
+                p0 = self.stage2only_p_ln(self.stage2only_p_fc(z))
                 h = self._stage2_fuse(h_seq=h_seq, p=p0)
             elif self.baseline_mode == "two_stage":
                 p = self._stage1_prior(v_key=v_key, v_meta=v_meta)

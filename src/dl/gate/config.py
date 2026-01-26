@@ -77,37 +77,37 @@ class GateConfig:
     # 模型结构超参
     # -----------------------------
     d_model: int = 256
-    token_dropout: float = 0.2338943533815055
+    token_dropout: float = 0.25
 
     transformer_num_layers: int = 4
     transformer_num_heads: int = 2
     transformer_dim_feedforward: int = 1024
-    transformer_dropout: float = 0.2344798220255935
+    transformer_dropout: float = 0.25
 
     # First Impression（title/blurb/cover）分支的 dropout
     key_dropout: float = 0.5
 
     # 融合表征的 dropout
-    fusion_dropout: float = 0.21909799776376956
+    fusion_dropout: float = 0.35
 
     # MetaEncoder：Linear(d_meta_in->d)->ReLU->Dropout->Linear(d->d)->ReLU
-    meta_dropout: float = 0.5482663077711479
+    meta_dropout: float = 0.55
 
     # Head：Linear(d->d_head)->ReLU->Dropout->Linear(d_head->1)
     head_hidden_dim: int = 0  # <=0 表示自动取 2 * d_model
-    head_dropout: float = 0.3588215113859121
+    head_dropout: float = 0.5
 
     # -----------------------------
     # 训练超参（与 seq 训练流程对齐）
     # -----------------------------
-    alpha: float = 0.00016332998001927708  # weight_decay（L2）
-    learning_rate_init: float = 0.00031820546513439623
+    alpha: float = 5e-3  # weight_decay（AdamW）
+    learning_rate_init: float = 2e-4
     batch_size: int = 256
 
     max_epochs: int = 50
-    early_stop_patience: int = 13
+    early_stop_patience: int = 8
     early_stop_min_epochs: int = 5
-    metric_for_best: str = "val_auc"  # val_accuracy / val_auc / val_loss
+    metric_for_best: str = "val_loss"  # val_accuracy / val_auc / val_loss
 
     use_lr_scheduler: bool = True
     lr_scheduler_patience: int = 2
