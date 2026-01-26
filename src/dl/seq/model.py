@@ -148,7 +148,7 @@ class SetAttentionPooling(nn.Module):
         if x.ndim != 3 or mask.ndim != 2:
             raise ValueError(f"x/mask 形状不合法：x={tuple(x.shape)} mask={tuple(mask.shape)}")
         scores = torch.einsum("bld,d->bl", x, self.query) * float(self.scale)
-        scores = scores.masked_fill(~mask, -1e9)
+        scores = scores.masked_fill(~mask, torch.finfo(scores.dtype).min)
         weights = torch.softmax(scores, dim=1).unsqueeze(-1)
         pooled = torch.sum(x * weights, dim=1)
         return pooled

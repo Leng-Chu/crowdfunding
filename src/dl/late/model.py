@@ -78,7 +78,7 @@ def _masked_softmax(scores: torch.Tensor, mask: torch.Tensor, eps: float = 1e-9)
     if scores.numel() == 0:
         return scores
 
-    scores = scores.masked_fill(~mask, -1e9)
+    scores = scores.masked_fill(~mask, torch.finfo(scores.dtype).min)
     max_scores = scores.max(dim=1, keepdim=True).values
     exp = torch.exp(scores - max_scores) * mask.to(scores.dtype)
     denom = exp.sum(dim=1, keepdim=True)
