@@ -166,7 +166,7 @@ class TransformerNoPosSetEncoder(nn.Module):
             activation="relu",
             batch_first=True,
         )
-        self.encoder = nn.TransformerEncoder(layer, num_layers=int(n_layers))
+        self.encoder = nn.TransformerEncoder(layer, num_layers=int(n_layers), enable_nested_tensor=False)
         self.d_model = int(d_model)
 
     def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:

@@ -32,6 +32,34 @@ _WARMUP_RATIO = 0.1
 _DEFAULT_MAX_GRAD_NORM = 1.0
 
 
+def _build_grad_scaler(enabled: bool):
+    if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler"):
+        try:
+            return torch.amp.GradScaler(device_type="cuda", enabled=bool(enabled))
+        except TypeError:
+            try:
+                return torch.amp.GradScaler("cuda", enabled=bool(enabled))
+            except TypeError:
+                return torch.amp.GradScaler(enabled=bool(enabled))
+    return torch.cuda.amp.GradScaler(enabled=bool(enabled))
+
+
+def _amp_autocast(device: torch.device, enabled: bool):
+    if not bool(enabled):
+        return contextlib.nullcontext()
+    if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
+        try:
+            return torch.amp.autocast(device_type=str(device.type), enabled=True)
+        except TypeError:
+            try:
+                return torch.amp.autocast(str(device.type), enabled=True)
+            except TypeError:
+                pass
+    if device.type == "cuda":
+        return torch.cuda.amp.autocast(enabled=True)
+    return contextlib.nullcontext()
+
+
 def _compute_pos_weight(y_train: np.ndarray) -> float:
     y = np.asarray(y_train).astype(int).reshape(-1)
     n_pos = int(np.sum(y == 1))
@@ -312,7 +340,7 @@ def _positive_proba_seq(
             x_img, x_txt, t, a, m, _y = batch
             x_meta = None
 
-        with torch.cuda.amp.autocast(enabled=bool(use_amp)):
+        with _amp_autocast(device, enabled=bool(use_amp)):
             logits = model(
                 x_img=x_img.to(device),
                 x_txt=x_txt.to(device),
@@ -385,7 +413,7 @@ def train_seq_with_early_stopping(
         steps_per_epoch=len(train_loader),
         min_lr=float(getattr(cfg, "lr_scheduler_min_lr", 1e-6)),
     )
-    scaler = torch.cuda.amp.GradScaler(enabled=bool(use_amp))
+    scaler = _build_grad_scaler(enabled=bool(use_amp))
     ema = _EMA(model, decay=_EMA_DECAY)
     ema_logged = False
 
@@ -413,7 +441,7 @@ def train_seq_with_early_stopping(
             optimizer.zero_grad(set_to_none=True)
             yb = yb.to(device)
             yb = yb * float(1.0 - _LABEL_SMOOTHING_EPS) + float(0.5 * _LABEL_SMOOTHING_EPS)
-            with torch.cuda.amp.autocast(enabled=bool(use_amp)):
+            with _amp_autocast(device, enabled=bool(use_amp)):
                 logits = model(
                     x_img=x_img.to(device),
                     x_txt=x_txt.to(device),

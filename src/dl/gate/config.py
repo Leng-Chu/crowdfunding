@@ -85,7 +85,7 @@ class GateConfig:
     transformer_dropout: float = 0.2344798220255935
 
     # First Impression（title/blurb/cover）分支的 dropout
-    key_dropout: float = 0.09026363984756323
+    key_dropout: float = 0.5
 
     # 融合表征的 dropout
     fusion_dropout: float = 0.21909799776376956

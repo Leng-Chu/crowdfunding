@@ -350,7 +350,7 @@ class ContentSeqEncoder(nn.Module):
             batch_first=True,
             norm_first=True,
         )
-        self.transformer = nn.TransformerEncoder(layer, num_layers=int(transformer_num_layers))
+        self.transformer = nn.TransformerEncoder(layer, num_layers=int(transformer_num_layers), enable_nested_tensor=False)
         self.d_model = int(d_model)
 
     def forward(

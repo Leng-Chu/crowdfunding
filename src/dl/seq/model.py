@@ -231,7 +231,7 @@ class SeqBinaryClassifier(nn.Module):
                 batch_first=True,
                 norm_first=True,
             )
-            self.transformer = nn.TransformerEncoder(layer, num_layers=int(transformer_num_layers))
+            self.transformer = nn.TransformerEncoder(layer, num_layers=int(transformer_num_layers), enable_nested_tensor=False)
 
         if self.baseline_mode in {"trm_pos", "trm_pos_shuffled"}:
             # 统一使用 sinusoidal 位置编码，不提供可选项。
