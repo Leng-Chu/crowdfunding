@@ -32,7 +32,7 @@ class LateConfig:
     # -----------------------------
     data_csv: str = "data/metadata/now_processed.csv"
     projects_root: str = "data/projects/now"
-    experiment_root: str = "experiments/ch1"
+    experiment_root: str = "experiments/late"
 
     # -----------------------------
     # 分支开关
@@ -95,7 +95,7 @@ class LateConfig:
 
     # 融合 head（与 mlp baseline 一致：Linear→ReLU→Dropout→Linear）
     fusion_hidden_dim: Optional[int] = None  # None 表示自动取 2 * fusion_in_dim
-    fusion_dropout: float = 0.9
+    fusion_dropout: float = 0.5
 
     # -----------------------------
     # 训练超参（与 mlp baseline 对齐）
@@ -115,7 +115,7 @@ class LateConfig:
     lr_scheduler_min_lr: float = 1e-5
     reset_early_stop_on_lr_change: bool = False
 
-    max_grad_norm: float = 0.0
+    max_grad_norm: float = 1.0
 
     threshold: float = 0.5
     random_seed: int = 22

@@ -33,7 +33,7 @@ class GateConfig:
     # -----------------------------
     data_csv: str = "data/metadata/now_processed.csv"
     projects_root: str = "data/projects/now"
-    experiment_root: str = "experiments/test"
+    experiment_root: str = "experiments/gate"
 
     # -----------------------------
     # 模式（实验组）

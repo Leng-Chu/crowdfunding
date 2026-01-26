@@ -30,7 +30,7 @@ class SeqConfig:
     # -----------------------------
     data_csv: str = "data/metadata/now_processed.csv"
     projects_root: str = "data/projects/now"
-    experiment_root: str = "experiments/test"
+    experiment_root: str = "experiments/seq"
 
     # -----------------------------
     # 模式（实验组）
@@ -112,7 +112,7 @@ class SeqConfig:
     lr_scheduler_min_lr: float = 1e-5
     reset_early_stop_on_lr_change: bool = False
 
-    max_grad_norm: float = 0.0
+    max_grad_norm: float = 1.0
 
     threshold: float = 0.5
     random_seed: int = 22
