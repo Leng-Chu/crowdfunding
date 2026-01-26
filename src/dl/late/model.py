@@ -236,6 +236,8 @@ class LateFusionBinaryClassifier(nn.Module):
         # 3.1 Modality Projection
         self.img_proj = nn.Linear(int(image_embedding_dim), int(self.d_model))
         self.txt_proj = nn.Linear(int(text_embedding_dim), int(self.d_model))
+        self.img_ln = nn.LayerNorm(int(self.d_model))
+        self.txt_ln = nn.LayerNorm(int(self.d_model))
 
         # 3.2 集合编码（模态内）
         if self.baseline_mode == "attn_pool":
@@ -282,6 +284,7 @@ class LateFusionBinaryClassifier(nn.Module):
         self.fusion_in_dim = int(fusion_in_dim)
         self.fusion_hidden_dim = int(fusion_hidden_dim)
         self.fusion_fc = nn.Linear(int(self.fusion_in_dim), int(self.fusion_hidden_dim))
+        self.fusion_in_ln = nn.LayerNorm(int(self.fusion_in_dim))
         self.fusion_drop = nn.Dropout(p=float(fusion_dropout))
         self.head = nn.Linear(int(self.fusion_hidden_dim), 1)
         self._init_weights()
@@ -322,8 +325,8 @@ class LateFusionBinaryClassifier(nn.Module):
         img_mask = _lengths_to_mask(len_image, max_len=int(x_image.shape[1]))
         txt_mask = _lengths_to_mask(len_text, max_len=int(x_text.shape[1]))
 
-        Img = torch.relu(self.img_proj(x_image))
-        Txt = torch.relu(self.txt_proj(x_text))
+        Img = self.img_ln(torch.relu(self.img_proj(x_image)))
+        Txt = self.txt_ln(torch.relu(self.txt_proj(x_text)))
 
         h_img = self.img_encoder(Img, img_mask)
         h_txt = self.txt_encoder(Txt, txt_mask)
@@ -334,6 +337,7 @@ class LateFusionBinaryClassifier(nn.Module):
                 raise ValueError("meta 分支已开启，但 x_meta 为空。")
             fused = torch.cat([fused, self.meta(x_meta)], dim=1)
 
+        fused = self.fusion_in_ln(fused)
         fused = torch.relu(self.fusion_fc(fused))
         fused = self.fusion_drop(fused)
         logits = self.head(fused).squeeze(-1)

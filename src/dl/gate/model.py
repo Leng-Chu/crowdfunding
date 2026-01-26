@@ -134,6 +134,7 @@ class TokenEncoder(nn.Module):
         self.txt_proj = nn.Linear(int(text_embedding_dim), int(d_model))
         self.type_emb = nn.Embedding(2, int(d_model))  # 0=text，1=image
         self.attr_proj = nn.Linear(1, int(d_model))
+        self.ln = nn.LayerNorm(int(d_model))
         self.drop = nn.Dropout(p=float(token_dropout))
         self.d_model = int(d_model)
         self._init_weights()
@@ -173,6 +174,7 @@ class TokenEncoder(nn.Module):
         type_feat = self.type_emb(seq_type.to(torch.long))
         attr_feat = self.attr_proj(seq_attr.to(dtype=content.dtype).unsqueeze(-1))
         x = content + type_feat + attr_feat
+        x = self.ln(x)
         x = self.drop(x)
         return x
 
@@ -436,6 +438,7 @@ class GateBinaryClassifier(nn.Module):
 
         # 融合表征 dropout：在进入 head 前做一次正则化（与 head_dropout 相互补充）。
         self.fusion_drop = nn.Dropout(p=float(fusion_dropout))
+        self.fusion_ln = nn.LayerNorm(int(d_model))
 
         # -----------------------------
         # 融合（Two-stage gated fusion）与 baseline
@@ -589,7 +592,8 @@ class GateBinaryClassifier(nn.Module):
         b = self.ln_gate1_meta(v_meta)
         g1 = torch.sigmoid(self.stage1_gate_fc(torch.cat([a, b], dim=1)))
         self._debug_update_gate("g1", g1)
-        v_meta2 = g1 * v_meta
+        # residual + 温和缩放：避免 gate 退化为硬开关（范围约为 [0.5, 1.5]）
+        v_meta2 = (0.5 + g1) * v_meta
         p_in = torch.cat([v_key, v_meta2, v_key * v_meta2], dim=1)
         p = self.stage1_p_ln(self.stage1_p_fc(p_in))
         return p
@@ -641,6 +645,7 @@ class GateBinaryClassifier(nn.Module):
             else:
                 raise RuntimeError(f"未覆盖的 baseline_mode：{self.baseline_mode!r}")
 
+        h = self.fusion_ln(h)
         h = self.fusion_drop(h)
         z = torch.relu(self.head_fc(h))
         z = self.head_drop(z)

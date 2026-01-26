@@ -75,6 +75,7 @@ class TokenEncoder(nn.Module):
         self.txt_proj = nn.Linear(int(text_embedding_dim), int(d_model))
         self.type_emb = nn.Embedding(2, int(d_model))  # 0=text，1=image
         self.attr_proj = nn.Linear(1, int(d_model))
+        self.ln = nn.LayerNorm(int(d_model))
         self.drop = nn.Dropout(p=float(token_dropout))
         self.d_model = int(d_model)
         self._init_weights()
@@ -114,6 +115,7 @@ class TokenEncoder(nn.Module):
         type_feat = self.type_emb(seq_type.to(torch.long))
         attr_feat = self.attr_proj(seq_attr.to(dtype=content.dtype).unsqueeze(-1))
         x = content + type_feat + attr_feat
+        x = self.ln(x)
         x = self.drop(x)
         return x
 
@@ -248,6 +250,7 @@ class SeqBinaryClassifier(nn.Module):
             fusion_hidden_dim = int(2 * fusion_in_dim)
 
         self.fusion_fc = nn.Linear(int(fusion_in_dim), int(fusion_hidden_dim))
+        self.fusion_in_ln = nn.LayerNorm(int(fusion_in_dim))
         self.fusion_drop = nn.Dropout(p=float(fusion_dropout))
         self.head = nn.Linear(int(fusion_hidden_dim), 1)
         self.fusion_in_dim = int(fusion_in_dim)
@@ -301,6 +304,7 @@ class SeqBinaryClassifier(nn.Module):
             feats.append(self.meta(x_meta))
 
         fused = torch.cat(feats, dim=1)
+        fused = self.fusion_in_ln(fused)
         fused = torch.relu(self.fusion_fc(fused))
         fused = self.fusion_drop(fused)
         logits = self.head(fused).squeeze(-1)

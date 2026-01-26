@@ -13,7 +13,8 @@
 
 from __future__ import annotations
 
-import copy
+import contextlib
+import math
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -23,6 +24,119 @@ from torch.utils.data import DataLoader, Dataset
 
 from config import GateConfig
 from utils import compute_binary_metrics
+
+_LABEL_SMOOTHING_EPS = 0.05
+_EMA_DECAY = 0.999
+_WARMUP_RATIO = 0.1
+_DEFAULT_MAX_GRAD_NORM = 1.0
+
+
+def _compute_pos_weight(y_train: np.ndarray) -> float:
+    y = np.asarray(y_train).astype(int).reshape(-1)
+    n_pos = int(np.sum(y == 1))
+    n_neg = int(np.sum(y == 0))
+    if n_pos <= 0 or n_neg <= 0:
+        return 1.0
+    return float(n_neg / max(1, n_pos))
+
+
+def _build_adamw(model: nn.Module, lr: float, weight_decay: float) -> torch.optim.Optimizer:
+    norm_param_ids: set[int] = set()
+    for module in model.modules():
+        if isinstance(module, (nn.LayerNorm, nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
+            for p in module.parameters(recurse=False):
+                norm_param_ids.add(id(p))
+
+    decay_params: List[torch.nn.Parameter] = []
+    no_decay_params: List[torch.nn.Parameter] = []
+    for name, p in model.named_parameters():
+        if not bool(p.requires_grad):
+            continue
+        if name.endswith(".bias") or id(p) in norm_param_ids:
+            no_decay_params.append(p)
+        else:
+            decay_params.append(p)
+
+    param_groups: List[Dict[str, Any]] = []
+    if decay_params:
+        param_groups.append({"params": decay_params, "weight_decay": float(weight_decay)})
+    if no_decay_params:
+        param_groups.append({"params": no_decay_params, "weight_decay": 0.0})
+
+    return torch.optim.AdamW(param_groups, lr=float(lr))
+
+
+def _build_warmup_cosine_scheduler(
+    optimizer: torch.optim.Optimizer,
+    max_epochs: int,
+    steps_per_epoch: int,
+    min_lr: float,
+) -> torch.optim.lr_scheduler.LambdaLR:
+    total_steps = max(1, int(max_epochs) * max(1, int(steps_per_epoch)))
+    warmup_steps = max(1, int(_WARMUP_RATIO * float(total_steps)))
+
+    base_lr = float(optimizer.param_groups[0].get("lr", 0.0))
+    if base_lr <= 0.0:
+        min_lr_ratio = 0.0
+    else:
+        min_lr_ratio = float(min_lr) / float(base_lr)
+    min_lr_ratio = float(np.clip(min_lr_ratio, 0.0, 1.0))
+
+    def lr_lambda(step: int) -> float:
+        step = int(step)
+        if step < warmup_steps:
+            return float(step + 1) / float(warmup_steps)
+        progress = float(step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+        cosine = 0.5 * (1.0 + math.cos(math.pi * float(np.clip(progress, 0.0, 1.0))))
+        return float(min_lr_ratio + (1.0 - min_lr_ratio) * cosine)
+
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+
+
+class _EMA:
+    def __init__(self, model: nn.Module, decay: float) -> None:
+        self.decay = float(decay)
+        self.shadow: Dict[str, torch.Tensor] = {}
+        for k, v in model.state_dict().items():
+            if not torch.is_floating_point(v):
+                continue
+            self.shadow[k] = v.detach().clone()
+
+    @torch.no_grad()
+    def update(self, model: nn.Module) -> None:
+        d = float(self.decay)
+        for k, v in model.state_dict().items():
+            if k not in self.shadow:
+                continue
+            if not torch.is_floating_point(v):
+                continue
+            self.shadow[k].mul_(d).add_(v.detach(), alpha=1.0 - d)
+
+    def ema_state_dict(self, model: nn.Module) -> Dict[str, torch.Tensor]:
+        out = {k: v.detach().clone() for k, v in model.state_dict().items()}
+        for k, v in self.shadow.items():
+            if k in out and torch.is_floating_point(out[k]):
+                out[k] = v.detach().clone()
+        return out
+
+    @contextlib.contextmanager
+    def swap_to_ema(self, model: nn.Module):
+        backup: Dict[str, torch.Tensor] = {}
+        state = model.state_dict()
+        for k, v in self.shadow.items():
+            if k not in state:
+                continue
+            if not torch.is_floating_point(state[k]):
+                continue
+            backup[k] = state[k].detach().clone()
+            state[k].copy_(v)
+        try:
+            yield
+        finally:
+            state2 = model.state_dict()
+            for k, v in backup.items():
+                if k in state2:
+                    state2[k].copy_(v)
 
 
 def _get_device(cfg: GateConfig) -> torch.device:
@@ -139,6 +253,7 @@ def _positive_proba_gate(
     batch_size: int,
 ) -> np.ndarray:
     model.eval()
+    use_amp = device.type == "cuda"
     ds = GateDataset(
         X_meta=X_meta,
         title_blurb=title_blurb,
@@ -156,17 +271,18 @@ def _positive_proba_gate(
     probs: List[np.ndarray] = []
     for batch in loader:
         x_meta, tb, c, x_img, x_txt, t, a, m, _y = batch
-        logits = model(
-            title_blurb=tb.to(device),
-            cover=c.to(device),
-            x_img=x_img.to(device),
-            x_txt=x_txt.to(device),
-            seq_type=t.to(device),
-            seq_attr=a.to(device),
-            seq_mask=m.to(device),
-            x_meta=x_meta.to(device),
-        )
-        prob = torch.sigmoid(logits).detach().cpu().numpy().astype(np.float64, copy=False)
+        with torch.cuda.amp.autocast(enabled=bool(use_amp)):
+            logits = model(
+                title_blurb=tb.to(device),
+                cover=c.to(device),
+                x_img=x_img.to(device),
+                x_txt=x_txt.to(device),
+                seq_type=t.to(device),
+                seq_attr=a.to(device),
+                seq_mask=m.to(device),
+                x_meta=x_meta.to(device),
+            )
+        prob = torch.sigmoid(logits.float()).detach().cpu().numpy().astype(np.float64, copy=False)
         probs.append(prob)
 
     if not probs:
@@ -202,6 +318,7 @@ def train_gate_with_early_stopping(
     """训练 + 早停。"""
     device = _get_device(cfg)
     model = model.to(device)
+    use_amp = device.type == "cuda"
 
     ds_train = GateDataset(
         X_meta=X_meta_train,
@@ -217,22 +334,23 @@ def train_gate_with_early_stopping(
     )
     train_loader = DataLoader(ds_train, batch_size=max(1, int(cfg.batch_size)), shuffle=True)
 
-    criterion = nn.BCEWithLogitsLoss()
-    optimizer = torch.optim.Adam(
-        model.parameters(),
+    pos_weight = _compute_pos_weight(y_train)
+    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([float(pos_weight)], device=device))
+
+    optimizer = _build_adamw(
+        model,
         lr=float(cfg.learning_rate_init),
         weight_decay=float(cfg.alpha),
     )
-
-    scheduler = None
-    if getattr(cfg, "use_lr_scheduler", False):
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer,
-            mode="min",
-            factor=float(getattr(cfg, "lr_scheduler_factor", 0.5)),
-            patience=int(getattr(cfg, "lr_scheduler_patience", 3)),
-            min_lr=float(getattr(cfg, "lr_scheduler_min_lr", 1e-6)),
-        )
+    scheduler = _build_warmup_cosine_scheduler(
+        optimizer,
+        max_epochs=int(cfg.max_epochs),
+        steps_per_epoch=len(train_loader),
+        min_lr=float(getattr(cfg, "lr_scheduler_min_lr", 1e-6)),
+    )
+    scaler = torch.cuda.amp.GradScaler(enabled=bool(use_amp))
+    ema = _EMA(model, decay=_EMA_DECAY)
+    ema_logged = False
 
     best_state: Dict[str, torch.Tensor] | None = None
     best_epoch = 0
@@ -244,29 +362,41 @@ def train_gate_with_early_stopping(
         model.train()
         running_loss = 0.0
         n_seen = 0
+        grad_norm_sum = 0.0
+        grad_norm_n = 0
 
         for batch in train_loader:
             x_meta, tb, c, x_img, x_txt, t, a, m, yb = batch
             optimizer.zero_grad(set_to_none=True)
-            logits = model(
-                title_blurb=tb.to(device),
-                cover=c.to(device),
-                x_img=x_img.to(device),
-                x_txt=x_txt.to(device),
-                seq_type=t.to(device),
-                seq_attr=a.to(device),
-                seq_mask=m.to(device),
-                x_meta=x_meta.to(device),
-            )
             yb = yb.to(device)
-            loss = criterion(logits, yb)
-            loss.backward()
+            yb = yb * float(1.0 - _LABEL_SMOOTHING_EPS) + float(0.5 * _LABEL_SMOOTHING_EPS)
+            with torch.cuda.amp.autocast(enabled=bool(use_amp)):
+                logits = model(
+                    title_blurb=tb.to(device),
+                    cover=c.to(device),
+                    x_img=x_img.to(device),
+                    x_txt=x_txt.to(device),
+                    seq_type=t.to(device),
+                    seq_attr=a.to(device),
+                    seq_mask=m.to(device),
+                    x_meta=x_meta.to(device),
+                )
+                loss = criterion(logits, yb)
+
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
 
             max_grad_norm = float(getattr(cfg, "max_grad_norm", 0.0))
-            if max_grad_norm > 0.0:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+            if not (max_grad_norm > 0.0):
+                max_grad_norm = float(_DEFAULT_MAX_GRAD_NORM)
+            grad_norm = float(torch.nn.utils.clip_grad_norm_(model.parameters(), float(max_grad_norm)))
+            grad_norm_sum += float(grad_norm)
+            grad_norm_n += 1
 
-            optimizer.step()
+            scaler.step(optimizer)
+            scaler.update()
+            scheduler.step()
+            ema.update(model)
 
             bs = int(yb.shape[0])
             running_loss += float(loss.detach().cpu()) * bs
@@ -274,38 +404,43 @@ def train_gate_with_early_stopping(
 
         train_epoch_loss = running_loss / max(1, n_seen)
 
-        train_prob = _positive_proba_gate(
-            model,
-            X_meta=X_meta_train,
-            title_blurb=title_blurb_train,
-            cover=cover_train,
-            X_img=X_img_train,
-            X_txt=X_txt_train,
-            seq_type=seq_type_train,
-            seq_attr=seq_attr_train,
-            seq_mask=seq_mask_train,
-            y=y_train,
-            project_ids=train_project_ids,
-            cfg=cfg,
-            device=device,
-            batch_size=int(cfg.batch_size),
-        )
-        val_prob = _positive_proba_gate(
-            model,
-            X_meta=X_meta_val,
-            title_blurb=title_blurb_val,
-            cover=cover_val,
-            X_img=X_img_val,
-            X_txt=X_txt_val,
-            seq_type=seq_type_val,
-            seq_attr=seq_attr_val,
-            seq_mask=seq_mask_val,
-            y=y_val,
-            project_ids=val_project_ids,
-            cfg=cfg,
-            device=device,
-            batch_size=int(cfg.batch_size),
-        )
+        if not ema_logged:
+            logger.info("EMA：swap to ema / restore（评估使用 EMA 权重）")
+            ema_logged = True
+
+        with ema.swap_to_ema(model):
+            train_prob = _positive_proba_gate(
+                model,
+                X_meta=X_meta_train,
+                title_blurb=title_blurb_train,
+                cover=cover_train,
+                X_img=X_img_train,
+                X_txt=X_txt_train,
+                seq_type=seq_type_train,
+                seq_attr=seq_attr_train,
+                seq_mask=seq_mask_train,
+                y=y_train,
+                project_ids=train_project_ids,
+                cfg=cfg,
+                device=device,
+                batch_size=int(cfg.batch_size),
+            )
+            val_prob = _positive_proba_gate(
+                model,
+                X_meta=X_meta_val,
+                title_blurb=title_blurb_val,
+                cover=cover_val,
+                X_img=X_img_val,
+                X_txt=X_txt_val,
+                seq_type=seq_type_val,
+                seq_attr=seq_attr_val,
+                seq_mask=seq_mask_val,
+                y=y_val,
+                project_ids=val_project_ids,
+                cfg=cfg,
+                device=device,
+                batch_size=int(cfg.batch_size),
+            )
 
         train_metrics = compute_binary_metrics(y_train, train_prob, threshold=cfg.threshold)
         val_metrics = compute_binary_metrics(y_val, val_prob, threshold=cfg.threshold)
@@ -316,29 +451,23 @@ def train_gate_with_early_stopping(
         for k, v in val_metrics.items():
             row[f"val_{k}"] = v
         row["train_epoch_loss"] = float(train_epoch_loss)
+        row["train_grad_norm"] = float(grad_norm_sum / max(1, grad_norm_n))
         history.append(row)
 
-        metric_for_best = str(getattr(cfg, "metric_for_best", "val_accuracy")).strip().lower()
-        if metric_for_best in {"val_loss", "loss"}:
-            score = -float(val_metrics["log_loss"])
-        elif metric_for_best in {"val_accuracy", "val_acc", "accuracy"}:
-            score = float(val_metrics["accuracy"])
-        else:
-            score_auc = val_metrics.get("roc_auc")
-            score = -float(val_metrics["log_loss"]) if score_auc is None else float(score_auc)
+        score = -float(val_metrics["log_loss"])
 
         improved = score > best_score
         if improved:
             best_score = float(score)
             best_epoch = int(epoch)
-            best_state = copy.deepcopy(model.state_dict())
+            best_state = ema.ema_state_dict(model)
             bad_epochs = 0
         else:
             bad_epochs += 1
 
         lr_now = float(optimizer.param_groups[0]["lr"])
         logger.info(
-            "Epoch %d/%d | lr=%.6g | train_loss=%.4f val_loss=%.4f | train_acc=%.4f val_acc=%.4f | best_epoch=%d bad=%d",
+            "Epoch %d/%d | lr=%.6g | train_loss=%.4f val_loss=%.4f | train_acc=%.4f val_acc=%.4f | grad_norm=%.4f | best_epoch=%d bad=%d",
             int(epoch),
             int(cfg.max_epochs),
             lr_now,
@@ -346,11 +475,12 @@ def train_gate_with_early_stopping(
             float(val_metrics["log_loss"]),
             float(train_metrics["accuracy"]),
             float(val_metrics["accuracy"]),
+            float(row["train_grad_norm"]),
             int(best_epoch),
             int(bad_epochs),
         )
 
-        if scheduler is not None:
+        if False and scheduler is not None:
             old_lr = float(optimizer.param_groups[0]["lr"])
             scheduler.step(float(val_metrics["log_loss"]))
             new_lr = float(optimizer.param_groups[0]["lr"])
@@ -367,7 +497,7 @@ def train_gate_with_early_stopping(
             break
 
     if best_state is None:
-        best_state = copy.deepcopy(model.state_dict())
+        best_state = ema.ema_state_dict(model)
         best_epoch = len(history) if history else 0
     model.load_state_dict(best_state)
 
@@ -375,7 +505,7 @@ def train_gate_with_early_stopping(
     best_info = {
         "best_epoch": int(best_epoch),
         "best_score": float(best_score),
-        "metric_for_best": cfg.metric_for_best,
+        "metric_for_best": "val_log_loss",
         "best_val_row": best_val,
     }
     return model, history, best_info
