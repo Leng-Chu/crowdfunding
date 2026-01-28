@@ -100,8 +100,9 @@ def _as_2d_embedding(arr: np.ndarray, name: str) -> np.ndarray:
 
 def _stable_hash_int(text: str) -> int:
     """把字符串稳定地映射为 int（用于可复现的抽样/截断）。"""
-    digest = hashlib.md5(text.encode("utf-8")).hexdigest()[:8]
-    return int(digest, 16)
+    digest = hashlib.sha256(text.encode("utf-8")).digest()
+    v = int.from_bytes(digest[:8], byteorder="big", signed=False)
+    return int(v & 0x7FFFFFFFFFFFFFFF)
 
 
 @dataclass
@@ -397,7 +398,7 @@ def _late_load_project_keep_sets(
     if max_seq_len <= 0:
         raise ValueError("max_seq_len 需要 > 0。")
     truncation_strategy = str(getattr(cfg, "truncation_strategy", "first"))
-    seed = int(getattr(cfg, "random_seed", 42)) + _stable_hash_int(str(project_id))
+    seed = (int(getattr(cfg, "random_seed", 42)) + _stable_hash_int(str(project_id))) & 0x7FFFFFFFFFFFFFFF
     start, end = _truncate_window(len(seq), max_seq_len=max_seq_len, strategy=truncation_strategy, seed=seed)
 
     keep_img_indices: List[int] = []

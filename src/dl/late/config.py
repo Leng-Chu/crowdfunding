@@ -107,17 +107,10 @@ class LateConfig:
     max_epochs: int = 50
     early_stop_patience: int = 8
     early_stop_min_epochs: int = 5
-    metric_for_best: str = "val_loss"  # val_accuracy / val_auc / val_loss
-
-    use_lr_scheduler: bool = True
-    lr_scheduler_patience: int = 2
-    lr_scheduler_factor: float = 0.5
     lr_scheduler_min_lr: float = 1e-5
-    reset_early_stop_on_lr_change: bool = False
 
     max_grad_norm: float = 1.0
 
-    threshold: float = 0.5
     random_seed: int = 22
     save_plots: bool = True
 

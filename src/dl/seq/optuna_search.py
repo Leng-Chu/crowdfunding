@@ -180,9 +180,6 @@ def _suggest_params(trial) -> Dict[str, Any]:
     # 早停相关（不建议调太大；否则 trial 太慢）
     early_stop_patience = trial.suggest_int("early_stop_patience", 5, 15)
 
-    # 影响 best_model 选择的指标（最终 objective 仍按 --objective）
-    metric_for_best = trial.suggest_categorical("metric_for_best", ["val_accuracy", "val_auc", "val_loss"])
-
     return {
         "learning_rate_init": float(lr),
         "alpha": float(wd),
@@ -198,7 +195,6 @@ def _suggest_params(trial) -> Dict[str, Any]:
         "fusion_hidden_dim": int(fusion_hidden_dim),
         "fusion_dropout": float(fusion_dropout),
         "early_stop_patience": int(early_stop_patience),
-        "metric_for_best": str(metric_for_best),
     }
 
 

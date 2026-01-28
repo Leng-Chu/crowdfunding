@@ -10,7 +10,9 @@
 - `experiments/`: 运行输出 (日志/指标/图表)
 - `docs/`: 文档
   - `docs/csv_fields.md`: 数据集列说明
+  - `docs/dl_guidelines.md`: 深度学习模块通用工程规范（seq/late/gate）
   - `docs/dl_mlp.md`: `src/dl/mlp` 模型与复现说明
+  - `docs/dl_gate.md`: `src/dl/gate` 三分支 gated fusion baseline 说明
   - `docs/dl_late.md`: `src/dl/late` 图文晚期融合 baseline 说明
   - `docs/dl_seq.md`: `src/dl/seq` 图文内容块序列建模说明
   - `docs/preprocess_table.md`: `src/preprocess/table` 表格预处理说明
@@ -43,7 +45,7 @@
 - 回答时均需要使用中文，代码中的注释和输出均需要使用中文。
 - 作图时图里不要有中文。
 - 请注意使用UTF-8编码以支持中文字符的正确显示。
-- 工程规范：`src/dl/*` 二分类任务最终报告指标时，阈值必须在验证集上选择（最大化 F1），并用该阈值计算测试集指标（详见 `docs/dl_threshold.md`）。
+- 工程规范（seq/late/gate）：二分类任务训练阶段的 best checkpoint 选择以 `val_auc` 为准（若验证集为单类导致 AUC 不可用则回退为 `val_log_loss`）；best epoch 确定后，在该 checkpoint 的 `val_prob` 上选择阈值（最大化 F1，并列取较小阈值），并用该阈值计算最终测试集指标；详见 `docs/dl_guidelines.md`。
 - 每次修改代码后需要检查 `AGENTS.md` 是否需要更新。
 - 只参考当前要求参考的内容，其余没有提到的项目中的内容默认与当前任务无关。
 - 操作终端默认为Windows Powershell，代码可能会在Windows Powershell和Linux终端上运行。

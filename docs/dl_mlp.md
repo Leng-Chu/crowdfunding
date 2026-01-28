@@ -116,7 +116,7 @@ data/projects/<dataset>/<project_id>/
 - 学习率调度（可选）：`ReduceLROnPlateau`（监控 `val_log_loss`）
 - 早停：`early_stop_patience`，并支持最小训练轮数 `early_stop_min_epochs`
 - 评估指标：`accuracy, precision, recall, f1, roc_auc, log_loss`（实现于 `src/dl/mlp/utils.py`）
-- 阈值（工程规范）：最终报告指标时，阈值由验证集选取（最大化 F1），并将该阈值用于测试集评估；详见 `docs/dl_threshold.md`
+- 阈值（工程规范）：最终报告指标时，阈值由验证集选取（最大化 F1），并将该阈值用于测试集评估；详见 `docs/dl_guidelines.md`
 
 ## 6. 配置文件说明（`src/dl/mlp/config.py`）
 

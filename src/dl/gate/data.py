@@ -104,8 +104,9 @@ def _as_2d_embedding(arr: np.ndarray, name: str) -> np.ndarray:
 
 def _stable_hash_int(text: str) -> int:
     """把字符串稳定地映射为 int（用于可复现的随机截断）。"""
-    digest = hashlib.md5(text.encode("utf-8")).hexdigest()[:8]
-    return int(digest, 16)
+    digest = hashlib.sha256(text.encode("utf-8")).digest()
+    v = int.from_bytes(digest[:8], byteorder="big", signed=False)
+    return int(v & 0x7FFFFFFFFFFFFFFF)
 
 
 @dataclass
@@ -441,7 +442,7 @@ def _build_one_project_features(
     if L <= 0:
         raise ValueError(f"项目 {project_id} content_sequence 为空，无法训练。")
 
-    seed = int(random_seed) + _stable_hash_int(str(project_id))
+    seed = (int(random_seed) + _stable_hash_int(str(project_id))) & 0x7FFFFFFFFFFFFFFF
     start, end = _truncate_window(L, int(max_seq_len), str(truncation_strategy), seed=seed)
 
     img_seq = img_seq[start:end].astype(np.float32, copy=False)

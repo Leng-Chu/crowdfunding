@@ -164,9 +164,6 @@ def _suggest_params(trial, baseline_mode: str) -> Dict[str, Any]:
     # 早停相关（不建议调太大；否则 trial 太慢）
     early_stop_patience = trial.suggest_int("early_stop_patience", 5, 15)
 
-    # 影响 best_model 选择的指标（最终 objective 仍以 test_f1 为准）
-    metric_for_best = trial.suggest_categorical("metric_for_best", ["val_accuracy", "val_auc", "val_loss"])
-
     params: Dict[str, Any] = {
         "learning_rate_init": float(lr),
         "alpha": float(wd),
@@ -183,7 +180,6 @@ def _suggest_params(trial, baseline_mode: str) -> Dict[str, Any]:
         "head_dropout": float(head_dropout),
         "head_hidden_dim": int(head_hidden_dim),
         "early_stop_patience": int(early_stop_patience),
-        "metric_for_best": str(metric_for_best),
     }
 
     # seq_only/key_only 时 meta 不参与，但保留这些字段无副作用；仍便于统一汇总。

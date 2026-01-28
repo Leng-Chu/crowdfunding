@@ -2,10 +2,12 @@
 """
 训练与评估（late）：
 
-- 固定使用 image/text 两个分支（可选 meta）
-- 损失：BCEWithLogitsLoss
-- 优化器：Adam
-- 早停 + 指标：accuracy / precision / recall / f1 / roc_auc / log_loss
+    - 固定使用 image/text 两个分支（可选 meta）
+    - 损失：BCEWithLogitsLoss
+    - 优化器：AdamW
+    - best checkpoint：优先使用 val_auc；若验证集为单类导致 AUC 不可用，则回退为 val_log_loss
+    - 训练阶段逐 epoch 仅记录阈值无关指标：roc_auc / log_loss
+    - 阈值选择：在 best epoch 确定后由 main.py 在验证集上搜索一次（max F1）
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from config import LateConfig
-from utils import compute_binary_metrics
+from utils import compute_threshold_free_metrics
 
 _LABEL_SMOOTHING_EPS = 0.05
 _EMA_DECAY = 0.999
@@ -54,15 +56,6 @@ def _amp_autocast(device: torch.device, enabled: bool):
     if device.type == "cuda":
         return torch.cuda.amp.autocast(enabled=True)
     return contextlib.nullcontext()
-
-
-def _compute_pos_weight(y_train: np.ndarray) -> float:
-    y = np.asarray(y_train).astype(int).reshape(-1)
-    n_pos = int(np.sum(y == 1))
-    n_neg = int(np.sum(y == 0))
-    if n_pos <= 0 or n_neg <= 0:
-        return 1.0
-    return float(n_neg / max(1, n_pos))
 
 
 def _build_adamw(model: nn.Module, lr: float, weight_decay: float) -> torch.optim.Optimizer:
@@ -271,7 +264,7 @@ def train_late_with_early_stopping(
     y_val: np.ndarray,
     cfg: LateConfig,
     logger,
-) -> Tuple[nn.Module, List[Dict[str, Any]], Dict[str, Any]]:
+) -> Tuple[Dict[str, torch.Tensor], int, List[Dict[str, Any]], Dict[str, Any]]:
     """训练 + 早停（late baseline）。"""
     device = _get_device(cfg)
     model = model.to(device)
@@ -297,8 +290,7 @@ def train_late_with_early_stopping(
         shuffle=True,
     )
 
-    pos_weight = _compute_pos_weight(y_train)
-    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([float(pos_weight)], device=device))
+    criterion = nn.BCEWithLogitsLoss()
 
     optimizer = _build_adamw(
         model,
@@ -317,10 +309,21 @@ def train_late_with_early_stopping(
 
     best_state: Dict[str, torch.Tensor] | None = None
     best_epoch = 0
-    best_score = -float("inf")
+    best_val_auc = -float("inf")
+    best_val_log_loss = float("inf")
     bad_epochs = 0
 
     history: List[Dict[str, Any]] = []
+
+    y_val_1d = np.asarray(y_val).astype(int).reshape(-1)
+    n_val_pos = int(np.sum(y_val_1d == 1))
+    n_val_neg = int(np.sum(y_val_1d == 0))
+    metric_for_best = "val_auc" if (n_val_pos > 0 and n_val_neg > 0) else "val_log_loss"
+    tie_breaker = (
+        "val_auc(desc) -> val_log_loss(asc) -> epoch(asc)"
+        if metric_for_best == "val_auc"
+        else "val_log_loss(asc) -> epoch(asc)"
+    )
 
     for epoch in range(1, int(cfg.max_epochs) + 1):
         model.train()
@@ -405,52 +408,56 @@ def train_late_with_early_stopping(
                 batch_size=cfg.batch_size,
             )
 
-        train_metrics = compute_binary_metrics(y_train, train_prob, threshold=cfg.threshold)
-        val_metrics = compute_binary_metrics(y_val, val_prob, threshold=cfg.threshold)
+        train_tf = compute_threshold_free_metrics(y_train, train_prob)
+        val_tf = compute_threshold_free_metrics(y_val, val_prob)
 
         row: Dict[str, Any] = {"epoch": int(epoch)}
-        for k, v in train_metrics.items():
+        for k, v in train_tf.items():
             row[f"train_{k}"] = v
-        for k, v in val_metrics.items():
+        for k, v in val_tf.items():
             row[f"val_{k}"] = v
         row["train_epoch_loss"] = float(train_epoch_loss)
         row["train_grad_norm"] = float(grad_norm_sum / max(1, grad_norm_n))
         history.append(row)
 
-        score = -float(val_metrics["log_loss"])
+        val_log_loss = float(val_tf.get("log_loss", 0.0))
+        val_auc = val_tf.get("roc_auc", None)
 
-        improved = score > best_score
+        improved = False
+        if metric_for_best == "val_auc":
+            cur_auc = -float("inf") if val_auc is None else float(val_auc)
+            if cur_auc > best_val_auc + 1e-12:
+                improved = True
+            elif abs(cur_auc - best_val_auc) <= 1e-12 and val_log_loss < best_val_log_loss - 1e-12:
+                improved = True
+        else:
+            if val_log_loss < best_val_log_loss - 1e-12:
+                improved = True
+
         if improved:
-            best_score = score
             best_epoch = int(epoch)
+            if metric_for_best == "val_auc" and val_auc is not None:
+                best_val_auc = float(val_auc)
+            best_val_log_loss = float(val_log_loss)
             best_state = ema.ema_state_dict(model)
             bad_epochs = 0
         else:
             bad_epochs += 1
 
         lr_now = float(optimizer.param_groups[0]["lr"])
+        val_auc_str = "None" if val_auc is None else f"{float(val_auc):.6f}"
         logger.info(
-            "Epoch %d/%d | lr=%.6g | train_loss=%.4f val_loss=%.4f | train_acc=%.4f val_acc=%.4f | grad_norm=%.4f | best_epoch=%d bad=%d",
+            "Epoch %d/%d | lr=%.6g | train_loss=%.4f val_loss=%.4f | val_auc=%s | grad_norm=%.4f | best_epoch=%d bad=%d",
             int(epoch),
             int(cfg.max_epochs),
             lr_now,
-            float(train_metrics["log_loss"]),
-            float(val_metrics["log_loss"]),
-            float(train_metrics["accuracy"]),
-            float(val_metrics["accuracy"]),
+            float(train_tf.get("log_loss", 0.0)),
+            float(val_log_loss),
+            val_auc_str,
             float(row["train_grad_norm"]),
             int(best_epoch),
             int(bad_epochs),
         )
-
-        if False and scheduler is not None:
-            old_lr = float(optimizer.param_groups[0]["lr"])
-            scheduler.step(float(val_metrics["log_loss"]))
-            new_lr = float(optimizer.param_groups[0]["lr"])
-            if new_lr < old_lr:
-                logger.info("学习率调整：%.6g -> %.6g", old_lr, new_lr)
-                if bool(getattr(cfg, "reset_early_stop_on_lr_change", True)):
-                    bad_epochs = 0
 
         if bad_epochs >= int(cfg.early_stop_patience):
             min_epochs = int(getattr(cfg, "early_stop_min_epochs", 0))
@@ -462,16 +469,25 @@ def train_late_with_early_stopping(
     if best_state is None:
         best_state = ema.ema_state_dict(model)
         best_epoch = len(history) if history else 0
+        if history:
+            best_val_log_loss = float(history[-1].get("val_log_loss", 0.0))
+            if metric_for_best == "val_auc":
+                last_auc = history[-1].get("val_roc_auc", None)
+                if last_auc is not None:
+                    best_val_auc = float(last_auc)
     model.load_state_dict(best_state)
 
     best_val = next((h for h in history if h.get("epoch") == best_epoch), None) if history else None
     best_info = {
         "best_epoch": int(best_epoch),
-        "best_score": float(best_score),
-        "metric_for_best": "val_log_loss",
+        "best_val_auc": None if metric_for_best != "val_auc" else (None if not np.isfinite(best_val_auc) else float(best_val_auc)),
+        "best_val_log_loss": float(best_val_log_loss),
+        "metric_for_best": str(metric_for_best),
+        "tie_breaker": str(tie_breaker),
         "best_val_row": best_val,
     }
-    return model, history, best_info
+    best_state_cpu = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+    return best_state_cpu, int(best_epoch), history, best_info
 
 
 def evaluate_late_split(
@@ -498,5 +514,4 @@ def evaluate_late_split(
         device=device,
         batch_size=cfg.batch_size,
     )
-    metrics = compute_binary_metrics(y, prob, threshold=cfg.threshold)
-    return {"metrics": metrics, "prob": prob}
+    return {"prob": prob}

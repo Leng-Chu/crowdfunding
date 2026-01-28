@@ -228,15 +228,14 @@ X ∈ R^{B×L×d_model}
 训练与评估逻辑：`src/dl/seq/train_eval.py`
 
 - 损失：`BCEWithLogitsLoss`
-- 优化器：Adam
-  - 学习率：`learning_rate_init`
-  - 权重衰减（L2）：`alpha`
-- 学习率调度（可选）：`ReduceLROnPlateau`（监控 `val_log_loss`）
+- 优化器：AdamW（`learning_rate_init`，`alpha` 作为 `weight_decay`）
+- 学习率调度：warmup + cosine（每 step 更新；最小学习率由 `lr_scheduler_min_lr` 控制）
 - 早停：`early_stop_patience`，并支持最小训练轮数 `early_stop_min_epochs`
 - 评估指标：
   - `accuracy, precision, recall, f1, roc_auc, log_loss`
   - 若某个 split 只包含单一类别，`roc_auc` 可能为 `None`，并在指标里记录 `roc_auc_error`
-- 阈值（工程规范）：最终报告指标时，阈值由验证集选取（最大化 F1），并将该阈值用于测试集评估
+- 阈值与 best 口径（工程规范）：训练阶段不做阈值搜索，每个 epoch 仅计算阈值无关指标 `val_auc`（若验证集为单类导致 AUC 不可用则回退为 `val_log_loss`），early stopping 与 best checkpoint 选择均基于该指标；在 best epoch 确定后，用该模型的 `val_prob` 搜索一次 `best_threshold`（最大化 F1），并用该阈值计算最终 train/val/test 的阈值相关指标；详见 `docs/dl_guidelines.md`
+- 评估函数：`evaluate_seq_split` 仅返回 `prob`；二分类指标由调用方显式传入 `best_threshold` 计算（避免隐式阈值）
 
 ---
 
@@ -251,7 +250,7 @@ X ∈ R^{B×L×d_model}
 目录结构：
 
 - `artifacts/`：
-  - `model.pt`：模型权重与关键超参
+  - `model.pt`：best model 权重 + `best_epoch/best_val_auc/best_val_log_loss/best_threshold` + 关键超参
   - `preprocessor.pkl`：表格预处理器（仅 `use_meta=True`）
   - `feature_names.txt`：特征名（仅 `use_meta=True`）
 - `reports/`：
@@ -294,7 +293,7 @@ X ∈ R^{B×L×d_model}
 
 - 安装依赖：
   - `pip install optuna`
-- 运行示例（默认最大化 `val_f1`）：
+- 运行示例（默认最大化 `test_f1`）：
   - `conda run -n crowdfunding python src/dl/seq/optuna_search.py --device cuda:0 --n-trials 30`
 - 切换优化目标（可选）：
   - `--objective val_auc` 或 `--objective val_accuracy`（也支持 `test_*`，但不建议用测试集做调参目标）

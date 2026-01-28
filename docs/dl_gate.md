@@ -115,10 +115,12 @@ Head：
 ## 5. 训练与评估（对齐 seq）
 
 - 损失：`BCEWithLogitsLoss`
-- 优化器：Adam（`learning_rate_init`，`alpha` 作为 `weight_decay`）
+- 优化器：AdamW（`learning_rate_init`，`alpha` 作为 `weight_decay`）
+- 学习率调度：warmup + cosine（每 step 更新；最小学习率由 `lr_scheduler_min_lr` 控制）
 - 早停：`early_stop_patience`（支持 `early_stop_min_epochs`）
 - 指标：`accuracy, precision, recall, f1, roc_auc, log_loss`
-- 阈值：验证集选取（最大化 F1），并用该阈值计算测试集指标（写入 `metrics.json` / `result.csv`）
+- 阈值与 best 口径：训练阶段不做阈值搜索，每个 epoch 仅计算阈值无关指标 `val_auc`（若验证集为单类导致 AUC 不可用则回退为 `val_log_loss`），early stopping 与 best checkpoint 选择均基于该指标；在 best epoch 确定后，用该模型的 `val_prob` 搜索一次 `best_threshold`（最大化 F1），并用该阈值计算最终 train/val/test 的阈值相关指标；详见 `docs/dl_guidelines.md`
+- 评估函数：`evaluate_gate_split` 仅返回 `prob`；二分类指标由调用方显式传入 `best_threshold` 计算（避免隐式阈值）
 
 ---
 
@@ -131,7 +133,7 @@ Head：
 目录结构：
 
 - `artifacts/`
-  - `model.pt`
+  - `model.pt`（含 `best_epoch/best_val_auc/best_val_log_loss/best_threshold`）
   - `preprocessor.pkl` / `feature_names.txt`（除 `seq_only/key_only` 外均会生成）
 - `reports/`
   - `config.json`

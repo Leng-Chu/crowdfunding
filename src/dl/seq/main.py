@@ -270,7 +270,7 @@ def main() -> int:
         reports_dir / "config.json",
     )
 
-    best_model, history, best_info = train_seq_with_early_stopping(
+    best_state, best_epoch, history, best_info = train_seq_with_early_stopping(
         model,
         use_meta=bool(cfg.use_meta),
         X_meta_train=prepared.X_meta_train,
@@ -292,6 +292,8 @@ def main() -> int:
         cfg=cfg,
         logger=logger,
     )
+    model.load_state_dict(best_state)
+    best_model = model
 
     try:
         import pandas as pd
@@ -340,26 +342,32 @@ def main() -> int:
         cfg=cfg,
     )
 
-    # 用验证集为本次模型选择阈值（最大化 F1），并用该阈值计算 train/val/test 指标。
-    best_threshold = find_best_f1_threshold(prepared.y_val, val_out["prob"])
-    train_out["metrics"] = compute_binary_metrics(prepared.y_train, train_out["prob"], threshold=best_threshold)
-    val_out["metrics"] = compute_binary_metrics(prepared.y_val, val_out["prob"], threshold=best_threshold)
-    test_out["metrics"] = compute_binary_metrics(prepared.y_test, test_out["prob"], threshold=best_threshold)
-    logger.info("阈值选择：best_threshold=%.6f（val_f1=%.6f）", float(best_threshold), float(val_out["metrics"]["f1"]))
+    # 在 best_epoch 对应的模型上，使用验证集预测概率选择阈值（最大化 F1），并将该阈值用于最终评估。
+    best_threshold, _best_val_f1 = find_best_f1_threshold(prepared.y_val, val_out["prob"])
+    train_metrics = compute_binary_metrics(prepared.y_train, train_out["prob"], threshold=float(best_threshold))
+    val_metrics = compute_binary_metrics(prepared.y_val, val_out["prob"], threshold=float(best_threshold))
+    test_metrics = compute_binary_metrics(prepared.y_test, test_out["prob"], threshold=float(best_threshold))
+    logger.info("阈值选择：best_threshold=%.6f（val_f1=%.6f）", float(best_threshold), float(val_metrics["f1"]))
 
     results = {
         "run_id": run_id,
         "best_info": best_info,
         "selected_threshold": float(best_threshold),
-        "train": train_out["metrics"],
-        "val": val_out["metrics"],
-        "test": test_out["metrics"],
+        "train": train_metrics,
+        "val": val_metrics,
+        "test": test_metrics,
     }
     save_json(results, reports_dir / "metrics.json")
 
     torch.save(
         {
-            "state_dict": best_model.state_dict(),
+            "state_dict": best_state,
+            "best_epoch": int(best_epoch),
+            "best_val_auc": best_info.get("best_val_auc", None),
+            "best_val_log_loss": best_info.get("best_val_log_loss", None),
+            "metric_for_best": best_info.get("metric_for_best", None),
+            "tie_breaker": best_info.get("tie_breaker", None),
+            "best_threshold": float(best_threshold),
             "baseline_mode": baseline_mode,
             "use_meta": bool(cfg.use_meta),
             "meta_dim": int(prepared.meta_dim),
@@ -407,7 +415,6 @@ def main() -> int:
         plot_roc(prepared.y_test, test_out["prob"], plots_dir / "roc_test.png")
 
     try:
-        test_metrics = dict(test_out.get("metrics", {}) or {})
         _save_single_row_csv(
             run_dir / "result.csv",
             {
@@ -427,7 +434,7 @@ def main() -> int:
         logger.warning("保存单行结果 CSV 失败：%s", e)
 
     logger.info("完成：产物已保存到 %s", str(run_dir))
-    logger.info("测试集指标：%s", test_out["metrics"])
+    logger.info("测试集指标：%s", test_metrics)
 
     return 0
 

@@ -168,12 +168,12 @@ data/projects/<dataset>/<project_id>/
 训练入口见 `src/dl/late/main.py`，训练与评估逻辑在 `src/dl/late/train_eval.py`。
 
 - 损失：`BCEWithLogitsLoss`
-- 优化器：Adam
-  - 学习率：`learning_rate_init`
-  - 权重衰减（L2）：`alpha`
+- 优化器：AdamW（`learning_rate_init`，`alpha` 作为 `weight_decay`）
+- 学习率调度：warmup + cosine（每 step 更新；最小学习率由 `lr_scheduler_min_lr` 控制）
 - 早停：`early_stop_patience`，并支持最小训练轮数 `early_stop_min_epochs`
 - 评估指标：`accuracy, precision, recall, f1, roc_auc, log_loss`
-- 阈值（工程规范）：最终报告指标时，阈值由验证集选取（最大化 F1），并将该阈值用于测试集评估；详见 `docs/dl_threshold.md`
+- 阈值与 best 口径（工程规范）：训练阶段不做阈值搜索，每个 epoch 仅计算阈值无关指标 `val_auc`（若验证集为单类导致 AUC 不可用则回退为 `val_log_loss`），early stopping 与 best checkpoint 选择均基于该指标；在 best epoch 确定后，用该模型的 `val_prob` 搜索一次 `best_threshold`（最大化 F1），并用该阈值计算最终 train/val/test 的阈值相关指标；详见 `docs/dl_guidelines.md`
+- 评估函数：`evaluate_late_split` 仅返回 `prob`；二分类指标由调用方显式传入 `best_threshold` 计算（避免隐式阈值）
 
 注意：作图时图里不要有中文，因此图标题/坐标轴保持英文（实现见 `src/dl/late/utils.py`）。
 
@@ -210,7 +210,7 @@ data/projects/<dataset>/<project_id>/
 
 默认写入 `experiments/late/<mode>/<run_id>/`：
 
-- `artifacts/`：模型权重（`model.pt`）、表格预处理器（`preprocessor.pkl`）等可复现产物
+- `artifacts/`：best model 权重（`model.pt`，含 `best_epoch/best_val_auc/best_val_log_loss/best_threshold`）、表格预处理器（`preprocessor.pkl`）等可复现产物
 - `reports/`：`config.json`、`metrics.json`、`history.csv`、`splits.csv`、预测结果 CSV 等
 - `plots/`：训练曲线与 ROC 图（若 `save_plots=True`）
 
