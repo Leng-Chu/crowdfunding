@@ -242,6 +242,9 @@ class LateFusionBinaryClassifier(nn.Module):
         # 3.1 Modality Projection
         self.img_proj = nn.Linear(int(image_embedding_dim), int(self.d_model))
         self.txt_proj = nn.Linear(int(text_embedding_dim), int(self.d_model))
+        # 每个 token 的数值属性（文本字数 / 图片面积）投影到 d_model
+        self.img_attr_proj = nn.Linear(1, int(self.d_model))
+        self.txt_attr_proj = nn.Linear(1, int(self.d_model))
         self.img_ln = nn.LayerNorm(int(self.d_model))
         self.txt_ln = nn.LayerNorm(int(self.d_model))
 
@@ -298,10 +301,16 @@ class LateFusionBinaryClassifier(nn.Module):
     def _init_weights(self) -> None:
         nn.init.xavier_uniform_(self.img_proj.weight)
         nn.init.xavier_uniform_(self.txt_proj.weight)
+        nn.init.xavier_uniform_(self.img_attr_proj.weight)
+        nn.init.xavier_uniform_(self.txt_attr_proj.weight)
         if self.img_proj.bias is not None:
             nn.init.zeros_(self.img_proj.bias)
         if self.txt_proj.bias is not None:
             nn.init.zeros_(self.txt_proj.bias)
+        if self.img_attr_proj.bias is not None:
+            nn.init.zeros_(self.img_attr_proj.bias)
+        if self.txt_attr_proj.bias is not None:
+            nn.init.zeros_(self.txt_attr_proj.bias)
 
         nn.init.xavier_uniform_(self.fusion_fc.weight)
         if self.fusion_fc.bias is not None:
@@ -315,24 +324,37 @@ class LateFusionBinaryClassifier(nn.Module):
         x_meta: torch.Tensor | None = None,
         x_image: torch.Tensor | None = None,
         len_image: torch.Tensor | None = None,
+        attr_image: torch.Tensor | None = None,
         x_text: torch.Tensor | None = None,
         len_text: torch.Tensor | None = None,
+        attr_text: torch.Tensor | None = None,
     ) -> torch.Tensor:
         if x_image is None or x_text is None:
             raise ValueError("x_image/x_text 不能为空。")
         if len_image is None or len_text is None:
             raise ValueError("len_image/len_text 不能为空。")
+        if attr_image is None or attr_text is None:
+            raise ValueError("attr_image/attr_text 不能为空。")
 
         if x_image.ndim != 3:
             raise ValueError(f"x_image 需要为 3 维 (B, S, D)，但得到 {tuple(x_image.shape)}")
         if x_text.ndim != 3:
             raise ValueError(f"x_text 需要为 3 维 (B, S, D)，但得到 {tuple(x_text.shape)}")
+        if attr_image.ndim != 2:
+            raise ValueError(f"attr_image 需要为 2 维 (B, S)，但得到 {tuple(attr_image.shape)}")
+        if attr_text.ndim != 2:
+            raise ValueError(f"attr_text 需要为 2 维 (B, S)，但得到 {tuple(attr_text.shape)}")
 
         img_mask = _lengths_to_mask(len_image, max_len=int(x_image.shape[1]))
         txt_mask = _lengths_to_mask(len_text, max_len=int(x_text.shape[1]))
 
-        Img = self.img_ln(torch.relu(self.img_proj(x_image)))
-        Txt = self.txt_ln(torch.relu(self.txt_proj(x_text)))
+        img_base = torch.relu(self.img_proj(x_image))
+        img_attr = self.img_attr_proj(attr_image.to(dtype=img_base.dtype).unsqueeze(-1))
+        Img = self.img_ln(img_base + img_attr)
+
+        txt_base = torch.relu(self.txt_proj(x_text))
+        txt_attr = self.txt_attr_proj(attr_text.to(dtype=txt_base.dtype).unsqueeze(-1))
+        Txt = self.txt_ln(txt_base + txt_attr)
 
         h_img = self.img_encoder(Img, img_mask)
         h_txt = self.txt_encoder(Txt, txt_mask)

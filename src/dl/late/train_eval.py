@@ -196,8 +196,10 @@ def _positive_proba_late(
     X_meta: np.ndarray | None,
     X_image: np.ndarray,
     len_image: np.ndarray,
+    attr_image: np.ndarray,
     X_text: np.ndarray,
     len_text: np.ndarray,
+    attr_text: np.ndarray,
     device: torch.device,
     batch_size: int,
 ) -> np.ndarray:
@@ -213,8 +215,10 @@ def _positive_proba_late(
 
     tensors.append(torch.from_numpy(np.asarray(X_image, dtype=np.float32)))
     tensors.append(torch.from_numpy(np.asarray(len_image, dtype=np.int64)))
+    tensors.append(torch.from_numpy(np.asarray(attr_image, dtype=np.float32)))
     tensors.append(torch.from_numpy(np.asarray(X_text, dtype=np.float32)))
     tensors.append(torch.from_numpy(np.asarray(len_text, dtype=np.int64)))
+    tensors.append(torch.from_numpy(np.asarray(attr_text, dtype=np.float32)))
 
     loader = DataLoader(TensorDataset(*tensors), batch_size=max(1, int(batch_size)), shuffle=False)
 
@@ -228,16 +232,20 @@ def _positive_proba_late(
 
         xb_img = batch[idx].to(device)
         lb_img = batch[idx + 1].to(device)
-        xb_txt = batch[idx + 2].to(device)
-        lb_txt = batch[idx + 3].to(device)
+        ab_img = batch[idx + 2].to(device)
+        xb_txt = batch[idx + 3].to(device)
+        lb_txt = batch[idx + 4].to(device)
+        ab_txt = batch[idx + 5].to(device)
 
         with _amp_autocast(device, enabled=bool(use_amp)):
             logits = model(
                 x_meta=xb_meta,
                 x_image=xb_img,
                 len_image=lb_img,
+                attr_image=ab_img,
                 x_text=xb_txt,
                 len_text=lb_txt,
+                attr_text=ab_txt,
             )
         prob = torch.sigmoid(logits.float()).detach().cpu().numpy()
         probs.append(prob.astype(np.float64, copy=False))
@@ -253,14 +261,18 @@ def train_late_with_early_stopping(
     X_meta_train: np.ndarray | None,
     X_image_train: np.ndarray,
     len_image_train: np.ndarray,
+    attr_image_train: np.ndarray,
     X_text_train: np.ndarray,
     len_text_train: np.ndarray,
+    attr_text_train: np.ndarray,
     y_train: np.ndarray,
     X_meta_val: np.ndarray | None,
     X_image_val: np.ndarray,
     len_image_val: np.ndarray,
+    attr_image_val: np.ndarray,
     X_text_val: np.ndarray,
     len_text_val: np.ndarray,
+    attr_text_val: np.ndarray,
     y_val: np.ndarray,
     cfg: LateConfig,
     logger,
@@ -280,8 +292,10 @@ def train_late_with_early_stopping(
 
     train_tensors.append(torch.from_numpy(np.asarray(X_image_train, dtype=np.float32)))
     train_tensors.append(torch.from_numpy(np.asarray(len_image_train, dtype=np.int64)))
+    train_tensors.append(torch.from_numpy(np.asarray(attr_image_train, dtype=np.float32)))
     train_tensors.append(torch.from_numpy(np.asarray(X_text_train, dtype=np.float32)))
     train_tensors.append(torch.from_numpy(np.asarray(len_text_train, dtype=np.int64)))
+    train_tensors.append(torch.from_numpy(np.asarray(attr_text_train, dtype=np.float32)))
     train_tensors.append(y_train_t)
 
     train_loader = DataLoader(
@@ -341,9 +355,11 @@ def train_late_with_early_stopping(
 
             xb_img = batch[idx].to(device)
             lb_img = batch[idx + 1].to(device)
-            xb_txt = batch[idx + 2].to(device)
-            lb_txt = batch[idx + 3].to(device)
-            idx += 4
+            ab_img = batch[idx + 2].to(device)
+            xb_txt = batch[idx + 3].to(device)
+            lb_txt = batch[idx + 4].to(device)
+            ab_txt = batch[idx + 5].to(device)
+            idx += 6
 
             yb = batch[idx].to(device)
 
@@ -354,8 +370,10 @@ def train_late_with_early_stopping(
                     x_meta=xb_meta,
                     x_image=xb_img,
                     len_image=lb_img,
+                    attr_image=ab_img,
                     x_text=xb_txt,
                     len_text=lb_txt,
+                    attr_text=ab_txt,
                 )
                 loss = criterion(logits, yb)
 
@@ -391,8 +409,10 @@ def train_late_with_early_stopping(
                 X_meta=X_meta_train,
                 X_image=X_image_train,
                 len_image=len_image_train,
+                attr_image=attr_image_train,
                 X_text=X_text_train,
                 len_text=len_text_train,
+                attr_text=attr_text_train,
                 device=device,
                 batch_size=cfg.batch_size,
             )
@@ -402,8 +422,10 @@ def train_late_with_early_stopping(
                 X_meta=X_meta_val,
                 X_image=X_image_val,
                 len_image=len_image_val,
+                attr_image=attr_image_val,
                 X_text=X_text_val,
                 len_text=len_text_val,
+                attr_text=attr_text_val,
                 device=device,
                 batch_size=cfg.batch_size,
             )
@@ -496,8 +518,10 @@ def evaluate_late_split(
     X_meta: np.ndarray | None,
     X_image: np.ndarray,
     len_image: np.ndarray,
+    attr_image: np.ndarray,
     X_text: np.ndarray,
     len_text: np.ndarray,
+    attr_text: np.ndarray,
     y: np.ndarray,
     cfg: LateConfig,
 ) -> Dict[str, Any]:
@@ -509,8 +533,10 @@ def evaluate_late_split(
         X_meta=X_meta,
         X_image=X_image,
         len_image=len_image,
+        attr_image=attr_image,
         X_text=X_text,
         len_text=len_text,
+        attr_text=attr_text,
         device=device,
         batch_size=cfg.batch_size,
     )

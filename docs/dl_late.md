@@ -6,7 +6,9 @@
 - **标签**：来自表格数据 `state` 字段（`successful` 视为正类，其余为负类）。
 - **输入**：
   - `image`：项目图片向量集合（embedding set，不建模顺序），其中 **封面图向量** 会拼接在集合最前面。
+  - `attr_image`：与 `image` 中每个 token 对齐的数值属性（1 个标量），默认取 `log(max(1, area))`；padding 为 0。
   - `text`：项目文本向量集合（embedding set，不建模顺序），其中 **title/blurb 向量** 会拼接在集合最前面。
+  - `attr_text`：与 `text` 中每个 token 对齐的数值属性（1 个标量），默认取 `log(max(1, length))`；padding 为 0。
   - `meta`（可选）：表格元数据特征（类别 + 数值），开关为 `use_meta`。
 - **输出**：二分类 **logits**（训练使用 `BCEWithLogitsLoss`），推理时对 logits 施加 `sigmoid` 得到正类概率。
 
@@ -45,6 +47,11 @@ data/projects/<dataset>/<project_id>/
 ```
 
 其中 `content.json` 必须包含字段 `content_sequence`，它是按页面呈现顺序排列的列表；每个元素包含 `type ∈ {"text", "image"}`。
+
+另外，本 baseline 会从 `content.json` 中提取 token 属性（attr）：
+- `cover_image.width/height` → `area`
+- `content_sequence[].width/height`（image）→ `area`
+- `title/blurb`（或其 `content_length`）与 `content_sequence[].content_length`（text）→ `length`
 
 ### 2.3 向量文件命名（与 `src/preprocess/embedding` 对齐）
 
@@ -108,10 +115,17 @@ data/projects/<dataset>/<project_id>/
 
 注意：`cover_image/title_blurb` **不参与** `content_sequence` 的统一序列截断，它们总是被保留。
 
+同时构造并拼接 token 属性（attr），并保持与 token 一一对齐：
+
+- `attr_image = concat([attr_cover_image, attr_image_story_keep])`
+- `attr_text = concat([attr_title_blurb, attr_text_story_keep])`
+
 对 batch 做 padding：
 
 - `img_emb ∈ [B, N_img_keep_max, D_img]`，并保存 `len_image`（或等价 mask）
+- `attr_image ∈ [B, N_img_keep_max]`，padding 为 0
 - `txt_emb ∈ [B, N_txt_keep_max, D_txt]`，并保存 `len_text`（或等价 mask）
+- `attr_text ∈ [B, N_txt_keep_max]`，padding 为 0
 
 ## 5. 模型结构：分别集合编码 + 晚期融合
 
@@ -121,10 +135,13 @@ data/projects/<dataset>/<project_id>/
 
 - `img_proj: Linear(D_img → d_model) + ReLU`
 - `txt_proj: Linear(D_txt → d_model) + ReLU`
+- `img_attr_proj: Linear(1 → d_model)`
+- `txt_attr_proj: Linear(1 → d_model)`
+- `img_ln/txt_ln: LayerNorm(d_model)`
 
 得到：
-- `Img ∈ [B, N_img, d_model]`
-- `Txt ∈ [B, N_txt, d_model]`
+- `Img = LayerNorm(ReLU(img_proj(x_image)) + img_attr_proj(attr_image.unsqueeze(-1))) ∈ [B, N_img, d_model]`
+- `Txt = LayerNorm(ReLU(txt_proj(x_text)) + txt_attr_proj(attr_text.unsqueeze(-1))) ∈ [B, N_txt, d_model]`
 
 ### 5.2 模态内集合编码（不使用顺序）
 

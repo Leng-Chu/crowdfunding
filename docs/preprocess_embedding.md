@@ -51,6 +51,7 @@ data/projects/<dataset>/<project_id>/
 
 - 文本侧：`title_blurb_{text_embedding_type}.npy` **必须存在**；`text_{text_embedding_type}.npy` 可缺失。
 - 图像侧：`cover_image_{image_embedding_type}.npy` **必须存在**；`image_{image_embedding_type}.npy` 可缺失。
+- 另外：`src/dl/seq` 与 `src/dl/late` 会读取 `content.json` 中的 `content_length`（文本字数）与 `width/height`（图片尺寸）并构造 token 属性（attr，通常取 `log(max(1, ·))`）。
 
 ## 3. 向量化入口脚本
 
@@ -77,8 +78,8 @@ data/projects/<dataset>/<project_id>/
 
 - `data/projects/<dataset>/<project_id>/content.json`
   - 需要包含 `content_sequence`，其中每个 item 形如：
-    - 文本：`{"type": "text", "content": "..."}`
-    - 图片：`{"type": "image", "filename": "photo/xxx.jpg"}`
+    - 文本：`{"type": "text", "content": "...", "content_length": 123}`（`content_length` 用于训练侧 token attr）
+    - 图片：`{"type": "image", "filename": "photo/xxx.jpg", "width": 680, "height": 453}`（`width/height` 用于训练侧 token attr）
 
 输出（写入项目目录）：
 
