@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-模型定义（gate / Chapter 2）：三分支 + Two-stage gated fusion。
+模型定义（gate / Chapter 2）：三分支 + Two-stage fusion（Stage2 使用 FiLM/AdaLN 条件调制）。
 """
 
 from __future__ import annotations
@@ -458,12 +458,13 @@ class GateBinaryClassifier(nn.Module):
         self.stage1_p_fc = nn.Linear(int(3 * d_model), int(d_model))  # concat(v_key, v_meta2, v_key*v_meta2)
         self.stage1_p_ln = nn.LayerNorm(int(d_model))
 
-        # Stage2
-        self.stage2_gate_fc = nn.Linear(int(2 * d_model), int(d_model))  # g2
+        # Stage2（FiLM/AdaLN）：由 (p, h_seq) 产生 (gamma, beta)，对 LN(h_seq) 做条件调制
+        self.stage2_gate_fc = nn.Linear(int(2 * d_model), int(2 * d_model))  # (gamma, beta)
         # gate 输入归一化（仅用于门控计算，不复用其它 LN）
         self.ln_gate2_p = nn.LayerNorm(int(d_model))
         self.ln_gate2_seq = nn.LayerNorm(int(d_model))
-        self.stage2_ln = nn.LayerNorm(int(d_model))
+        # AdaLN 的 base LN 不需要额外仿射（gamma/beta 由条件生成）
+        self.stage2_ln = nn.LayerNorm(int(d_model), elementwise_affine=False)
 
         # baselines
         self.late_fc = nn.Linear(int(3 * d_model), int(d_model))
@@ -608,12 +609,24 @@ class GateBinaryClassifier(nn.Module):
         return p
 
     def _stage2_fuse(self, h_seq: torch.Tensor, p: torch.Tensor) -> torch.Tensor:
-        a = self.ln_gate2_p(p)
-        b = self.ln_gate2_seq(h_seq)
-        g2 = torch.sigmoid(0.5 * self.stage2_gate_fc(torch.cat([a, b], dim=1)))
-        self._debug_update_gate("g2", g2)
+        # AdaLN: h_final = (1 + gamma) * LN(h_seq) + beta
+        # 条件来源：p（先做 dropout 以对齐旧 Stage2 的正则化位置）
         p2 = self.fusion_drop(p)
-        h_final = self.stage2_ln(h_seq + g2 * p2)
+        a = self.ln_gate2_p(p2)
+        b = self.ln_gate2_seq(h_seq)
+
+        film = self.stage2_gate_fc(torch.cat([a, b], dim=1))  # [B, 2d]
+        gamma_raw, beta_raw = film.chunk(2, dim=1)
+
+        # debug：沿用 g2 名称，记录一个可比的 [0,1] 代理量（便于观察是否过早饱和）
+        self._debug_update_gate("g2", torch.sigmoid(0.5 * gamma_raw))
+
+        # 温和缩放，避免调制参数过大导致不稳定（不引入新超参）
+        gamma = torch.tanh(0.5 * gamma_raw)  # [-1,1]，对应缩放系数约为 [0,2]
+        beta = torch.tanh(0.5 * beta_raw)  # [-1,1]
+
+        h_norm = self.stage2_ln(h_seq)
+        h_final = (1.0 + gamma) * h_norm + beta
         return h_final
 
     def forward(

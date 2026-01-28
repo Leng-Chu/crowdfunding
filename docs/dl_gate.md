@@ -1,4 +1,4 @@
-# gate 三分支 + Two-stage gated fusion（`src/dl/gate`）说明
+# gate 三分支 + Two-stage fusion（Stage2=FiLM/AdaLN）（`src/dl/gate`）说明
 
 ## 1. 任务与输入输出
 
@@ -85,10 +85,10 @@ data/projects/<dataset>/<project_id>/
 2) **FirstImpressionEncoder**：title/blurb 与 cover 的 gated 交互 + concat+proj，输出 `v_key`
 3) **ContentSeqEncoder（trm_pos）**：TokenEncoder + sinusoidal PE + TransformerEncoder + masked mean pooling，输出 `h_seq`
 
-融合（Two-stage gated fusion）：
+融合（Two-stage fusion）：
 
 - Stage1：`v_key` 与 `v_meta` 得先验 `p`
-- Stage2：用 `p` 门控残差调制 `h_seq` 得 `h_final`
+- Stage2：用 `p` 生成 FiLM 参数，对 `h_seq` 做 AdaLN 条件调制得到 `h_final`
 
 Head：
 
