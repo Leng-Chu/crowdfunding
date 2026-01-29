@@ -349,11 +349,26 @@ def main() -> int:
     # 保存可复现产物（与 docs/dl_guidelines.md 对齐）
     import torch
 
-    delta_scale_val = None
+    delta_scale_raw_val = None
+    delta_scale_eff_val = None
+    gate_bias_val = None
+    gate_scale_val = None
     try:
-        delta_scale_val = float(getattr(best_model, "delta_scale").detach().cpu().item())
+        if hasattr(best_model, "delta_scale_raw"):
+            delta_scale_raw_val = float(getattr(best_model, "delta_scale_raw").detach().cpu().item())
+        if hasattr(best_model, "effective_delta_scale"):
+            delta_scale_eff_val = float(best_model.effective_delta_scale().detach().cpu().item())
+        if hasattr(best_model, "gate_bias") and getattr(best_model, "gate_bias") is not None:
+            gate_bias_val = float(getattr(best_model, "gate_bias").detach().cpu().item())
+        if hasattr(best_model, "gate_scale_raw") and getattr(best_model, "gate_scale_raw") is not None:
+            import torch.nn.functional as F
+
+            gate_scale_val = float(F.softplus(getattr(best_model, "gate_scale_raw")).detach().cpu().item())
     except Exception:
-        delta_scale_val = None
+        delta_scale_raw_val = None
+        delta_scale_eff_val = None
+        gate_bias_val = None
+        gate_scale_val = None
 
     torch.save(
         {
@@ -384,7 +399,16 @@ def main() -> int:
             "prior_hidden_dim": int(getattr(cfg, "prior_hidden_dim", 0)),
             "prior_dropout": float(getattr(cfg, "prior_dropout", 0.0)),
             "delta_scale_init": float(getattr(cfg, "delta_scale_init", 0.0)),
-            "delta_scale_value": delta_scale_val,
+            "delta_scale_max": float(getattr(cfg, "delta_scale_max", 0.0)),
+            "residual_logit_max": float(getattr(cfg, "residual_logit_max", 0.0)),
+            "residual_gate_mode": str(getattr(cfg, "residual_gate_mode", "")),
+            "residual_gate_scale_init": float(getattr(cfg, "residual_gate_scale_init", 0.0)),
+            "residual_gate_bias_init": float(getattr(cfg, "residual_gate_bias_init", 0.0)),
+            "residual_detach_base_in_gate": bool(getattr(cfg, "residual_detach_base_in_gate", True)),
+            "delta_scale_raw_value": delta_scale_raw_val,
+            "delta_scale_value": delta_scale_eff_val,
+            "gate_bias_value": gate_bias_val,
+            "gate_scale_value": gate_scale_val,
             "missing_strategy": str(getattr(cfg, "missing_strategy", "")),
             "truncation_strategy": str(getattr(cfg, "truncation_strategy", "")),
         },

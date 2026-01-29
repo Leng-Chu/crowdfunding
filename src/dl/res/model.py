@@ -13,11 +13,14 @@
 2) baseline_mode="res"
    z_base = MLP_base( concat( LN(h_seq), LN(meta_proj(v_meta)) ) )
    z_res  = MLP_prior( concat( LN(key_proj(v_key)), LN(meta_proj(v_meta)), LN(key_proj(v_key)⊙meta_proj(v_meta)) ) )
-   logit  = z_base + delta_scale * z_res
+   logit  = z_base + delta
 
 其中：
 - meta_proj/key_proj：把向量投影到与 h_seq 相同维度 d（若已为 d 则 identity）
-- delta_scale：可学习标量，初始化为 0（或 1e-3）
+- delta：残差修正项。为缓解“残差拟合过强/过拟合”，默认使用有界残差：
+    - z_res 使用 tanh 软裁剪（限制到 [-residual_logit_max, residual_logit_max]）
+    - delta_scale 使用 tanh 参数化（限制到 [-delta_scale_max, delta_scale_max]）
+    - 可选：基于 |z_base| 的“置信门控”（base 越自信，残差越小）
 - 关键：MLP_base 的结构必须与 src/dl/seq/model.py 的融合头一致（LN -> Linear -> ReLU -> Dropout -> Linear(1)）。
 """
 
@@ -28,6 +31,7 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from config import ResConfig
 
@@ -36,6 +40,34 @@ def _init_linear(m: nn.Linear) -> None:
     nn.init.xavier_uniform_(m.weight)
     if m.bias is not None:
         nn.init.zeros_(m.bias)
+
+
+def _softplus_inverse(x: float) -> float:
+    """softplus^{-1}(x)，用于初始化 gate_scale_raw。"""
+    x = float(x)
+    if not (x > 0.0):
+        # softplus(-20) 约等于 2e-9，足够接近 0
+        return -20.0
+    return float(math.log(math.expm1(x)))
+
+
+def _atanh(x: float) -> float:
+    """数值稳定的 atanh（输入会被裁剪到 (-1, 1)）。"""
+    x = float(x)
+    eps = 1e-6
+    if x >= 1.0 - eps:
+        x = 1.0 - eps
+    elif x <= -1.0 + eps:
+        x = -1.0 + eps
+    return 0.5 * math.log((1.0 + x) / (1.0 - x))
+
+
+def _tanh_clip(x: torch.Tensor, max_abs: float) -> torch.Tensor:
+    """tanh 软裁剪到 [-max_abs, max_abs]；max_abs<=0 时不裁剪。"""
+    m = float(max_abs)
+    if not (m > 0.0):
+        return x
+    return float(m) * torch.tanh(x / float(m))
 
 
 class TokenEncoder(nn.Module):
@@ -384,6 +416,12 @@ class ResBinaryClassifier(nn.Module):
         prior_dropout: float,
         prior_activation: str,
         delta_scale_init: float = 0.0,
+        delta_scale_max: float = 0.5,
+        residual_logit_max: float = 2.0,
+        residual_gate_mode: str = "conf",
+        residual_gate_scale_init: float = 1.0,
+        residual_gate_bias_init: float = 0.0,
+        residual_detach_base_in_gate: bool = True,
     ) -> None:
         super().__init__()
 
@@ -456,15 +494,83 @@ class ResBinaryClassifier(nn.Module):
         )
         self.prior_hidden_dim = int(prior_hidden_dim)
 
-        self.delta_scale = nn.Parameter(torch.tensor(float(delta_scale_init), dtype=torch.float32))
+        self.delta_scale_max = float(delta_scale_max)
+        if self.delta_scale_max < 0.0:
+            raise ValueError("delta_scale_max 需要 >= 0")
+
+        # 用 tanh 参数化，使有效 delta_scale ∈ [-delta_scale_max, delta_scale_max]
+        if self.delta_scale_max > 0.0:
+            ratio = float(delta_scale_init) / float(self.delta_scale_max)
+            ratio = float(max(min(ratio, 0.999), -0.999))
+            delta_scale_raw_init = float(_atanh(ratio))
+        else:
+            delta_scale_raw_init = 0.0
+        self.delta_scale_raw = nn.Parameter(torch.tensor(float(delta_scale_raw_init), dtype=torch.float32))
+
+        self.residual_logit_max = float(residual_logit_max)
+        self.residual_gate_mode = str(residual_gate_mode or "").strip().lower()
+        if self.residual_gate_mode not in {"none", "conf"}:
+            raise ValueError(f"不支持的 residual_gate_mode={self.residual_gate_mode!r}，可选：none/conf")
+        self.residual_detach_base_in_gate = bool(residual_detach_base_in_gate)
+
+        self.gate_bias: nn.Parameter | None = None
+        self.gate_scale_raw: nn.Parameter | None = None
+        if self.residual_gate_mode == "conf":
+            self.gate_bias = nn.Parameter(torch.tensor(float(residual_gate_bias_init), dtype=torch.float32))
+            self.gate_scale_raw = nn.Parameter(
+                torch.tensor(_softplus_inverse(float(residual_gate_scale_init)), dtype=torch.float32)
+            )
 
         # 冻结未使用分支，避免 AdamW weight_decay 在“无梯度参数”上产生漂移。
         if self.baseline_mode == "mlp":
             self.mlp_base.requires_grad_(False)
             self.mlp_prior.requires_grad_(False)
-            self.delta_scale.requires_grad_(False)
+            self.delta_scale_raw.requires_grad_(False)
+            if self.gate_bias is not None:
+                self.gate_bias.requires_grad_(False)
+            if self.gate_scale_raw is not None:
+                self.gate_scale_raw.requires_grad_(False)
         else:
             self.head.requires_grad_(False)
+
+    def effective_delta_scale(self) -> torch.Tensor:
+        """返回当前有效 delta_scale（有界，标量 Tensor）。"""
+        if not (self.delta_scale_max > 0.0):
+            return torch.zeros((), device=self.delta_scale_raw.device, dtype=self.delta_scale_raw.dtype)
+        return float(self.delta_scale_max) * torch.tanh(self.delta_scale_raw)
+
+    def _confidence_gate(self, z_base: torch.Tensor) -> torch.Tensor:
+        if self.residual_gate_mode != "conf":
+            return torch.ones_like(z_base)
+        if self.gate_bias is None or self.gate_scale_raw is None:
+            raise RuntimeError("residual_gate_mode='conf' 但 gate 参数未初始化。")
+
+        z = z_base.detach() if bool(self.residual_detach_base_in_gate) else z_base
+        gate_scale = F.softplus(self.gate_scale_raw)
+        return torch.sigmoid(self.gate_bias - gate_scale * torch.abs(z))
+
+    def load_state_dict(self, state_dict, strict: bool = True):  # type: ignore[override]
+        """
+        兼容旧版 checkpoint：
+        - 旧版本使用参数名 `delta_scale`（无界、直接参与相加）
+        - 新版本使用 `delta_scale_raw`（通过 tanh 参数化得到有效 delta_scale）
+        """
+        if isinstance(state_dict, dict) and "delta_scale" in state_dict and "delta_scale_raw" not in state_dict:
+            with torch.no_grad():
+                old = state_dict["delta_scale"]
+                # old 可能是标量 Tensor，也可能是 shape=(1,)；统一转换
+                if not (self.delta_scale_max > 0.0):
+                    raw = torch.zeros_like(old)
+                else:
+                    ratio = torch.clamp(old / float(self.delta_scale_max), -0.999, 0.999)
+                    raw = 0.5 * torch.log((1.0 + ratio) / (1.0 - ratio))
+
+            new_sd = dict(state_dict)
+            new_sd.pop("delta_scale", None)
+            new_sd["delta_scale_raw"] = raw
+            state_dict = new_sd
+
+        return super().load_state_dict(state_dict, strict=bool(strict))
 
     def forward(
         self,
@@ -524,14 +630,19 @@ class ResBinaryClassifier(nn.Module):
         seq_attr: torch.Tensor,
         seq_mask: torch.Tensor,
         x_meta: Optional[torch.Tensor] = None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        return_debug: bool = False,
+    ):
         """
         仅用于 baseline_mode="res" 的调试/分析：
 
         返回：
         - z：最终 logits
         - z_base：基线 logits
-        - delta：残差项（delta = delta_scale * z_res）
+        - delta：残差项（最终加到 z_base 上的修正；已包含裁剪/门控/缩放）
+
+        当 return_debug=True 时额外返回：
+        - delta_scale：effective_delta_scale()（有界标量 Tensor）
+        - z_res_raw：残差分支原始输出（未裁剪、未门控、未缩放）
         """
         if self.baseline_mode != "res":
             raise RuntimeError("forward_res_parts 仅支持 baseline_mode='res'。")
@@ -552,11 +663,18 @@ class ResBinaryClassifier(nn.Module):
         base_in = torch.cat([self.ln_seq(h_seq), self.ln_meta(v_meta_d)], dim=1)
         z_base = self.mlp_base(base_in)
 
-        km = v_key_d * v_meta_d
+        km = 0.5 * (v_key_d * v_meta_d)
         prior_in = torch.cat([self.ln_key(v_key_d), self.ln_meta(v_meta_d), self.ln_key_meta_mul(km)], dim=1)
-        z_res = self.mlp_prior(prior_in)
-        delta = self.delta_scale * z_res
+        z_res_raw = self.mlp_prior(prior_in)
+        z_res = _tanh_clip(z_res_raw, self.residual_logit_max)
+
+        gate = self._confidence_gate(z_base).to(dtype=z_res.dtype)
+        delta_scale = self.effective_delta_scale().to(dtype=z_res.dtype)
+        delta = gate * delta_scale * z_res
         z = z_base + delta
+
+        if bool(return_debug):
+            return z, z_base, delta, delta_scale, z_res_raw
         return z, z_base, delta
 
 
@@ -588,4 +706,10 @@ def build_res_model(
         prior_dropout=float(getattr(cfg, "prior_dropout", 0.5)),
         prior_activation=str(getattr(cfg, "prior_activation", "relu")),
         delta_scale_init=float(getattr(cfg, "delta_scale_init", 0.0)),
+        delta_scale_max=float(getattr(cfg, "delta_scale_max", 0.5)),
+        residual_logit_max=float(getattr(cfg, "residual_logit_max", 0.0)),
+        residual_gate_mode=str(getattr(cfg, "residual_gate_mode", "none")),
+        residual_gate_scale_init=float(getattr(cfg, "residual_gate_scale_init", 1.0)),
+        residual_gate_bias_init=float(getattr(cfg, "residual_gate_bias_init", 0.0)),
+        residual_detach_base_in_gate=bool(getattr(cfg, "residual_detach_base_in_gate", True)),
     )

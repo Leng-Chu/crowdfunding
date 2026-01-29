@@ -333,6 +333,7 @@ def _val_residual_debug(
     - 返回最终概率 prob_final（sigmoid(z)）
     - 额外返回 debug 字段（写入 history/log）：
       delta_abs_mean / delta_abs_p90 / delta_y1 / delta_y0 / auc_base / auc_final
+      delta_scale / z_res_raw_abs_mean / z_res_raw_abs_p90
     """
     model.eval()
     use_amp = device.type == "cuda"
@@ -357,20 +358,42 @@ def _val_residual_debug(
     prob_final_list: List[np.ndarray] = []
     prob_base_list: List[np.ndarray] = []
     delta_list: List[np.ndarray] = []
+    z_res_raw_list: List[np.ndarray] = []
+
+    delta_scale_value: float | None = None
+    if hasattr(model, "effective_delta_scale"):
+        try:
+            delta_scale_value = float(model.effective_delta_scale().detach().cpu().item())
+        except Exception:
+            delta_scale_value = None
 
     for batch in loader:
         x_meta, tb, c, x_img, x_txt, t, a, m, _y = batch
         with _amp_autocast(device, enabled=bool(use_amp)):
-            z, z_base, delta = model.forward_res_parts(
-                title_blurb=tb.to(device),
-                cover=c.to(device),
-                x_img=x_img.to(device),
-                x_txt=x_txt.to(device),
-                seq_type=t.to(device),
-                seq_attr=a.to(device),
-                seq_mask=m.to(device),
-                x_meta=x_meta.to(device),
-            )
+            z_res_raw = None
+            try:
+                z, z_base, delta, _delta_scale, z_res_raw = model.forward_res_parts(  # type: ignore[misc]
+                    title_blurb=tb.to(device),
+                    cover=c.to(device),
+                    x_img=x_img.to(device),
+                    x_txt=x_txt.to(device),
+                    seq_type=t.to(device),
+                    seq_attr=a.to(device),
+                    seq_mask=m.to(device),
+                    x_meta=x_meta.to(device),
+                    return_debug=True,
+                )
+            except TypeError:
+                z, z_base, delta = model.forward_res_parts(  # type: ignore[misc]
+                    title_blurb=tb.to(device),
+                    cover=c.to(device),
+                    x_img=x_img.to(device),
+                    x_txt=x_txt.to(device),
+                    seq_type=t.to(device),
+                    seq_attr=a.to(device),
+                    seq_mask=m.to(device),
+                    x_meta=x_meta.to(device),
+                )
 
         prob_final = torch.sigmoid(z.float()).detach().cpu().numpy().astype(np.float64, copy=False)
         prob_base = torch.sigmoid(z_base.float()).detach().cpu().numpy().astype(np.float64, copy=False)
@@ -378,6 +401,9 @@ def _val_residual_debug(
         prob_final_list.append(prob_final)
         prob_base_list.append(prob_base)
         delta_list.append(delta_np)
+        if z_res_raw is not None:
+            z_res_raw_np = z_res_raw.float().detach().cpu().numpy().astype(np.float64, copy=False)
+            z_res_raw_list.append(z_res_raw_np)
 
     if not prob_final_list:
         empty_prob = np.zeros((0,), dtype=np.float64)
@@ -388,12 +414,16 @@ def _val_residual_debug(
             "val_delta_y0": None,
             "val_auc_base": None,
             "val_auc_final": None,
+            "val_delta_scale": delta_scale_value,
+            "val_z_res_raw_abs_mean": None,
+            "val_z_res_raw_abs_p90": None,
         }
         return empty_prob, debug
 
     prob_final_arr = np.concatenate(prob_final_list, axis=0).reshape(-1)
     prob_base_arr = np.concatenate(prob_base_list, axis=0).reshape(-1)
     delta_arr = np.concatenate(delta_list, axis=0).reshape(-1)
+    z_res_raw_arr = np.concatenate(z_res_raw_list, axis=0).reshape(-1) if z_res_raw_list else None
 
     abs_delta = np.abs(delta_arr)
     delta_abs_mean = float(np.mean(abs_delta)) if int(abs_delta.size) > 0 else None
@@ -411,6 +441,14 @@ def _val_residual_debug(
     auc_base = compute_threshold_free_metrics(y_true, prob_base_arr).get("roc_auc", None)
     auc_final = compute_threshold_free_metrics(y_true, prob_final_arr).get("roc_auc", None)
 
+    z_res_raw_abs_mean = None
+    z_res_raw_abs_p90 = None
+    if z_res_raw_arr is not None:
+        abs_z_res_raw = np.abs(z_res_raw_arr)
+        if int(abs_z_res_raw.size) > 0:
+            z_res_raw_abs_mean = float(np.mean(abs_z_res_raw))
+            z_res_raw_abs_p90 = float(np.quantile(abs_z_res_raw, 0.9))
+
     debug = {
         "val_delta_abs_mean": delta_abs_mean,
         "val_delta_abs_p90": delta_abs_p90,
@@ -418,6 +456,9 @@ def _val_residual_debug(
         "val_delta_y0": delta_y0,
         "val_auc_base": auc_base,
         "val_auc_final": auc_final,
+        "val_delta_scale": delta_scale_value,
+        "val_z_res_raw_abs_mean": z_res_raw_abs_mean,
+        "val_z_res_raw_abs_p90": z_res_raw_abs_p90,
     }
     return prob_final_arr, debug
 
@@ -653,17 +694,24 @@ def train_res_with_early_stopping(
             d_p90 = row.get("val_delta_abs_p90", None)
             d_y1 = row.get("val_delta_y1", None)
             d_y0 = row.get("val_delta_y0", None)
+            d_scale = row.get("val_delta_scale", None)
+            zrr_mean = row.get("val_z_res_raw_abs_mean", None)
+            zrr_p90 = row.get("val_z_res_raw_abs_p90", None)
             auc_base = row.get("val_auc_base", None)
             auc_final = row.get("val_auc_final", None)
             d_mean_str = "None" if d_mean is None else f"{float(d_mean):.6g}"
             d_p90_str = "None" if d_p90 is None else f"{float(d_p90):.6g}"
             d_y1_str = "None" if d_y1 is None else f"{float(d_y1):.6g}"
             d_y0_str = "None" if d_y0 is None else f"{float(d_y0):.6g}"
+            d_scale_str = "None" if d_scale is None else f"{float(d_scale):.6g}"
+            zrr_mean_str = "None" if zrr_mean is None else f"{float(zrr_mean):.6g}"
+            zrr_p90_str = "None" if zrr_p90 is None else f"{float(zrr_p90):.6g}"
             auc_base_str = "None" if auc_base is None else f"{float(auc_base):.6f}"
             auc_final_str = "None" if auc_final is None else f"{float(auc_final):.6f}"
             logger.info(
                 "Epoch %d/%d | lr=%.6g | train_loss=%.4f val_loss=%.4f | val_auc=%s | "
-                "delta_abs_mean=%s delta_abs_p90=%s delta_y1=%s delta_y0=%s | "
+                "delta_abs_mean=%s delta_abs_p90=%s delta_y1=%s delta_y0=%s delta_scale=%s | "
+                "z_res_raw_abs_mean=%s z_res_raw_abs_p90=%s | "
                 "auc_base=%s auc_final=%s | grad_norm=%.4f | best_epoch=%d bad=%d",
                 int(epoch),
                 int(cfg.max_epochs),
@@ -675,6 +723,9 @@ def train_res_with_early_stopping(
                 d_p90_str,
                 d_y1_str,
                 d_y0_str,
+                d_scale_str,
+                zrr_mean_str,
+                zrr_p90_str,
                 auc_base_str,
                 auc_final_str,
                 float(row["train_grad_norm"]),

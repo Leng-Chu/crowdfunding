@@ -101,12 +101,28 @@ class ResConfig:
     base_dropout: float = 0.5
 
     # baseline_mode=res：z_res = MLP_prior( concat(LN(key_proj(v_key)), LN(meta_proj(v_meta)), LN(key_proj(v_key)⊙meta_proj(v_meta))) )
-    prior_hidden_dim: int = 512
+    prior_hidden_dim: int = 256
     prior_dropout: float = 0.5
     prior_activation: str = "relu"  # relu / gelu
 
     # baseline_mode=res：z = z_base + delta_scale * z_res（delta_scale 为可学习标量）
     delta_scale_init: float = 0.0
+
+    # baseline_mode=res：残差抑制（用于缓解“残差拟合过强/过拟合”）
+    # - delta_scale 采用 tanh 参数化并限制在 [-delta_scale_max, delta_scale_max]
+    # - z_res 采用 tanh 软裁剪并限制在 [-residual_logit_max, residual_logit_max]
+    # - 可选：基于 |z_base| 的“置信门控”（base 越自信，残差越小）
+    #
+    # 经验建议：先保持 head/base/prior 的容量不变，仅通过下面 3 个超参做抑制：
+    # - delta_scale_max（建议 0.3~0.8）
+    # - residual_logit_max（建议 1.0~3.0）
+    # - residual_gate_mode="conf"（默认开启）
+    delta_scale_max: float = 0.5
+    residual_logit_max: float = 2.0
+    residual_gate_mode: str = "conf"  # none / conf
+    residual_gate_scale_init: float = 1.0
+    residual_gate_bias_init: float = 0.0
+    residual_detach_base_in_gate: bool = True
 
     # -----------------------------
     # 训练超参（与 seq 训练流程对齐）
