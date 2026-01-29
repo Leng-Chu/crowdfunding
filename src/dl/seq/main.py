@@ -165,7 +165,6 @@ def main() -> int:
 
     baseline_mode = str(getattr(cfg, "baseline_mode", "set_mean")).strip().lower()
     mode = baseline_mode + ("+meta" if bool(getattr(cfg, "use_meta", False)) else "")
-    mode = mode + ("+prefix" if bool(getattr(cfg, "use_prefix", True)) else "")
 
     project_root = Path(__file__).resolve().parents[3]
     csv_path = project_root / cfg.data_csv

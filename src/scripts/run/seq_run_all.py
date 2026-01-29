@@ -24,18 +24,29 @@ def run_all_experiments():
     """
     # 定义所有实验命令
     all_commands = [
-
-        ("conda run -n crowdfunding python src/dl/seq/main.py --run-name clip --baseline-mode set_mean --image-embedding-type clip --text-embedding-type clip --use-prefix --device cuda:0", 
+        # 使用meta数据的不同baseline模式
+        ("conda run -n crowdfunding python src/dl/seq/main.py --run-name clip --baseline-mode set_mean --image-embedding-type clip --text-embedding-type clip --use-meta --device cuda:0", 
          "Seq: CLIP Image+Text with Meta - Set Mean"),
-        ("conda run -n crowdfunding python src/dl/seq/main.py --run-name clip --baseline-mode set_attn --image-embedding-type clip --text-embedding-type clip --use-prefix --device cuda:1", 
+        ("conda run -n crowdfunding python src/dl/seq/main.py --run-name clip --baseline-mode set_attn --image-embedding-type clip --text-embedding-type clip --use-meta --device cuda:1", 
          "Seq: CLIP Image+Text with Meta - Set Attention"),
-        ("conda run -n crowdfunding python src/dl/seq/main.py --run-name clip --baseline-mode trm_no_pos --image-embedding-type clip --text-embedding-type clip --use-prefix --device cuda:2", 
+        ("conda run -n crowdfunding python src/dl/seq/main.py --run-name clip --baseline-mode trm_no_pos --image-embedding-type clip --text-embedding-type clip --use-meta --device cuda:2", 
          "Seq: CLIP Image+Text with Meta - Transformer No Position"),
-        ("conda run -n crowdfunding python src/dl/seq/main.py --run-name clip --baseline-mode trm_pos --image-embedding-type clip --text-embedding-type clip --use-prefix --device cuda:3", 
+        ("conda run -n crowdfunding python src/dl/seq/main.py --run-name clip --baseline-mode trm_pos --image-embedding-type clip --text-embedding-type clip --use-meta --device cuda:3", 
          "Seq: CLIP Image+Text with Meta - Transformer With Position"),
-        ("conda run -n crowdfunding python src/dl/seq/main.py --run-name clip --baseline-mode trm_pos_shuffled --image-embedding-type clip --text-embedding-type clip --use-prefix --device cuda:0", 
+        ("conda run -n crowdfunding python src/dl/seq/main.py --run-name clip --baseline-mode trm_pos_shuffled --image-embedding-type clip --text-embedding-type clip --use-meta --device cuda:0", 
          "Seq: CLIP Image+Text with Meta - Transformer With Shuffled Position"),
-        
+         
+        # 不使用meta数据的不同baseline模式
+        ("conda run -n crowdfunding python src/dl/seq/main.py --run-name clip --baseline-mode set_mean --image-embedding-type clip --text-embedding-type clip --no-use-meta --device cuda:1", 
+         "Seq: CLIP Image+Text - Set Mean"),
+        ("conda run -n crowdfunding python src/dl/seq/main.py --run-name clip --baseline-mode set_attn --image-embedding-type clip --text-embedding-type clip --no-use-meta --device cuda:2", 
+         "Seq: CLIP Image+Text - Set Attention"),
+        ("conda run -n crowdfunding python src/dl/seq/main.py --run-name clip --baseline-mode trm_no_pos --image-embedding-type clip --text-embedding-type clip --no-use-meta --device cuda:3", 
+         "Seq: CLIP Image+Text - Transformer No Position"),
+        ("conda run -n crowdfunding python src/dl/seq/main.py --run-name clip --baseline-mode trm_pos --image-embedding-type clip --text-embedding-type clip --no-use-meta --device cuda:0", 
+         "Seq: CLIP Image+Text - Transformer With Position"),
+        ("conda run -n crowdfunding python src/dl/seq/main.py --run-name clip --baseline-mode trm_pos_shuffled --image-embedding-type clip --text-embedding-type clip --no-use-meta --device cuda:1", 
+         "Seq: CLIP Image+Text - Transformer With Shuffled Position")
     ]
     
     threads = []

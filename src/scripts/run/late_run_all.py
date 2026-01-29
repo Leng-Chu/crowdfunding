@@ -30,7 +30,7 @@ def run_all_experiments():
         ("conda run -n crowdfunding python src/dl/late/main.py --run-name clip --baseline-mode trm_no_pos --image-embedding-type clip --text-embedding-type clip --use-meta --device cuda:1",
          "Late: late_trm_no_pos+meta (CLIP)"),
          
-        # 不使用meta数据的不同baseline模式
+        # # 不使用meta数据的不同baseline模式
         ("conda run -n crowdfunding python src/dl/late/main.py --run-name clip --baseline-mode attn_pool --image-embedding-type clip --text-embedding-type clip --no-use-meta --device cuda:2",
          "Late: late_attn_pool (CLIP)"),
         ("conda run -n crowdfunding python src/dl/late/main.py --run-name clip --baseline-mode trm_no_pos --image-embedding-type clip --text-embedding-type clip --no-use-meta --device cuda:3",
