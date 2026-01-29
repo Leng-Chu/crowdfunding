@@ -9,7 +9,11 @@ Optuna 超参搜索（res）。
 - 自动汇总：输出 summary.csv（trial_id、params、objective、run_dir、关键 test 指标）。
 
 推荐运行方式（从仓库根目录）：
+  # 默认使用 important（少量关键超参，适合快速定位）
   conda run -n crowdfunding python src/dl/res/optuna_search.py --baseline-mode res --device cuda:0 --n-trials 100
+
+  # 若需要更大的搜索空间（更慢，但更“全”）：
+  # conda run -n crowdfunding python src/dl/res/optuna_search.py --baseline-mode res --device cuda:0 --n-trials 100 --search-space full
 """
 
 from __future__ import annotations
@@ -129,16 +133,61 @@ def _load_json_arg(value: Optional[str]) -> Dict[str, Any]:
     return obj
 
 
-def _suggest_params(trial, baseline_mode: str) -> Dict[str, Any]:
+def _suggest_params(trial, search_space: str) -> Dict[str, Any]:
     """
-    默认搜索空间（同时适用于 mlp/res）。
+    Optuna 搜索空间。
     注意：这里返回的是 ResConfig 字段名/值，最终会通过环境变量覆盖到训练脚本。
     """
-    _ = str(baseline_mode or "").strip().lower()
+    search_space = str(search_space or "").strip().lower()
+    if search_space not in {"important", "full"}:
+        raise ValueError(f"不支持的 search_space={search_space!r}，可选：important/full")
 
+    # ----------------------------
+    # important：优先搜索“对泛化最敏感/最常用”的少量超参（默认）
+    # ----------------------------
+    if search_space == "important":
+        lr = trial.suggest_float("learning_rate_init", 2e-5, 4e-4, log=True)
+        wd = trial.suggest_float("alpha", 1e-6, 5e-3, log=True)
+        batch_size = trial.suggest_categorical("batch_size", [256, 512, 1024, 2048])
+
+        token_dropout = trial.suggest_float("token_dropout", 0.0, 0.35)
+        transformer_dropout = trial.suggest_float("transformer_dropout", 0.0, 0.35)
+        key_dropout = trial.suggest_float("key_dropout", 0.2, 0.6)
+
+        out = {
+            "learning_rate_init": float(lr),
+            "alpha": float(wd),
+            "batch_size": int(batch_size),
+            "token_dropout": float(token_dropout),
+            "transformer_dropout": float(transformer_dropout),
+            "key_dropout": float(key_dropout),
+        }
+
+        base_dropout = trial.suggest_float("base_dropout", 0.2, 0.7)
+        prior_dropout = trial.suggest_float("prior_dropout", 0.2, 0.7)
+
+        # 残差抑制：优先纳入搜索（与“残差拟合过强/过拟合”直接相关）
+        delta_scale_max = trial.suggest_float("delta_scale_max", 0.1, 1.2)
+        residual_logit_max = trial.suggest_float("residual_logit_max", 0.8, 4.0)
+        residual_gate_mode = trial.suggest_categorical("residual_gate_mode", ["conf", "none"])
+
+        out.update(
+            {
+                "base_dropout": float(base_dropout),
+                "prior_dropout": float(prior_dropout),
+                "delta_scale_max": float(delta_scale_max),
+                "residual_logit_max": float(residual_logit_max),
+                "residual_gate_mode": str(residual_gate_mode),
+            }
+        )
+        return out
+
+    # ----------------------------
+    # full：更大的搜索空间（更慢，但更“全”）
+    # ----------------------------
     lr = trial.suggest_float("learning_rate_init", 1e-5, 8e-4, log=True)
     wd = trial.suggest_float("alpha", 1e-6, 1e-2, log=True)
-    batch_size = trial.suggest_categorical("batch_size", [64, 128, 256, 512])
+    batch_size = trial.suggest_categorical("batch_size", [256, 512, 1024, 2048])
 
     d_model = trial.suggest_categorical("d_model", [128, 192, 256])
     # nn.TransformerEncoderLayer 要求 d_model % nhead == 0
@@ -152,20 +201,9 @@ def _suggest_params(trial, baseline_mode: str) -> Dict[str, Any]:
     transformer_dropout = trial.suggest_float("transformer_dropout", 0.0, 0.35)
     key_dropout = trial.suggest_float("key_dropout", 0.2, 0.6)
 
-    head_dropout = trial.suggest_float("head_dropout", 0.2, 0.7)
-    base_dropout = trial.suggest_float("base_dropout", 0.2, 0.7)
-    prior_dropout = trial.suggest_float("prior_dropout", 0.2, 0.7)
-
-    head_hidden_dim = trial.suggest_categorical("head_hidden_dim", [256, 512, 768, 1024])
-    base_hidden_dim = trial.suggest_categorical("base_hidden_dim", [256, 512, 768, 1024])
-    prior_hidden_dim = trial.suggest_categorical("prior_hidden_dim", [256, 512, 768, 1024])
-
-    head_activation = trial.suggest_categorical("head_activation", ["relu", "gelu"])
-    prior_activation = trial.suggest_categorical("prior_activation", ["relu", "gelu"])
-
     early_stop_patience = trial.suggest_int("early_stop_patience", 5, 15)
 
-    return {
+    out = {
         "learning_rate_init": float(lr),
         "alpha": float(wd),
         "batch_size": int(batch_size),
@@ -176,16 +214,32 @@ def _suggest_params(trial, baseline_mode: str) -> Dict[str, Any]:
         "token_dropout": float(token_dropout),
         "transformer_dropout": float(transformer_dropout),
         "key_dropout": float(key_dropout),
-        "head_dropout": float(head_dropout),
-        "base_dropout": float(base_dropout),
-        "prior_dropout": float(prior_dropout),
-        "head_hidden_dim": int(head_hidden_dim),
-        "base_hidden_dim": int(base_hidden_dim),
-        "prior_hidden_dim": int(prior_hidden_dim),
-        "head_activation": str(head_activation),
-        "prior_activation": str(prior_activation),
         "early_stop_patience": int(early_stop_patience),
     }
+
+    base_dropout = trial.suggest_float("base_dropout", 0.2, 0.7)
+    prior_dropout = trial.suggest_float("prior_dropout", 0.2, 0.7)
+    base_hidden_dim = trial.suggest_categorical("base_hidden_dim", [256, 512, 768, 1024])
+    prior_hidden_dim = trial.suggest_categorical("prior_hidden_dim", [128, 256, 512, 768, 1024])
+    prior_activation = trial.suggest_categorical("prior_activation", ["relu", "gelu"])
+
+    delta_scale_max = trial.suggest_float("delta_scale_max", 0.05, 1.5)
+    residual_logit_max = trial.suggest_float("residual_logit_max", 0.5, 6.0)
+    residual_gate_mode = trial.suggest_categorical("residual_gate_mode", ["conf", "none"])
+
+    out.update(
+        {
+            "base_dropout": float(base_dropout),
+            "prior_dropout": float(prior_dropout),
+            "base_hidden_dim": int(base_hidden_dim),
+            "prior_hidden_dim": int(prior_hidden_dim),
+            "prior_activation": str(prior_activation),
+            "delta_scale_max": float(delta_scale_max),
+            "residual_logit_max": float(residual_logit_max),
+            "residual_gate_mode": str(residual_gate_mode),
+        }
+    )
+    return out
 
 
 def _build_train_cmd(
@@ -228,16 +282,22 @@ def _objective_key_to_column(key: str) -> str:
 
 def _arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="res Optuna 超参搜索（每个 trial 调用现有 CLI 黑盒训练）。")
-    p.add_argument("--baseline-mode", default="res", choices=["mlp", "res"], help="要调参的 baseline_mode。")
+    p.add_argument("--baseline-mode", default="res", choices=["res"], help="仅支持 res（脚本只关注 res 超参）。")
     p.add_argument("--image-embedding-type", default="clip", choices=["clip", "siglip", "resnet"])
     p.add_argument("--text-embedding-type", default="clip", choices=["bge", "clip", "siglip"])
     p.add_argument("--device", default=None, help="训练设备：auto/cpu/cuda/cuda:0...（优先于 --gpu）")
     p.add_argument("--gpu", type=int, default=None, help="选择第 N 块 GPU（等价于 --device cuda:N）")
 
-    p.add_argument("--n-trials", type=int, default=20, help="trial 数量")
+    p.add_argument("--n-trials", type=int, default=100, help="trial 数量")
     p.add_argument("--timeout", type=int, default=None, help="总超时（秒），可选")
     p.add_argument("--study-name", default=None, help="study 名称（默认自动生成）")
     p.add_argument("--objective", default="test_f1", help="目标（默认最大化 test_f1）")
+    p.add_argument(
+        "--search-space",
+        default="important",
+        choices=["important", "full"],
+        help="搜索空间：important（默认，少量关键超参）/ full（更大更慢）。",
+    )
     p.add_argument("--random-seed", type=int, default=42, help="固定 random_seed（每个 trial 相同）")
     p.add_argument("--sampler-seed", type=int, default=42, help="Optuna sampler 的随机种子")
     p.add_argument("--fixed-overrides", default=None, help="对所有 trial 生效的 ResConfig 覆盖项：JSON 字符串或 JSON 文件路径")
@@ -304,7 +364,7 @@ def main() -> int:
             except Exception:
                 pass
 
-        trial_params = _suggest_params(trial, baseline_mode=baseline_mode)
+        trial_params = _suggest_params(trial, search_space=args.search_space)
         overrides = dict(fixed_overrides)
         overrides.update(trial_params)
 
