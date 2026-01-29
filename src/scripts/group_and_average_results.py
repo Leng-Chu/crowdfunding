@@ -10,11 +10,11 @@ def group_and_average_results(input_path=None, output_path=None):
     """
     # 如果没有指定输入路径，则使用默认路径
     if input_path is None:
-        input_path = "experiments/ch1/ch1.csv"
+        input_path = "experiments/test/merge.csv"
     
     # 如果没有指定输出路径，则使用默认路径
     if output_path is None:
-        output_path = "experiments/ch1/averaged_results.csv"
+        output_path = "experiments/test/averaged_results.csv"
     
     # 读取CSV文件
     if not os.path.exists(input_path):

@@ -30,7 +30,7 @@ class SeqConfig:
     # -----------------------------
     data_csv: str = "data/metadata/now_processed.csv"
     projects_root: str = "data/projects/now"
-    experiment_root: str = "experiments/seq"
+    experiment_root: str = "experiments/test"
 
     # -----------------------------
     # 模式（实验组）
@@ -63,7 +63,7 @@ class SeqConfig:
     train_ratio: float = 0.6
     val_ratio: float = 0.2
     test_ratio: float = 0.2
-    shuffle_before_split: bool = False
+    shuffle_before_split: bool = True
 
     # -----------------------------
     # 嵌入配置（必须与其它 baseline 使用同一套 embedding）
@@ -84,36 +84,36 @@ class SeqConfig:
     # 模型结构超参
     # -----------------------------
     d_model: int = 256
-    token_dropout: float = 0.0
+    token_dropout: float = 0.1
 
-    transformer_num_layers: int = 2
-    transformer_num_heads: int = 4
-    transformer_dim_feedforward: int = 512
+    transformer_num_layers: int = 3
+    transformer_num_heads: int = 2
+    transformer_dim_feedforward: int = 1024
     transformer_dropout: float = 0.1
 
     # meta encoder（与 mlp baseline 对齐）
-    meta_hidden_dim: int = 256
-    meta_dropout: float = 0.3
+    meta_hidden_dim: int = 64
+    meta_dropout: float = 0.45
 
     # 分类头（与 mlp baseline 对齐：Linear -> ReLU -> Dropout -> Linear(->1)）
-    fusion_hidden_dim: int = 512
-    fusion_dropout: float = 0.5
+    fusion_hidden_dim: int = 768
+    fusion_dropout: float = 0.45
 
     # -----------------------------
     # 训练超参（与 mlp baseline 训练流程对齐）
     # -----------------------------
-    alpha: float = 5e-4  # weight_decay（L2）
-    learning_rate_init: float = 5e-4
-    batch_size: int = 1024
+    alpha: float = 4e-6  # weight_decay（L2）
+    learning_rate_init: float = 2e-4
+    batch_size: int = 256
 
-    max_epochs: int = 50
+    max_epochs: int = 80
     early_stop_patience: int = 10
     early_stop_min_epochs: int = 5
     lr_scheduler_min_lr: float = 1e-5
 
     max_grad_norm: float = 1.0
 
-    random_seed: int = 22
+    random_seed: int = 72
     save_plots: bool = True
 
     def to_dict(self) -> dict:
