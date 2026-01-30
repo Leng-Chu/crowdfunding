@@ -9,13 +9,14 @@
 
 两种 baseline_mode：
 1) baseline_mode="mlp"
-   logit = Head( concat( LN(h_seq), LN(meta_proj(v_meta)), LN(key_proj(v_key)) ) )
+   logit = Head( concat( LN(h_seq), LN(meta_proj(meta_enc(v_meta))), LN(key_proj(v_key)) ) )
 2) baseline_mode="res"
-   z_base = MLP_base( concat( LN(h_seq), LN(meta_proj(v_meta)) ) )
-   z_res  = MLP_prior( concat( LN(key_proj(v_key)), LN(meta_proj(v_meta)), LN(key_proj(v_key)⊙meta_proj(v_meta)) ) )
+   z_base = MLP_base( concat( LN(h_seq), LN(meta_proj(meta_enc(v_meta))) ) )
+   z_res  = MLP_prior( concat( LN(key_proj(v_key)), LN(meta_proj(meta_enc(v_meta))), LN(key_proj(v_key)⊙meta_proj(meta_enc(v_meta))) ) )
    logit  = z_base + delta
 
 其中：
+- meta_enc：metadata 表格特征的 MLP 编码（与 seq 的 meta encoder 对齐）
 - meta_proj/key_proj：把向量投影到与 h_seq 相同维度 d（若已为 d 则 identity）
 - delta：残差修正项。为缓解“残差拟合过强/过拟合”，默认使用有界残差：
     - z_res 使用 tanh 软裁剪（限制到 [-residual_logit_max, residual_logit_max]）
@@ -68,6 +69,32 @@ def _tanh_clip(x: torch.Tensor, max_abs: float) -> torch.Tensor:
     if not (m > 0.0):
         return x
     return float(m) * torch.tanh(x / float(m))
+
+
+class MetaMLPEncoder(nn.Module):
+    """metadata 特征 -> FC -> Dropout，输出一个定长向量（与 seq 的 meta encoder 对齐）。"""
+
+    def __init__(self, input_dim: int, hidden_dim: int = 256, dropout: float = 0.3) -> None:
+        super().__init__()
+        if int(input_dim) <= 0:
+            raise ValueError(f"input_dim 需要 > 0，但得到 {input_dim}")
+        if int(hidden_dim) <= 0:
+            raise ValueError(f"hidden_dim 需要 > 0，但得到 {hidden_dim}")
+        if float(dropout) < 0.0 or float(dropout) >= 1.0:
+            raise ValueError("dropout 需要在 [0, 1) 之间")
+
+        self.fc = nn.Linear(int(input_dim), int(hidden_dim))
+        self.drop = nn.Dropout(p=float(dropout))
+        self.output_dim = int(hidden_dim)
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        _init_linear(self.fc)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        z = torch.relu(self.fc(x))
+        z = self.drop(z)
+        return z
 
 
 class TokenEncoder(nn.Module):
@@ -407,8 +434,10 @@ class ResBinaryClassifier(nn.Module):
         transformer_num_heads: int,
         transformer_dim_feedforward: int,
         transformer_dropout: float,
-        head_hidden_dim: int,
-        head_dropout: float,
+        meta_hidden_dim: int,
+        meta_dropout: float,
+        fusion_hidden_dim: int,
+        fusion_dropout: float,
         head_activation: str,
         base_hidden_dim: int,
         base_dropout: float,
@@ -453,12 +482,19 @@ class ResBinaryClassifier(nn.Module):
             transformer_dropout=float(transformer_dropout),
         )
 
-        # 投影到同一维度 d
+        # Meta 分支：先对 metadata 表格特征做 MLP 编码（与 seq 对齐），再投影到 d_model 便于融合/交互
+        self.meta = MetaMLPEncoder(
+            input_dim=int(meta_input_dim),
+            hidden_dim=int(meta_hidden_dim),
+            dropout=float(meta_dropout),
+        )
+        self.meta_hidden_dim = int(self.meta.output_dim)
+
         self.meta_proj: nn.Module
-        if int(meta_input_dim) == int(d_model):
+        if int(self.meta_hidden_dim) == int(d_model):
             self.meta_proj = nn.Identity()
         else:
-            self.meta_proj = nn.Linear(int(meta_input_dim), int(d_model))
+            self.meta_proj = nn.Linear(int(self.meta_hidden_dim), int(d_model))
             _init_linear(self.meta_proj)  # type: ignore[arg-type]
 
         # v_key 已经输出 d；保留 key_proj 以满足“若已为 d 则 identity”的约束
@@ -473,11 +509,11 @@ class ResBinaryClassifier(nn.Module):
         # heads
         self.head = TwoLayerMLPHead(
             input_dim=int(3 * d_model),
-            hidden_dim=int(head_hidden_dim),
-            dropout=float(head_dropout),
+            hidden_dim=int(fusion_hidden_dim),
+            dropout=float(fusion_dropout),
             activation=str(head_activation),
         )
-        self.head_hidden_dim = int(head_hidden_dim)
+        self.fusion_hidden_dim = int(fusion_hidden_dim)
 
         self.mlp_base = SeqFusionHead(
             input_dim=int(2 * d_model),
@@ -549,29 +585,6 @@ class ResBinaryClassifier(nn.Module):
         gate_scale = F.softplus(self.gate_scale_raw)
         return torch.sigmoid(self.gate_bias - gate_scale * torch.abs(z))
 
-    def load_state_dict(self, state_dict, strict: bool = True):  # type: ignore[override]
-        """
-        兼容旧版 checkpoint：
-        - 旧版本使用参数名 `delta_scale`（无界、直接参与相加）
-        - 新版本使用 `delta_scale_raw`（通过 tanh 参数化得到有效 delta_scale）
-        """
-        if isinstance(state_dict, dict) and "delta_scale" in state_dict and "delta_scale_raw" not in state_dict:
-            with torch.no_grad():
-                old = state_dict["delta_scale"]
-                # old 可能是标量 Tensor，也可能是 shape=(1,)；统一转换
-                if not (self.delta_scale_max > 0.0):
-                    raw = torch.zeros_like(old)
-                else:
-                    ratio = torch.clamp(old / float(self.delta_scale_max), -0.999, 0.999)
-                    raw = 0.5 * torch.log((1.0 + ratio) / (1.0 - ratio))
-
-            new_sd = dict(state_dict)
-            new_sd.pop("delta_scale", None)
-            new_sd["delta_scale_raw"] = raw
-            state_dict = new_sd
-
-        return super().load_state_dict(state_dict, strict=bool(strict))
-
     def forward(
         self,
         title_blurb: torch.Tensor,
@@ -595,7 +608,7 @@ class ResBinaryClassifier(nn.Module):
                 seq_attr=seq_attr,
                 seq_mask=seq_mask,
             )  # [B, d]
-            v_meta_d = self.meta_proj(x_meta)  # [B, d]
+            v_meta_d = self.meta_proj(self.meta(x_meta))  # [B, d]
             v_key_d = self.key_proj(v_key)  # [B, d]
             fused = torch.cat(
                 [
@@ -657,7 +670,7 @@ class ResBinaryClassifier(nn.Module):
             seq_attr=seq_attr,
             seq_mask=seq_mask,
         )  # [B, d]
-        v_meta_d = self.meta_proj(x_meta)  # [B, d]
+        v_meta_d = self.meta_proj(self.meta(x_meta))  # [B, d]
         v_key_d = self.key_proj(v_key)  # [B, d]
 
         base_in = torch.cat([self.ln_seq(h_seq), self.ln_meta(v_meta_d)], dim=1)
@@ -697,8 +710,10 @@ def build_res_model(
         transformer_num_heads=int(getattr(cfg, "transformer_num_heads", 4)),
         transformer_dim_feedforward=int(getattr(cfg, "transformer_dim_feedforward", 512)),
         transformer_dropout=float(getattr(cfg, "transformer_dropout", 0.1)),
-        head_hidden_dim=int(getattr(cfg, "head_hidden_dim", 512)),
-        head_dropout=float(getattr(cfg, "head_dropout", 0.5)),
+        meta_hidden_dim=int(getattr(cfg, "meta_hidden_dim", 256)),
+        meta_dropout=float(getattr(cfg, "meta_dropout", 0.3)),
+        fusion_hidden_dim=int(getattr(cfg, "fusion_hidden_dim", 512)),
+        fusion_dropout=float(getattr(cfg, "fusion_dropout", 0.5)),
         head_activation=str(getattr(cfg, "head_activation", "relu")),
         base_hidden_dim=int(getattr(cfg, "base_hidden_dim", 512)),
         base_dropout=float(getattr(cfg, "base_dropout", 0.5)),

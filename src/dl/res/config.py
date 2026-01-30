@@ -84,16 +84,21 @@ class ResConfig:
     transformer_dim_feedforward: int = 1024
     transformer_dropout: float = 0.25
 
+    # MetaEncoder（与 seq 对齐）：metadata 特征 -> FC -> Dropout，输出定长向量
+    meta_hidden_dim: int = 256
+    meta_dropout: float = 0.3
+
     # First Impression（title/blurb/cover）分支的 dropout
     key_dropout: float = 0.5
 
     # -----------------------------
     # Head / MLP 超参
     # -----------------------------
-    # baseline_mode=mlp：Head( concat(LN(h_seq), LN(meta_proj(v_meta)), LN(key_proj(v_key))) )
-    head_hidden_dim: int = 512
-    head_dropout: float = 0.5
-    head_activation: str = "relu"  # relu / gelu
+    # baseline_mode=mlp：logit = Fusion( concat(LN(h_seq), LN(meta_enc(v_meta)), LN(key_proj(v_key))) )
+    # 为了与 seq 模块对齐，分类头超参命名统一为 fusion_*。
+    fusion_hidden_dim: int = 512
+    fusion_dropout: float = 0.5
+    head_activation: str = "relu"  # relu / gelu（仅用于 baseline_mode=mlp 的分类头）
 
     # baseline_mode=res：z_base = MLP_base( concat(LN(h_seq), LN(meta_proj(v_meta))) )
     # 关键：MLP_base 结构需与 src/dl/seq/model.py 的融合头一致
