@@ -49,11 +49,11 @@ def merge_result_csv():
     # 合并所有CSV数据
     merged_df = pd.concat(all_csv_data, ignore_index=True)
     
-    # 按照test_f1列排序（降序，高分在前）
-    if 'test_f1' in merged_df.columns:
-        merged_df = merged_df.sort_values(by='test_f1', ascending=False)
+    # 按照test_auc列排序（降序，高分在前）
+    if 'test_auc' in merged_df.columns:
+        merged_df = merged_df.sort_values(by='test_auc', ascending=False)
     else:
-        print("警告: 没有找到test_f1列，将按原始顺序输出")
+        print("警告: 没有找到test_auc列，将按原始顺序输出")
     
     # 保存合并后的CSV文件
     output_path = base_dir + "/merge.csv"

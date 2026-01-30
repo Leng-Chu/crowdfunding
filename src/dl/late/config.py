@@ -32,7 +32,7 @@ class LateConfig:
     # -----------------------------
     data_csv: str = "data/metadata/now_processed.csv"
     projects_root: str = "data/projects/now"
-    experiment_root: str = "experiments/late"
+    experiment_root: str = "experiments/test"
 
     # -----------------------------
     # 分支开关
@@ -54,7 +54,7 @@ class LateConfig:
     train_ratio: float = 0.6
     val_ratio: float = 0.2
     test_ratio: float = 0.2
-    shuffle_before_split: bool = False
+    shuffle_before_split: bool = True
 
     # -----------------------------
     # 嵌入类型（与 src/preprocess/embedding 对齐）
@@ -84,34 +84,34 @@ class LateConfig:
     d_model: int = 256
 
     # trm_no_pos（容量对照：不使用任何 position encoding）
-    transformer_n_layers: int = 2
-    transformer_n_heads: int = 8
-    transformer_ffn_dim: int = 512
-    transformer_dropout: float = 0.2
+    transformer_n_layers: int = 3
+    transformer_n_heads: int = 2
+    transformer_ffn_dim: int = 1024
+    transformer_dropout: float = 0.1
 
-    # meta 分支（与 mlp baseline 一致）
-    meta_hidden_dim: int = 256
-    meta_dropout: float = 0.4
+    # meta 分支
+    meta_hidden_dim: int = 64
+    meta_dropout: float = 0.45
 
-    # 融合 head（与 mlp baseline 一致：Linear→ReLU→Dropout→Linear）
-    fusion_hidden_dim: Optional[int] = 512  # 降低 head 容量，缓解轻度过拟合
-    fusion_dropout: float = 0.7
+    # 融合 head（Linear→ReLU→Dropout→Linear）
+    fusion_hidden_dim: Optional[int] = 768  # 降低 head 容量，缓解轻度过拟合
+    fusion_dropout: float = 0.45
 
     # -----------------------------
-    # 训练超参（与 mlp baseline 对齐）
+    # 训练超参
     # -----------------------------
-    alpha: float = 1e-3  # weight_decay（AdamW）
-    learning_rate_init: float = 3e-4
-    batch_size: int = 1024
+    alpha: float = 4e-6  # weight_decay（AdamW）
+    learning_rate_init: float = 2e-4
+    batch_size: int = 256
 
-    max_epochs: int = 50
-    early_stop_patience: int = 8
+    max_epochs: int = 80
+    early_stop_patience: int = 10
     early_stop_min_epochs: int = 5
     lr_scheduler_min_lr: float = 1e-5
 
     max_grad_norm: float = 1.0
 
-    random_seed: int = 22
+    random_seed: int = 72 # 42 72 45
     save_plots: bool = True
 
     def to_dict(self) -> dict:
