@@ -418,7 +418,13 @@ class SeqFusionHead(nn.Module):
 
 
 class ResBinaryClassifier(nn.Module):
-    """三分支 + 两种 baseline（mlp/res），输出二分类 logits。"""
+    """
+    三分支 + 两种 baseline（mlp/res），输出二分类 logits。
+
+    设计原则：
+    - 按需构建：mlp 模式下不创建 res 相关模块；res 模式下不创建 mlp 的 head。
+    - forward 只访问该模式下必然存在的模块，不需要“占位 None”。
+    """
 
     def __init__(
         self,
@@ -456,13 +462,13 @@ class ResBinaryClassifier(nn.Module):
         self.baseline_mode = str(baseline_mode or "").strip().lower()
         if self.baseline_mode not in {"mlp", "res"}:
             raise ValueError(f"不支持的 baseline_mode={self.baseline_mode!r}，可选：mlp/res")
-        self.use_first_impression = bool(use_first_impression) if self.baseline_mode == "mlp" else True
 
         if int(meta_input_dim) <= 0:
-            raise ValueError("meta_input_dim 需要 > 0（res 模块默认始终使用 meta 分支）。")
+            raise ValueError("meta_input_dim 需要 > 0（本模型默认始终使用 meta 分支）。")
 
         self.d_model = int(d_model)
 
+        # --- shared encoders (always exist) ---
         self.seq = ContentSeqEncoder(
             image_embedding_dim=int(image_embedding_dim),
             text_embedding_dim=int(text_embedding_dim),
@@ -475,7 +481,6 @@ class ResBinaryClassifier(nn.Module):
             transformer_dropout=float(transformer_dropout),
         )
 
-        # Meta 分支：先对 metadata 表格特征做 MLP 编码（与 seq 对齐）
         self.meta = MetaMLPEncoder(
             input_dim=int(meta_input_dim),
             hidden_dim=int(meta_hidden_dim),
@@ -483,41 +488,42 @@ class ResBinaryClassifier(nn.Module):
         )
         self.meta_hidden_dim = int(self.meta.output_dim)
 
+        # --- mode-specific modules ---
         if self.baseline_mode == "mlp":
-            # baseline_mode=mlp：只构建必要模块；use_first_impression 仅决定 Head 是两路还是三路
-            self._initialize_mlp(
+            self.use_first_impression = bool(use_first_impression)
+            self._init_mlp_modules(
                 image_embedding_dim=int(image_embedding_dim),
                 text_embedding_dim=int(text_embedding_dim),
                 d_model=int(d_model),
                 key_dropout=float(key_dropout),
                 fusion_hidden_dim=int(fusion_hidden_dim),
                 fusion_dropout=float(fusion_dropout),
+            )
+        else:
+            # res 模式下第一印象必须启用（残差先验来自 key）
+            self.use_first_impression = True
+            self._init_res_modules(
+                image_embedding_dim=int(image_embedding_dim),
+                text_embedding_dim=int(text_embedding_dim),
+                d_model=int(d_model),
+                key_dropout=float(key_dropout),
+                base_hidden_dim=int(base_hidden_dim),
+                base_dropout=float(base_dropout),
+                prior_hidden_dim=int(prior_hidden_dim),
+                prior_dropout=float(prior_dropout),
+                delta_scale_init=float(delta_scale_init),
                 delta_scale_max=float(delta_scale_max),
                 residual_logit_max=float(residual_logit_max),
+                residual_gate_mode=str(residual_gate_mode or "").strip().lower(),
+                residual_gate_scale_init=float(residual_gate_scale_init),
+                residual_gate_bias_init=float(residual_gate_bias_init),
                 residual_detach_base_in_gate=bool(residual_detach_base_in_gate),
             )
-            return
-        
-        # baseline_mode=res：构建完整三路 + 残差头
-        self._initialize_res(
-            image_embedding_dim=int(image_embedding_dim),
-            text_embedding_dim=int(text_embedding_dim),
-            d_model=int(d_model),
-            key_dropout=float(key_dropout),
-            base_hidden_dim=int(base_hidden_dim),
-            base_dropout=float(base_dropout),
-            prior_hidden_dim=int(prior_hidden_dim),
-            prior_dropout=float(prior_dropout),
-            delta_scale_init=float(delta_scale_init),
-            delta_scale_max=float(delta_scale_max),
-            residual_logit_max=float(residual_logit_max),
-            residual_gate_mode=str(residual_gate_mode or "").strip().lower(),
-            residual_gate_scale_init=float(residual_gate_scale_init),
-            residual_gate_bias_init=float(residual_gate_bias_init),
-            residual_detach_base_in_gate=bool(residual_detach_base_in_gate),
-        )
 
-    def _initialize_mlp(
+    # -------------------------
+    # init helpers
+    # -------------------------
+    def _init_mlp_modules(
         self,
         image_embedding_dim: int,
         text_embedding_dim: int,
@@ -525,12 +531,9 @@ class ResBinaryClassifier(nn.Module):
         key_dropout: float,
         fusion_hidden_dim: int,
         fusion_dropout: float,
-        delta_scale_max: float,
-        residual_logit_max: float,
-        residual_detach_base_in_gate: bool,
     ) -> None:
-        self.key: FirstImpressionEncoder | None = None
-        if bool(self.use_first_impression):
+        # 仅在 use_first_impression=True 时创建 key 分支
+        if self.use_first_impression:
             self.key = FirstImpressionEncoder(
                 image_embedding_dim=int(image_embedding_dim),
                 text_embedding_dim=int(text_embedding_dim),
@@ -540,6 +543,8 @@ class ResBinaryClassifier(nn.Module):
 
         head_in_dim = int(d_model) + int(self.meta_hidden_dim) + (int(d_model) if self.use_first_impression else 0)
         head_hidden_dim = int(fusion_hidden_dim) if int(fusion_hidden_dim) > 0 else int(2 * head_in_dim)
+
+        # mlp 模式下唯一的分类头（两路/三路由 head_in_dim 决定）
         self.head = SeqFusionHead(
             input_dim=int(head_in_dim),
             hidden_dim=int(head_hidden_dim),
@@ -547,23 +552,7 @@ class ResBinaryClassifier(nn.Module):
         )
         self.fusion_hidden_dim = int(head_hidden_dim)
 
-        # res 模式相关占位（不创建任何多余参数/模块）
-        self.meta_proj = None
-        self.ln_seq = None
-        self.ln_meta = None
-        self.ln_key = None
-        self.ln_key_meta_mul = None
-        self.mlp_base = None
-        self.mlp_prior = None
-        self.delta_scale_max = float(delta_scale_max)
-        self.delta_scale_raw = None
-        self.residual_logit_max = float(residual_logit_max)
-        self.residual_gate_mode = "none"
-        self.residual_detach_base_in_gate = bool(residual_detach_base_in_gate)
-        self.gate_bias = None
-        self.gate_scale_raw = None
-
-    def _initialize_res(
+    def _init_res_modules(
         self,
         image_embedding_dim: int,
         text_embedding_dim: int,
@@ -581,7 +570,7 @@ class ResBinaryClassifier(nn.Module):
         residual_gate_bias_init: float,
         residual_detach_base_in_gate: bool,
     ) -> None:
-        # baseline_mode=res：需要 key 分支 + 残差头
+        # key 分支（res 必需）
         self.key = FirstImpressionEncoder(
             image_embedding_dim=int(image_embedding_dim),
             text_embedding_dim=int(text_embedding_dim),
@@ -589,21 +578,20 @@ class ResBinaryClassifier(nn.Module):
             dropout=float(key_dropout),
         )
 
-        self.meta_proj: nn.Module
+        # meta 投影到 d
         if int(self.meta_hidden_dim) == int(d_model):
             self.meta_proj = nn.Identity()
         else:
             self.meta_proj = nn.Linear(int(self.meta_hidden_dim), int(d_model))
             _init_linear(self.meta_proj)  # type: ignore[arg-type]
 
-        # 分支 LN（按需求：在 concat 前对各向量做归一化）
+        # 分支 LN
         self.ln_seq = nn.LayerNorm(int(d_model))
         self.ln_meta = nn.LayerNorm(int(d_model))
         self.ln_key = nn.LayerNorm(int(d_model))
         self.ln_key_meta_mul = nn.LayerNorm(int(d_model))
 
-        # baseline_mode=res 不使用分类 head（z_base + delta 直接作为 logits）
-
+        # z_base: 结构与 seq 融合头一致（SeqFusionHead）
         self.mlp_base = SeqFusionHead(
             input_dim=int(2 * d_model),
             hidden_dim=int(base_hidden_dim),
@@ -611,6 +599,7 @@ class ResBinaryClassifier(nn.Module):
         )
         self.base_hidden_dim = int(base_hidden_dim)
 
+        # z_res_raw: TwoLayerMLPHead
         self.mlp_prior = TwoLayerMLPHead(
             input_dim=int(3 * d_model),
             hidden_dim=int(prior_hidden_dim),
@@ -618,11 +607,11 @@ class ResBinaryClassifier(nn.Module):
         )
         self.prior_hidden_dim = int(prior_hidden_dim)
 
+        # residual scale (bounded)
         self.delta_scale_max = float(delta_scale_max)
         if self.delta_scale_max < 0.0:
             raise ValueError("delta_scale_max 需要 >= 0")
 
-        # 用 tanh 参数化，使有效 delta_scale ∈ [-delta_scale_max, delta_scale_max]
         if self.delta_scale_max > 0.0:
             ratio = float(delta_scale_init) / float(self.delta_scale_max)
             ratio = float(max(min(ratio, 0.999), -0.999))
@@ -632,38 +621,46 @@ class ResBinaryClassifier(nn.Module):
         self.delta_scale_raw = nn.Parameter(torch.tensor(float(delta_scale_raw_init), dtype=torch.float32))
 
         self.residual_logit_max = float(residual_logit_max)
-        self.residual_gate_mode = str(residual_gate_mode or "").strip().lower()
-        if self.residual_gate_mode not in {"none", "conf"}:
-            raise ValueError(f"不支持的 residual_gate_mode={self.residual_gate_mode!r}，可选：none/conf")
+
+        # residual gate
+        if residual_gate_mode not in {"none", "conf"}:
+            raise ValueError(f"不支持的 residual_gate_mode={residual_gate_mode!r}，可选：none/conf")
+        self.residual_gate_mode = residual_gate_mode
         self.residual_detach_base_in_gate = bool(residual_detach_base_in_gate)
 
-        self.gate_bias: nn.Parameter | None = None
-        self.gate_scale_raw: nn.Parameter | None = None
         if self.residual_gate_mode == "conf":
             self.gate_bias = nn.Parameter(torch.tensor(float(residual_gate_bias_init), dtype=torch.float32))
             self.gate_scale_raw = nn.Parameter(
                 torch.tensor(_softplus_inverse(float(residual_gate_scale_init)), dtype=torch.float32)
             )
+        else:
+            # 不创建 gate 参数（按需构建）
+            self.gate_bias = None  # 只在 res 分支里被访问；residual_gate_mode="none" 时不会用到
+            self.gate_scale_raw = None
 
+    # -------------------------
+    # res helpers
+    # -------------------------
     def effective_delta_scale(self) -> torch.Tensor:
-        """返回当前有效 delta_scale（有界，标量 Tensor）。"""
-        raw = self.delta_scale_raw
-        if raw is None or not (self.delta_scale_max > 0.0):
-            device = raw.device if raw is not None else None
-            dtype = raw.dtype if raw is not None else torch.float32
-            return torch.zeros((), device=device, dtype=dtype)
-        return float(self.delta_scale_max) * torch.tanh(raw)
+        """res 模式：返回当前有效 delta_scale（有界，标量 Tensor）。"""
+        # 仅 res 模式会调用；delta_scale_raw 在 res 初始化里必存在
+        if not (self.delta_scale_max > 0.0):
+            return torch.zeros((), device=self.delta_scale_raw.device, dtype=self.delta_scale_raw.dtype)
+        return float(self.delta_scale_max) * torch.tanh(self.delta_scale_raw)
 
     def _confidence_gate(self, z_base: torch.Tensor) -> torch.Tensor:
+        """res 模式：基于 |z_base| 的置信门控（可选）。"""
         if self.residual_gate_mode != "conf":
             return torch.ones_like(z_base)
         if self.gate_bias is None or self.gate_scale_raw is None:
             raise RuntimeError("residual_gate_mode='conf' 但 gate 参数未初始化。")
-
         z = z_base.detach() if bool(self.residual_detach_base_in_gate) else z_base
         gate_scale = F.softplus(self.gate_scale_raw)
         return torch.sigmoid(self.gate_bias - gate_scale * torch.abs(z))
 
+    # -------------------------
+    # forward
+    # -------------------------
     def forward(
         self,
         title_blurb: torch.Tensor,
@@ -676,7 +673,7 @@ class ResBinaryClassifier(nn.Module):
         x_meta: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if x_meta is None:
-            raise ValueError("x_meta 不能为空（res 模块默认始终使用 meta 分支）。")
+            raise ValueError("x_meta 不能为空（本模型默认始终使用 meta 分支）。")
 
         if self.baseline_mode == "mlp":
             return self._forward_mlp(
@@ -690,7 +687,8 @@ class ResBinaryClassifier(nn.Module):
                 x_meta=x_meta,
             )
 
-        return self._forward_res(
+        # baseline_mode == "res"
+        z, _z_base, _delta = self.forward_res_parts(
             title_blurb=title_blurb,
             cover=cover,
             x_img=x_img,
@@ -700,6 +698,7 @@ class ResBinaryClassifier(nn.Module):
             seq_mask=seq_mask,
             x_meta=x_meta,
         )
+        return z
 
     def _forward_mlp(
         self,
@@ -720,38 +719,15 @@ class ResBinaryClassifier(nn.Module):
             seq_mask=seq_mask,
         )  # [B, d]
         v_meta = self.meta(x_meta)  # [B, meta_hidden_dim]
+
         feats = [h_seq, v_meta]
-        if bool(self.use_first_impression):
-            if self.key is None:
-                raise RuntimeError("use_first_impression=True 但 key 分支未初始化。")
+        if self.use_first_impression:
+            # use_first_impression=True 时 key 必然已构建
             v_key = self.key(title_blurb=title_blurb, cover=cover)  # [B, d]
             feats.append(v_key)
 
         fused = torch.cat(feats, dim=1)
         return self.head(fused)
-
-    def _forward_res(
-        self,
-        title_blurb: torch.Tensor,
-        cover: torch.Tensor,
-        x_img: torch.Tensor,
-        x_txt: torch.Tensor,
-        seq_type: torch.Tensor,
-        seq_attr: torch.Tensor,
-        seq_mask: torch.Tensor,
-        x_meta: torch.Tensor,
-    ) -> torch.Tensor:
-        z, _z_base, _delta = self.forward_res_parts(
-            title_blurb=title_blurb,
-            cover=cover,
-            x_img=x_img,
-            x_txt=x_txt,
-            seq_type=seq_type,
-            seq_attr=seq_attr,
-            seq_mask=seq_mask,
-            x_meta=x_meta,
-        )
-        return z
 
     def forward_res_parts(
         self,
@@ -771,16 +747,16 @@ class ResBinaryClassifier(nn.Module):
         返回：
         - z：最终 logits
         - z_base：基线 logits
-        - delta：残差项（最终加到 z_base 上的修正；已包含裁剪/门控/缩放）
+        - delta：残差项（已包含裁剪/门控/缩放）
 
-        当 return_debug=True 时额外返回：
+        当 return_debug=True 额外返回：
         - delta_scale：effective_delta_scale()（有界标量 Tensor）
         - z_res_raw：残差分支原始输出（未裁剪、未门控、未缩放）
         """
         if self.baseline_mode != "res":
             raise RuntimeError("forward_res_parts 仅支持 baseline_mode='res'。")
         if x_meta is None:
-            raise ValueError("x_meta 不能为空（res 模块默认始终使用 meta 分支）。")
+            raise ValueError("x_meta 不能为空（res 模式默认始终使用 meta 分支）。")
 
         v_key = self.key(title_blurb=title_blurb, cover=cover)  # [B, d]
         h_seq = self.seq(
@@ -791,13 +767,12 @@ class ResBinaryClassifier(nn.Module):
             seq_mask=seq_mask,
         )  # [B, d]
         v_meta_d = self.meta_proj(self.meta(x_meta))  # [B, d]
-        v_key_d = v_key  # [B, d]
 
         base_in = torch.cat([self.ln_seq(h_seq), self.ln_meta(v_meta_d)], dim=1)
         z_base = self.mlp_base(base_in)
 
-        km = 0.5 * (v_key_d * v_meta_d)
-        prior_in = torch.cat([self.ln_key(v_key_d), self.ln_meta(v_meta_d), self.ln_key_meta_mul(km)], dim=1)
+        km = 0.5 * (v_key * v_meta_d)
+        prior_in = torch.cat([self.ln_key(v_key), self.ln_meta(v_meta_d), self.ln_key_meta_mul(km)], dim=1)
         z_res_raw = self.mlp_prior(prior_in)
         z_res = _tanh_clip(z_res_raw, self.residual_logit_max)
 
