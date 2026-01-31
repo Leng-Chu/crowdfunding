@@ -31,6 +31,7 @@ from env_overrides import apply_config_overrides_from_env
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="res 训练入口（支持命令行覆盖少量常用配置）。")
     parser.add_argument("--run-name", default=None, help="实验名称后缀，用于产物目录命名。")
+    parser.add_argument("--seed", type=int, default=None, help="随机数种子（覆盖 config.py 的 random_seed）")
     parser.add_argument(
         "--baseline-mode",
         default=None,
@@ -155,11 +156,17 @@ def main() -> int:
     # 允许通过环境变量覆盖少量超参（主要用于自动化脚本；不影响默认训练）。
     cfg = apply_config_overrides_from_env(cfg)
 
+    if args.seed is not None:
+        cfg = replace(cfg, random_seed=int(args.seed))
+
     baseline_mode = str(getattr(cfg, "baseline_mode", "res")).strip().lower()
     if baseline_mode not in {"mlp", "res"}:
         raise ValueError(f"不支持的 baseline_mode={baseline_mode!r}，可选：mlp/res")
     meta_enabled = True
     mode = baseline_mode
+    if baseline_mode == "mlp":
+        use_key = bool(getattr(cfg, "use_first_impression", True))
+        mode += "-use-key" if use_key else "-no-key"
 
     project_root = Path(__file__).resolve().parents[3]
     csv_path = project_root / cfg.data_csv
@@ -195,6 +202,7 @@ def main() -> int:
     logger.info("data_csv=%s", str(csv_path))
     logger.info("projects_root=%s", str(projects_root))
     logger.info("device=%s", str(getattr(cfg, "device", "auto")))
+    logger.info("random_seed=%d", int(getattr(cfg, "random_seed", 0)))
     logger.info(
         "embedding：image=%s text=%s | max_seq_len=%d trunc=%s | seq=trm_pos(sin)",
         cfg.image_embedding_type,

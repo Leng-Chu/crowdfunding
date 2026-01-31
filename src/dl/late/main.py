@@ -31,6 +31,7 @@ from config import LateConfig
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="late 训练入口（支持命令行覆盖少量配置）。")
     parser.add_argument("--run-name", default=None, help="实验名称后缀，用于产物目录命名。")
+    parser.add_argument("--seed", type=int, default=None, help="随机数种子（覆盖 config.py 的 random_seed）")
     parser.add_argument(
         "--use-meta",
         default=None,
@@ -157,6 +158,9 @@ def main() -> int:
     elif args.gpu is not None:
         cfg = replace(cfg, device=f"cuda:{int(args.gpu)}")
 
+    if args.seed is not None:
+        cfg = replace(cfg, random_seed=int(args.seed))
+
     use_meta = bool(cfg.use_meta)
 
     project_root = Path(__file__).resolve().parents[3]
@@ -186,6 +190,7 @@ def main() -> int:
     logger.info("data_csv=%s", str(csv_path))
     logger.info("projects_root=%s", str(projects_root))
     logger.info("device=%s", str(getattr(cfg, "device", "auto")))
+    logger.info("random_seed=%d", int(getattr(cfg, "random_seed", 0)))
     logger.info(
         "embedding：image=%s text=%s | max_seq_len=%d trunc=%s",
         cfg.image_embedding_type,

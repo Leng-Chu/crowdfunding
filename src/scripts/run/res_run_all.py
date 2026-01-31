@@ -25,9 +25,11 @@ def run_all_experiments():
     # 定义所有实验命令
     all_commands = [
         # RES模型的不同配置
-        ("conda run -n crowdfunding python src/dl/res/main.py --run-name mlp_baseline --baseline-mode mlp --image-embedding-type clip --text-embedding-type clip --device cuda:2", 
-         "RES: MLP Baseline"),
-        ("conda run -n crowdfunding python src/dl/res/main.py --run-name res_model --baseline-mode res --image-embedding-type clip --text-embedding-type clip --device cuda:3", 
+        ("conda run -n crowdfunding python src/dl/res/main.py --run-name 42 --seed 42 --baseline-mode mlp --no-use-first-impression --device cuda:1", 
+         "RES: 2 MLP"),
+        ("conda run -n crowdfunding python src/dl/res/main.py --run-name 42 --seed 42 --baseline-mode mlp --use-first-impression --device cuda:2", 
+         "RES: 3 MLP"),
+        ("conda run -n crowdfunding python src/dl/res/main.py --run-name 42 --seed 42 --baseline-mode res --device cuda:3", 
          "RES: RES Model")
     ]
     

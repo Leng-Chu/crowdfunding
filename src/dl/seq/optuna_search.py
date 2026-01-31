@@ -202,6 +202,7 @@ def _build_train_cmd(
     image_embedding_type: str,
     text_embedding_type: str,
     run_name: str,
+    seed: int,
     device: Optional[str],
     gpu: Optional[int],
 ) -> list[str]:
@@ -217,6 +218,8 @@ def _build_train_cmd(
         str(text_embedding_type),
         "--run-name",
         str(run_name),
+        "--seed",
+        str(int(seed)),
     ]
     if device is not None:
         cmd.extend(["--device", str(device)])
@@ -339,6 +342,7 @@ def main() -> int:
             image_embedding_type=image_embedding_type,
             text_embedding_type=text_embedding_type,
             run_name=run_name,
+            seed=int(args.random_seed),
             device=args.device,
             gpu=args.gpu,
         )
