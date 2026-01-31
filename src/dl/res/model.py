@@ -17,12 +17,13 @@
        logit = Head( concat( h_seq, meta_enc(v_meta), v_key ) )
 2) baseline_mode="res"
    z_base = MLP_base( concat( LN(h_seq), LN(meta_proj(meta_enc(v_meta))) ) )
-   z_res  = MLP_prior( concat( LN(v_key), LN(meta_proj(meta_enc(v_meta))), LN(v_key⊙meta_proj(meta_enc(v_meta))) ) )
+   z_res  = MLP_prior( concat( alpha*LN(v_key), LN(meta_key_proj(meta_proj(meta_enc(v_meta)))), alpha*LN(v_key⊙meta_key_proj(meta_proj(meta_enc(v_meta)))) ) )
    logit  = z_base + delta
 
 其中：
 - meta_enc：metadata 表格特征的 MLP 编码（与 seq 的 meta encoder 对齐）
 - meta_proj：把 meta_enc(v_meta) 投影到与 h_seq 相同维度 d（仅 baseline_mode="res" 使用；若已为 d 则 identity）
+- meta_key_proj：把 v_meta_d 投影到与 v_key 相同的 key_dim（仅 baseline_mode="res" 使用；用于 prior 与 v_key⊙v_meta 的维度对齐）
 - delta：残差修正项。为缓解“残差拟合过强/过拟合”，默认使用有界残差：
      - z_res 使用 tanh 软裁剪（限制到 [-residual_logit_max, residual_logit_max]）
      - delta_scale 使用 tanh 参数化（限制到 [-delta_scale_max, delta_scale_max]）
@@ -66,6 +67,17 @@ def _atanh(x: float) -> float:
     elif x <= -1.0 + eps:
         x = -1.0 + eps
     return 0.5 * math.log((1.0 + x) / (1.0 - x))
+
+
+def _logit(p: float) -> float:
+    """sigmoid^{-1}(p)，用于初始化有界标量参数（例如 key_alpha_raw）。"""
+    p = float(p)
+    eps = 1e-6
+    if p <= eps:
+        p = eps
+    elif p >= 1.0 - eps:
+        p = 1.0 - eps
+    return float(math.log(p / (1.0 - p)))
 
 
 def _tanh_clip(x: torch.Tensor, max_abs: float) -> torch.Tensor:
@@ -214,14 +226,14 @@ class FirstImpressionEncoder(nn.Module):
     - cover: [B, D_img]
 
     输出：
-    - v_key: [B, d]
+    - v_key: [B, key_dim]
     """
 
     def __init__(
         self,
         image_embedding_dim: int,
         text_embedding_dim: int,
-        d_model: int,
+        key_dim: int,
         dropout: float = 0.0,
     ) -> None:
         super().__init__()
@@ -229,28 +241,29 @@ class FirstImpressionEncoder(nn.Module):
             raise ValueError(f"image_embedding_dim 需要 > 0，但得到 {image_embedding_dim}")
         if text_embedding_dim <= 0:
             raise ValueError(f"text_embedding_dim 需要 > 0，但得到 {text_embedding_dim}")
-        if d_model <= 0:
-            raise ValueError(f"d_model 需要 > 0，但得到 {d_model}")
+        if key_dim <= 0:
+            raise ValueError(f"key_dim 需要 > 0，但得到 {key_dim}")
         if float(dropout) < 0.0 or float(dropout) >= 1.0:
             raise ValueError("dropout 需要在 [0, 1) 之间")
 
-        self.text_proj = nn.Linear(int(text_embedding_dim), int(d_model))
-        self.cover_proj = nn.Linear(int(image_embedding_dim), int(d_model))
-        self.text_ln = nn.LayerNorm(int(d_model))
-        self.cover_ln = nn.LayerNorm(int(d_model))
-        self.c1_ln = nn.LayerNorm(int(d_model))
+        self.text_proj = nn.Linear(int(text_embedding_dim), int(key_dim))
+        self.cover_proj = nn.Linear(int(image_embedding_dim), int(key_dim))
+        self.text_ln = nn.LayerNorm(int(key_dim))
+        self.cover_ln = nn.LayerNorm(int(key_dim))
+        self.c1_ln = nn.LayerNorm(int(key_dim))
         self.drop = nn.Dropout(p=float(dropout))
 
-        self.alpha_fc = nn.Linear(int(3 * d_model), 1)
-        self.beta_fc = nn.Linear(int(3 * d_model), 1)
+        self.alpha_fc = nn.Linear(int(3 * key_dim), 1)
+        self.beta_fc = nn.Linear(int(3 * key_dim), 1)
 
-        self.text_agg_fc = nn.Linear(int(2 * d_model), int(d_model))
-        self.text_agg_ln = nn.LayerNorm(int(d_model))
+        self.text_agg_fc = nn.Linear(int(2 * key_dim), int(key_dim))
+        self.text_agg_ln = nn.LayerNorm(int(key_dim))
 
-        self.key_fc = nn.Linear(int(3 * d_model), int(d_model))
-        self.key_ln = nn.LayerNorm(int(d_model))
+        self.key_fc = nn.Linear(int(3 * key_dim), int(key_dim))
+        self.key_ln = nn.LayerNorm(int(key_dim))
 
-        self.d_model = int(d_model)
+        self.key_dim = int(key_dim)
+        self.d_model = int(key_dim)  # 兼容旧字段名：本分支维度即 key_dim
         self._init_weights()
 
     def _init_weights(self) -> None:
@@ -433,6 +446,7 @@ class ResBinaryClassifier(nn.Module):
         image_embedding_dim: int,
         text_embedding_dim: int,
         d_model: int,
+        key_dim: int,
         token_dropout: float,
         key_dropout: float,
         max_seq_len: int,
@@ -449,6 +463,8 @@ class ResBinaryClassifier(nn.Module):
         prior_hidden_dim: int,
         prior_dropout: float,
         use_first_impression: bool = True,
+        key_alpha_init: float = 0.1,
+        key_alpha_max: float = 1.0,
         delta_scale_init: float = 0.0,
         delta_scale_max: float = 0.5,
         residual_logit_max: float = 2.0,
@@ -467,6 +483,21 @@ class ResBinaryClassifier(nn.Module):
             raise ValueError("meta_input_dim 需要 > 0（本模型默认始终使用 meta 分支）。")
 
         self.d_model = int(d_model)
+        self.key_dim = int(key_dim)
+        if self.key_dim <= 0:
+            raise ValueError(f"key_dim 需要 > 0，但得到 {self.key_dim}")
+
+        # v_key 的有界标量缩放系数：用 sigmoid 参数化到 [0, key_alpha_max]
+        self.key_alpha_max = float(key_alpha_max)
+        if self.key_alpha_max < 0.0:
+            raise ValueError("key_alpha_max 需要 >= 0")
+        if self.key_alpha_max > 0.0:
+            ratio = float(key_alpha_init) / float(self.key_alpha_max)
+            ratio = float(max(min(ratio, 0.999), 0.001))
+            key_alpha_raw_init = _logit(ratio)
+        else:
+            key_alpha_raw_init = -20.0
+        self.key_alpha_raw = nn.Parameter(torch.tensor(float(key_alpha_raw_init), dtype=torch.float32))
 
         # --- shared encoders (always exist) ---
         self.seq = ContentSeqEncoder(
@@ -495,6 +526,7 @@ class ResBinaryClassifier(nn.Module):
                 image_embedding_dim=int(image_embedding_dim),
                 text_embedding_dim=int(text_embedding_dim),
                 d_model=int(d_model),
+                key_dim=int(key_dim),
                 key_dropout=float(key_dropout),
                 fusion_hidden_dim=int(fusion_hidden_dim),
                 fusion_dropout=float(fusion_dropout),
@@ -506,6 +538,7 @@ class ResBinaryClassifier(nn.Module):
                 image_embedding_dim=int(image_embedding_dim),
                 text_embedding_dim=int(text_embedding_dim),
                 d_model=int(d_model),
+                key_dim=int(key_dim),
                 key_dropout=float(key_dropout),
                 base_hidden_dim=int(base_hidden_dim),
                 base_dropout=float(base_dropout),
@@ -528,6 +561,7 @@ class ResBinaryClassifier(nn.Module):
         image_embedding_dim: int,
         text_embedding_dim: int,
         d_model: int,
+        key_dim: int,
         key_dropout: float,
         fusion_hidden_dim: int,
         fusion_dropout: float,
@@ -537,11 +571,11 @@ class ResBinaryClassifier(nn.Module):
             self.key = FirstImpressionEncoder(
                 image_embedding_dim=int(image_embedding_dim),
                 text_embedding_dim=int(text_embedding_dim),
-                d_model=int(d_model),
+                key_dim=int(key_dim),
                 dropout=float(key_dropout),
             )
 
-        head_in_dim = int(d_model) + int(self.meta_hidden_dim) + (int(d_model) if self.use_first_impression else 0)
+        head_in_dim = int(d_model) + int(self.meta_hidden_dim) + (int(key_dim) if self.use_first_impression else 0)
         head_hidden_dim = int(fusion_hidden_dim) if int(fusion_hidden_dim) > 0 else int(2 * head_in_dim)
 
         # mlp 模式下唯一的分类头（两路/三路由 head_in_dim 决定）
@@ -557,6 +591,7 @@ class ResBinaryClassifier(nn.Module):
         image_embedding_dim: int,
         text_embedding_dim: int,
         d_model: int,
+        key_dim: int,
         key_dropout: float,
         base_hidden_dim: int,
         base_dropout: float,
@@ -574,7 +609,7 @@ class ResBinaryClassifier(nn.Module):
         self.key = FirstImpressionEncoder(
             image_embedding_dim=int(image_embedding_dim),
             text_embedding_dim=int(text_embedding_dim),
-            d_model=int(d_model),
+            key_dim=int(key_dim),
             dropout=float(key_dropout),
         )
 
@@ -585,11 +620,19 @@ class ResBinaryClassifier(nn.Module):
             self.meta_proj = nn.Linear(int(self.meta_hidden_dim), int(d_model))
             _init_linear(self.meta_proj)  # type: ignore[arg-type]
 
+        # meta 投影到 key_dim（用于 prior，与 v_key 对齐）
+        if int(key_dim) == int(d_model):
+            self.meta_key_proj = nn.Identity()
+        else:
+            self.meta_key_proj = nn.Linear(int(d_model), int(key_dim))
+            _init_linear(self.meta_key_proj)  # type: ignore[arg-type]
+
         # 分支 LN
         self.ln_seq = nn.LayerNorm(int(d_model))
-        self.ln_meta = nn.LayerNorm(int(d_model))
-        self.ln_key = nn.LayerNorm(int(d_model))
-        self.ln_key_meta_mul = nn.LayerNorm(int(d_model))
+        self.ln_meta_d = nn.LayerNorm(int(d_model))
+        self.ln_key = nn.LayerNorm(int(key_dim))
+        self.ln_meta_k = nn.LayerNorm(int(key_dim))
+        self.ln_key_meta_mul = nn.LayerNorm(int(key_dim))
 
         # z_base: 结构与 seq 融合头一致（SeqFusionHead）
         self.mlp_base = SeqFusionHead(
@@ -601,7 +644,7 @@ class ResBinaryClassifier(nn.Module):
 
         # z_res_raw: TwoLayerMLPHead
         self.mlp_prior = TwoLayerMLPHead(
-            input_dim=int(3 * d_model),
+            input_dim=int(3 * key_dim),
             hidden_dim=int(prior_hidden_dim),
             dropout=float(prior_dropout),
         )
@@ -647,6 +690,12 @@ class ResBinaryClassifier(nn.Module):
         if not (self.delta_scale_max > 0.0):
             return torch.zeros((), device=self.delta_scale_raw.device, dtype=self.delta_scale_raw.dtype)
         return float(self.delta_scale_max) * torch.tanh(self.delta_scale_raw)
+
+    def effective_key_alpha(self) -> torch.Tensor:
+        """返回当前有效 key_alpha（有界，标量 Tensor）。"""
+        if not (self.key_alpha_max > 0.0):
+            return torch.zeros((), device=self.key_alpha_raw.device, dtype=self.key_alpha_raw.dtype)
+        return float(self.key_alpha_max) * torch.sigmoid(self.key_alpha_raw)
 
     def _confidence_gate(self, z_base: torch.Tensor) -> torch.Tensor:
         """res 模式：基于 |z_base| 的置信门控（可选）。"""
@@ -723,7 +772,9 @@ class ResBinaryClassifier(nn.Module):
         feats = [h_seq, v_meta]
         if self.use_first_impression:
             # use_first_impression=True 时 key 必然已构建
-            v_key = self.key(title_blurb=title_blurb, cover=cover)  # [B, d]
+            v_key = self.key(title_blurb=title_blurb, cover=cover)  # [B, key_dim]
+            alpha = self.effective_key_alpha().to(device=v_key.device, dtype=v_key.dtype)
+            v_key = v_key * alpha
             feats.append(v_key)
 
         fused = torch.cat(feats, dim=1)
@@ -758,7 +809,7 @@ class ResBinaryClassifier(nn.Module):
         if x_meta is None:
             raise ValueError("x_meta 不能为空（res 模式默认始终使用 meta 分支）。")
 
-        v_key = self.key(title_blurb=title_blurb, cover=cover)  # [B, d]
+        v_key = self.key(title_blurb=title_blurb, cover=cover)  # [B, key_dim]
         h_seq = self.seq(
             x_img=x_img,
             x_txt=x_txt,
@@ -766,13 +817,22 @@ class ResBinaryClassifier(nn.Module):
             seq_attr=seq_attr,
             seq_mask=seq_mask,
         )  # [B, d]
-        v_meta_d = self.meta_proj(self.meta(x_meta))  # [B, d]
+        v_meta_d = self.meta_proj(self.meta(x_meta))  # [B, d_model]
+        v_meta_k = self.meta_key_proj(v_meta_d)  # [B, key_dim]
 
-        base_in = torch.cat([self.ln_seq(h_seq), self.ln_meta(v_meta_d)], dim=1)
+        base_in = torch.cat([self.ln_seq(h_seq), self.ln_meta_d(v_meta_d)], dim=1)
         z_base = self.mlp_base(base_in)
 
-        km = 0.5 * (v_key * v_meta_d)
-        prior_in = torch.cat([self.ln_key(v_key), self.ln_meta(v_meta_d), self.ln_key_meta_mul(km)], dim=1)
+        key_feat = self.ln_key(v_key)
+        meta_feat = self.ln_meta_k(v_meta_k)
+        km = 0.5 * (v_key * v_meta_k)
+        km_feat = self.ln_key_meta_mul(km)
+
+        alpha = self.effective_key_alpha().to(device=v_key.device, dtype=key_feat.dtype)
+        key_feat = key_feat * alpha
+        km_feat = km_feat * alpha
+
+        prior_in = torch.cat([key_feat, meta_feat, km_feat], dim=1)
         z_res_raw = self.mlp_prior(prior_in)
         z_res = _tanh_clip(z_res_raw, self.residual_logit_max)
 
@@ -798,6 +858,7 @@ def build_res_model(
         image_embedding_dim=int(image_embedding_dim),
         text_embedding_dim=int(text_embedding_dim),
         d_model=int(getattr(cfg, "d_model", 256)),
+        key_dim=int(getattr(cfg, "key_dim", getattr(cfg, "d_model", 256))),
         token_dropout=float(getattr(cfg, "token_dropout", 0.0)),
         key_dropout=float(getattr(cfg, "key_dropout", 0.0)),
         use_first_impression=bool(getattr(cfg, "use_first_impression", True)),
@@ -814,6 +875,8 @@ def build_res_model(
         base_dropout=float(getattr(cfg, "base_dropout", 0.5)),
         prior_hidden_dim=int(getattr(cfg, "prior_hidden_dim", 512)),
         prior_dropout=float(getattr(cfg, "prior_dropout", 0.5)),
+        key_alpha_init=float(getattr(cfg, "key_alpha_init", 0.1)),
+        key_alpha_max=float(getattr(cfg, "key_alpha_max", 1.0)),
         delta_scale_init=float(getattr(cfg, "delta_scale_init", 0.0)),
         delta_scale_max=float(getattr(cfg, "delta_scale_max", 0.5)),
         residual_logit_max=float(getattr(cfg, "residual_logit_max", 0.0)),

@@ -87,6 +87,16 @@ class ResConfig:
     meta_hidden_dim: int = 64
     meta_dropout: float = 0.45
 
+    # First Impression（title/blurb/cover）分支维度（容量旋钮）
+    # - v_key 的维度由 key_dim 决定（不再强制等于 d_model）
+    # - res 模式下 prior 分支会将 v_meta_d 投影到 key_dim（以便计算 v_key⊙v_meta）
+    key_dim: int = 64
+
+    # v_key 的有界缩放系数（先小后大）：effective_alpha = key_alpha_max * sigmoid(key_alpha_raw)
+    # - 初始值建议 0.05~0.1：训练早期压制 v_key，先让模型学习 seq/meta
+    key_alpha_init: float = 0.1
+    key_alpha_max: float = 1.0
+
     # First Impression（title/blurb/cover）分支的 dropout
     # 仅对 baseline_mode=mlp 生效：是否使用“第一印象”分支（v_key）
     # - True：与当前 res/mlp 默认行为一致（使用 v_key）

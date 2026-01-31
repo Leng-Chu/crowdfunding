@@ -30,6 +30,12 @@ _LABEL_SMOOTHING_EPS = 0.05
 _EMA_DECAY = 0.999
 _WARMUP_RATIO = 0.1
 _DEFAULT_MAX_GRAD_NORM = 1.0
+_NO_WEIGHT_DECAY_NAME_SUFFIXES = (
+    "delta_scale_raw",
+    "key_alpha_raw",
+    "gate_bias",
+    "gate_scale_raw",
+)
 
 
 def _build_grad_scaler(enabled: bool):
@@ -72,7 +78,7 @@ def _build_adamw(model: nn.Module, lr: float, weight_decay: float) -> torch.opti
     for name, p in model.named_parameters():
         if not bool(p.requires_grad):
             continue
-        if name.endswith(".bias") or id(p) in norm_param_ids:
+        if name.endswith(".bias") or id(p) in norm_param_ids or str(name).endswith(_NO_WEIGHT_DECAY_NAME_SUFFIXES):
             no_decay_params.append(p)
         else:
             decay_params.append(p)

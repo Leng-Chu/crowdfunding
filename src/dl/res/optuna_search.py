@@ -137,7 +137,10 @@ def _suggest_params(trial) -> Dict[str, Any]:
     lr = trial.suggest_float("learning_rate_init", 1e-5, 8e-4, log=True)
     wd = trial.suggest_float("alpha", 1e-6, 1e-2, log=True)
 
-    d_model = trial.suggest_categorical("d_model", [128, 192, 256])
+    d_model = trial.suggest_categorical("d_model", [192, 256])
+    key_dim = trial.suggest_categorical("key_dim", [32, 64, 96])
+    # v_key 的有界缩放：建议 0.05~0.1 左右起步
+    key_alpha_init = trial.suggest_float("key_alpha_init", 0.03, 0.20)
     # nn.TransformerEncoderLayer 要求 d_model % nhead == 0
     valid_heads = [h for h in (2, 4, 8) if int(d_model) % int(h) == 0]
     if not valid_heads:
@@ -149,14 +152,16 @@ def _suggest_params(trial) -> Dict[str, Any]:
 
     token_dropout = trial.suggest_float("token_dropout", 0.0, 0.35)
     transformer_dropout = trial.suggest_float("transformer_dropout", 0.0, 0.35)
-    key_dropout = trial.suggest_float("key_dropout", 0.2, 0.6)
-    meta_hidden_dim = trial.suggest_categorical("meta_hidden_dim", [128, 256, 512, 768])
+    key_dropout = trial.suggest_float("key_dropout", 0.1, 0.7)
+    meta_hidden_dim = trial.suggest_categorical("meta_hidden_dim", [64, 128, 256])
     meta_dropout = trial.suggest_float("meta_dropout", 0.0, 0.6)
 
     out = {
         "learning_rate_init": float(lr),
         "alpha": float(wd),
         "d_model": int(d_model),
+        "key_dim": int(key_dim),
+        "key_alpha_init": float(key_alpha_init),
         "transformer_num_heads": int(n_heads),
         "transformer_num_layers": int(n_layers),
         "transformer_dim_feedforward": int(ff_dim),
@@ -169,11 +174,12 @@ def _suggest_params(trial) -> Dict[str, Any]:
 
     base_dropout = trial.suggest_float("base_dropout", 0.2, 0.7)
     prior_dropout = trial.suggest_float("prior_dropout", 0.2, 0.7)
-    base_hidden_dim = trial.suggest_categorical("base_hidden_dim", [256, 512, 768, 1024])
-    prior_hidden_dim = trial.suggest_categorical("prior_hidden_dim", [128, 256, 512, 768, 1024])
+    base_hidden_dim = trial.suggest_categorical("base_hidden_dim", [256, 512, 768])
+    prior_hidden_dim = trial.suggest_categorical("prior_hidden_dim", [64, 128, 256, 512])
 
-    delta_scale_max = trial.suggest_float("delta_scale_max", 0.05, 1.5)
-    residual_logit_max = trial.suggest_float("residual_logit_max", 0.5, 6.0)
+    # 参考 config.py 的经验建议，避免残差抑制强度搜索得过于极端
+    delta_scale_max = trial.suggest_float("delta_scale_max", 0.10, 0.90)
+    residual_logit_max = trial.suggest_float("residual_logit_max", 0.80, 3.50)
     residual_gate_scale_init = trial.suggest_float("residual_gate_scale_init", 0.2, 5.0, log=True)
     residual_gate_bias_init = trial.suggest_float("residual_gate_bias_init", -2.0, 2.0)
 
