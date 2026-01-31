@@ -56,7 +56,7 @@ class ResConfig:
     train_ratio: float = 0.6
     val_ratio: float = 0.2
     test_ratio: float = 0.2
-    shuffle_before_split: bool = False
+    shuffle_before_split: bool = True
 
     # -----------------------------
     # 嵌入配置
@@ -77,16 +77,16 @@ class ResConfig:
     # 模型结构超参
     # -----------------------------
     d_model: int = 256
-    token_dropout: float = 0.25
+    token_dropout: float = 0.1
 
-    transformer_num_layers: int = 4
+    transformer_num_layers: int = 3
     transformer_num_heads: int = 2
     transformer_dim_feedforward: int = 1024
-    transformer_dropout: float = 0.25
+    transformer_dropout: float = 0.1
 
     # MetaEncoder（与 seq 对齐）：metadata 特征 -> FC -> Dropout，输出定长向量
-    meta_hidden_dim: int = 256
-    meta_dropout: float = 0.3
+    meta_hidden_dim: int = 64
+    meta_dropout: float = 0.45
 
     # First Impression（title/blurb/cover）分支的 dropout
     # 仅对 baseline_mode=mlp 生效：是否使用“第一印象”分支（v_key）
@@ -100,8 +100,8 @@ class ResConfig:
     # -----------------------------
     # baseline_mode=mlp：logit = Fusion( concat(LN(h_seq), LN(meta_enc(v_meta)), LN(key_proj(v_key))) )
     # 为了与 seq 模块对齐，分类头超参命名统一为 fusion_*。
-    fusion_hidden_dim: int = 512
-    fusion_dropout: float = 0.5
+    fusion_hidden_dim: int = 768
+    fusion_dropout: float = 0.45
 
     # baseline_mode=res：z_base = MLP_base( concat(LN(h_seq), LN(meta_proj(v_meta))) )
     # 关键：MLP_base 结构需与 src/dl/seq/model.py 的融合头一致
@@ -134,17 +134,17 @@ class ResConfig:
     # -----------------------------
     # 训练超参（与 seq 训练流程对齐）
     # -----------------------------
-    alpha: float = 5e-3  # weight_decay（AdamW）
+    alpha: float = 4e-6  # weight_decay（AdamW）
     learning_rate_init: float = 2e-4
     batch_size: int = 256
 
-    max_epochs: int = 50
-    early_stop_patience: int = 8
+    max_epochs: int = 80
+    early_stop_patience: int = 10
     early_stop_min_epochs: int = 5
     lr_scheduler_min_lr: float = 1e-5
 
     max_grad_norm: float = 1.0
-    random_seed: int = 42
+    random_seed: int = 72
     save_plots: bool = True
 
     # baseline_mode=res 的残差调试统计开关（写入 history.csv，并打印到 train.log）
