@@ -688,7 +688,7 @@ class ResBinaryClassifier(nn.Module):
             )
 
         # baseline_mode == "res"
-        z, _z_base, _delta = self.forward_res_parts(
+        z, _z_base, _delta = self.forward_res(
             title_blurb=title_blurb,
             cover=cover,
             x_img=x_img,
@@ -729,7 +729,7 @@ class ResBinaryClassifier(nn.Module):
         fused = torch.cat(feats, dim=1)
         return self.head(fused)
 
-    def forward_res_parts(
+    def forward_res(
         self,
         title_blurb: torch.Tensor,
         cover: torch.Tensor,
@@ -754,7 +754,7 @@ class ResBinaryClassifier(nn.Module):
         - z_res_raw：残差分支原始输出（未裁剪、未门控、未缩放）
         """
         if self.baseline_mode != "res":
-            raise RuntimeError("forward_res_parts 仅支持 baseline_mode='res'。")
+            raise RuntimeError("forward_res 仅支持 baseline_mode='res'。")
         if x_meta is None:
             raise ValueError("x_meta 不能为空（res 模式默认始终使用 meta 分支）。")
 
