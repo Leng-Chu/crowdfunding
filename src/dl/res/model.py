@@ -483,43 +483,104 @@ class ResBinaryClassifier(nn.Module):
         )
         self.meta_hidden_dim = int(self.meta.output_dim)
 
-        # baseline_mode=mlp：只构建必要模块；use_first_impression 仅决定 Head 是两路还是三路
         if self.baseline_mode == "mlp":
-            self.key: FirstImpressionEncoder | None = None
-            if bool(self.use_first_impression):
-                self.key = FirstImpressionEncoder(
-                    image_embedding_dim=int(image_embedding_dim),
-                    text_embedding_dim=int(text_embedding_dim),
-                    d_model=int(d_model),
-                    dropout=float(key_dropout),
-                )
-
-            head_in_dim = int(d_model) + int(self.meta_hidden_dim) + (int(d_model) if self.use_first_impression else 0)
-            head_hidden_dim = int(fusion_hidden_dim) if int(fusion_hidden_dim) > 0 else int(2 * head_in_dim)
-            self.head = SeqFusionHead(
-                input_dim=int(head_in_dim),
-                hidden_dim=int(head_hidden_dim),
-                dropout=float(fusion_dropout),
+            # baseline_mode=mlp：只构建必要模块；use_first_impression 仅决定 Head 是两路还是三路
+            self._initialize_mlp(
+                image_embedding_dim=int(image_embedding_dim),
+                text_embedding_dim=int(text_embedding_dim),
+                d_model=int(d_model),
+                key_dropout=float(key_dropout),
+                fusion_hidden_dim=int(fusion_hidden_dim),
+                fusion_dropout=float(fusion_dropout),
+                delta_scale_max=float(delta_scale_max),
+                residual_logit_max=float(residual_logit_max),
+                residual_detach_base_in_gate=bool(residual_detach_base_in_gate),
             )
-            self.fusion_hidden_dim = int(head_hidden_dim)
-
-            # res 模式相关占位（不创建任何多余参数/模块）
-            self.meta_proj = None
-            self.ln_seq = None
-            self.ln_meta = None
-            self.ln_key = None
-            self.ln_key_meta_mul = None
-            self.mlp_base = None
-            self.mlp_prior = None
-            self.delta_scale_max = float(delta_scale_max)
-            self.delta_scale_raw = None
-            self.residual_logit_max = float(residual_logit_max)
-            self.residual_gate_mode = "none"
-            self.residual_detach_base_in_gate = bool(residual_detach_base_in_gate)
-            self.gate_bias = None
-            self.gate_scale_raw = None
             return
+        
+        # baseline_mode=res：构建完整三路 + 残差头
+        self._initialize_res(
+            image_embedding_dim=int(image_embedding_dim),
+            text_embedding_dim=int(text_embedding_dim),
+            d_model=int(d_model),
+            key_dropout=float(key_dropout),
+            base_hidden_dim=int(base_hidden_dim),
+            base_dropout=float(base_dropout),
+            prior_hidden_dim=int(prior_hidden_dim),
+            prior_dropout=float(prior_dropout),
+            delta_scale_init=float(delta_scale_init),
+            delta_scale_max=float(delta_scale_max),
+            residual_logit_max=float(residual_logit_max),
+            residual_gate_mode=str(residual_gate_mode or "").strip().lower(),
+            residual_gate_scale_init=float(residual_gate_scale_init),
+            residual_gate_bias_init=float(residual_gate_bias_init),
+            residual_detach_base_in_gate=bool(residual_detach_base_in_gate),
+        )
 
+    def _initialize_mlp(
+        self,
+        image_embedding_dim: int,
+        text_embedding_dim: int,
+        d_model: int,
+        key_dropout: float,
+        fusion_hidden_dim: int,
+        fusion_dropout: float,
+        delta_scale_max: float,
+        residual_logit_max: float,
+        residual_detach_base_in_gate: bool,
+    ) -> None:
+        self.key: FirstImpressionEncoder | None = None
+        if bool(self.use_first_impression):
+            self.key = FirstImpressionEncoder(
+                image_embedding_dim=int(image_embedding_dim),
+                text_embedding_dim=int(text_embedding_dim),
+                d_model=int(d_model),
+                dropout=float(key_dropout),
+            )
+
+        head_in_dim = int(d_model) + int(self.meta_hidden_dim) + (int(d_model) if self.use_first_impression else 0)
+        head_hidden_dim = int(fusion_hidden_dim) if int(fusion_hidden_dim) > 0 else int(2 * head_in_dim)
+        self.head = SeqFusionHead(
+            input_dim=int(head_in_dim),
+            hidden_dim=int(head_hidden_dim),
+            dropout=float(fusion_dropout),
+        )
+        self.fusion_hidden_dim = int(head_hidden_dim)
+
+        # res 模式相关占位（不创建任何多余参数/模块）
+        self.meta_proj = None
+        self.ln_seq = None
+        self.ln_meta = None
+        self.ln_key = None
+        self.ln_key_meta_mul = None
+        self.mlp_base = None
+        self.mlp_prior = None
+        self.delta_scale_max = float(delta_scale_max)
+        self.delta_scale_raw = None
+        self.residual_logit_max = float(residual_logit_max)
+        self.residual_gate_mode = "none"
+        self.residual_detach_base_in_gate = bool(residual_detach_base_in_gate)
+        self.gate_bias = None
+        self.gate_scale_raw = None
+
+    def _initialize_res(
+        self,
+        image_embedding_dim: int,
+        text_embedding_dim: int,
+        d_model: int,
+        key_dropout: float,
+        base_hidden_dim: int,
+        base_dropout: float,
+        prior_hidden_dim: int,
+        prior_dropout: float,
+        delta_scale_init: float,
+        delta_scale_max: float,
+        residual_logit_max: float,
+        residual_gate_mode: str,
+        residual_gate_scale_init: float,
+        residual_gate_bias_init: float,
+        residual_detach_base_in_gate: bool,
+    ) -> None:
         # baseline_mode=res：需要 key 分支 + 残差头
         self.key = FirstImpressionEncoder(
             image_embedding_dim=int(image_embedding_dim),
@@ -618,25 +679,68 @@ class ResBinaryClassifier(nn.Module):
             raise ValueError("x_meta 不能为空（res 模块默认始终使用 meta 分支）。")
 
         if self.baseline_mode == "mlp":
-            h_seq = self.seq(
+            return self._forward_mlp(
+                title_blurb=title_blurb,
+                cover=cover,
                 x_img=x_img,
                 x_txt=x_txt,
                 seq_type=seq_type,
                 seq_attr=seq_attr,
                 seq_mask=seq_mask,
-            )  # [B, d]
-            v_meta = self.meta(x_meta)  # [B, meta_hidden_dim]
-            feats = [h_seq, v_meta]
-            if bool(self.use_first_impression):
-                if self.key is None:
-                    raise RuntimeError("use_first_impression=True 但 key 分支未初始化。")
-                v_key = self.key(title_blurb=title_blurb, cover=cover)  # [B, d]
-                feats.append(v_key)
+                x_meta=x_meta,
+            )
 
-            fused = torch.cat(feats, dim=1)
-            return self.head(fused)
+        return self._forward_res(
+            title_blurb=title_blurb,
+            cover=cover,
+            x_img=x_img,
+            x_txt=x_txt,
+            seq_type=seq_type,
+            seq_attr=seq_attr,
+            seq_mask=seq_mask,
+            x_meta=x_meta,
+        )
 
-        # baseline_mode == "res"
+    def _forward_mlp(
+        self,
+        title_blurb: torch.Tensor,
+        cover: torch.Tensor,
+        x_img: torch.Tensor,
+        x_txt: torch.Tensor,
+        seq_type: torch.Tensor,
+        seq_attr: torch.Tensor,
+        seq_mask: torch.Tensor,
+        x_meta: torch.Tensor,
+    ) -> torch.Tensor:
+        h_seq = self.seq(
+            x_img=x_img,
+            x_txt=x_txt,
+            seq_type=seq_type,
+            seq_attr=seq_attr,
+            seq_mask=seq_mask,
+        )  # [B, d]
+        v_meta = self.meta(x_meta)  # [B, meta_hidden_dim]
+        feats = [h_seq, v_meta]
+        if bool(self.use_first_impression):
+            if self.key is None:
+                raise RuntimeError("use_first_impression=True 但 key 分支未初始化。")
+            v_key = self.key(title_blurb=title_blurb, cover=cover)  # [B, d]
+            feats.append(v_key)
+
+        fused = torch.cat(feats, dim=1)
+        return self.head(fused)
+
+    def _forward_res(
+        self,
+        title_blurb: torch.Tensor,
+        cover: torch.Tensor,
+        x_img: torch.Tensor,
+        x_txt: torch.Tensor,
+        seq_type: torch.Tensor,
+        seq_attr: torch.Tensor,
+        seq_mask: torch.Tensor,
+        x_meta: torch.Tensor,
+    ) -> torch.Tensor:
         z, _z_base, _delta = self.forward_res_parts(
             title_blurb=title_blurb,
             cover=cover,
