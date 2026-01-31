@@ -338,8 +338,8 @@ def _val_residual_debug(
     model.eval()
     use_amp = device.type == "cuda"
 
-    if not hasattr(model, "forward_res_parts"):
-        raise RuntimeError("当前模型不支持 forward_res_parts，无法计算 residual debug 指标。")
+    if not hasattr(model, "forward_res"):
+        raise RuntimeError("当前模型不支持 forward_res，无法计算 residual debug 指标。")
 
     ds = ResDataset(
         X_meta=X_meta,
@@ -372,7 +372,7 @@ def _val_residual_debug(
         with _amp_autocast(device, enabled=bool(use_amp)):
             z_res_raw = None
             try:
-                z, z_base, delta, _delta_scale, z_res_raw = model.forward_res_parts(  # type: ignore[misc]
+                z, z_base, delta, _delta_scale, z_res_raw = model.forward_res(  # type: ignore[misc]
                     title_blurb=tb.to(device),
                     cover=c.to(device),
                     x_img=x_img.to(device),
@@ -384,7 +384,7 @@ def _val_residual_debug(
                     return_debug=True,
                 )
             except TypeError:
-                z, z_base, delta = model.forward_res_parts(  # type: ignore[misc]
+                z, z_base, delta = model.forward_res(  # type: ignore[misc]
                     title_blurb=tb.to(device),
                     cover=c.to(device),
                     x_img=x_img.to(device),

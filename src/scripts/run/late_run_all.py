@@ -33,7 +33,7 @@ def run_all_experiments():
         # 不使用meta数据的不同baseline模式
         ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode attn_pool --no-use-meta --device cuda:2",
          "Late: late_attn_pool (CLIP)"),
-        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --baseline-mode trm_no_pos --no-use-meta --device cuda:3",
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode trm_no_pos --no-use-meta --device cuda:3",
          "Late: late_trm_no_pos (CLIP)")
     ]
     

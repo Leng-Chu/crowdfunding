@@ -33,9 +33,8 @@ class SeqConfig:
     experiment_root: str = "experiments/test"
 
     # -----------------------------
-    # 模式（实验组）
+    # 模式
     # -----------------------------
-    # 仅修改 baseline_mode 即可复现实验组（其余保持一致）
     baseline_mode: str = "set_mean"  # set_mean / set_attn / trm_no_pos / trm_pos / trm_pos_shuffled
 
     # -----------------------------
@@ -49,7 +48,7 @@ class SeqConfig:
     use_prefix: bool = True  # 是否使用 title_blurb 和 cover_image 作为 prefix token
 
     # -----------------------------
-    # 列配置（CSV，与 mlp baseline 对齐）
+    # 列配置
     # -----------------------------
     id_col: str = "project_id"
     target_col: str = "state"
@@ -58,7 +57,7 @@ class SeqConfig:
     numeric_cols: Tuple[str, ...] = ("duration_days", "log_usd_goal")
 
     # -----------------------------
-    # 划分策略（与 mlp baseline 对齐）
+    # 划分策略
     # -----------------------------
     train_ratio: float = 0.6
     val_ratio: float = 0.2
@@ -66,7 +65,7 @@ class SeqConfig:
     shuffle_before_split: bool = True
 
     # -----------------------------
-    # 嵌入配置（必须与其它 baseline 使用同一套 embedding）
+    # 嵌入配置
     # -----------------------------
     image_embedding_type: str = "clip"  # clip / siglip / resnet
     text_embedding_type: str = "clip"  # bge / clip / siglip
@@ -95,14 +94,14 @@ class SeqConfig:
     meta_hidden_dim: int = 64
     meta_dropout: float = 0.45
 
-    # 分类头（与 mlp baseline 对齐：Linear -> ReLU -> Dropout -> Linear(->1)）
+    # 分类头（Linear -> ReLU -> Dropout -> Linear(->1)）
     fusion_hidden_dim: int = 768
     fusion_dropout: float = 0.45
 
     # -----------------------------
-    # 训练超参（与 mlp baseline 训练流程对齐）
+    # 训练超参
     # -----------------------------
-    alpha: float = 4e-6  # weight_decay（L2）
+    alpha: float = 4e-6  # weight_decay
     learning_rate_init: float = 2e-4
     batch_size: int = 256
 

@@ -33,16 +33,15 @@ class ResConfig:
     # -----------------------------
     data_csv: str = "data/metadata/now_processed.csv"
     projects_root: str = "data/projects/now"
-    experiment_root: str = "experiments/res"
+    experiment_root: str = "experiments/test"
 
     # -----------------------------
-    # 模式（实验组）
+    # 模式
     # -----------------------------
-    # 仅修改 baseline_mode 即可复现实验组（其余保持一致）
     baseline_mode: str = "res"  # mlp / res
 
     # -----------------------------
-    # 列配置（CSV，与 mlp/seq 对齐）
+    # 列配置
     # -----------------------------
     id_col: str = "project_id"
     target_col: str = "state"
@@ -51,7 +50,7 @@ class ResConfig:
     numeric_cols: Tuple[str, ...] = ("duration_days", "log_usd_goal")
 
     # -----------------------------
-    # 划分策略（与 seq 对齐）
+    # 划分策略
     # -----------------------------
     train_ratio: float = 0.6
     val_ratio: float = 0.2
@@ -99,7 +98,6 @@ class ResConfig:
     # Head / MLP 超参
     # -----------------------------
     # baseline_mode=mlp：logit = Head( concat(h_seq, meta_enc(v_meta), [v_key]) )（是否包含 v_key 由 use_first_impression 控制）
-    # 为了与 seq 模块对齐，分类头超参命名统一为 fusion_*。
     fusion_hidden_dim: int = 768
     fusion_dropout: float = 0.45
 
@@ -132,9 +130,9 @@ class ResConfig:
     residual_detach_base_in_gate: bool = True
 
     # -----------------------------
-    # 训练超参（与 seq 训练流程对齐）
+    # 训练超参
     # -----------------------------
-    alpha: float = 4e-6  # weight_decay（AdamW）
+    alpha: float = 4e-6  # weight_decay
     learning_rate_init: float = 2e-4
     batch_size: int = 256
 
