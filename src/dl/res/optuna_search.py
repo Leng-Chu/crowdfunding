@@ -9,7 +9,7 @@ Optuna 超参搜索（res）。
 - 自动汇总：输出 summary.csv（trial_id、params、objective、run_dir、关键 test 指标）。
 
 推荐运行方式（从仓库根目录）：
-  conda run -n crowdfunding python src/dl/res/optuna_search.py --device cuda:0 --n-trials 200 --sampler-seed 42
+  conda run -n crowdfunding python src/dl/res/optuna_search.py --device cuda:3 --n-trials 200 --sampler-seed 3 --random-seed 72
 """
 
 from __future__ import annotations
@@ -243,7 +243,7 @@ def _arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--timeout", type=int, default=None, help="总超时（秒），可选")
     p.add_argument("--study-name", default=None, help="study 名称（默认自动生成）")
     p.add_argument("--objective", default="test_auc", help="目标（默认最大化 test_auc）")
-    p.add_argument("--random-seed", type=int, default=72, help="固定 random_seed（每个 trial 相同）")
+    p.add_argument("--random-seed", type=int, default=42, help="固定 random_seed（每个 trial 相同）")
     p.add_argument("--sampler-seed", type=int, default=42, help="Optuna sampler 的随机种子")
     p.add_argument("--fixed-overrides", default=None, help="对所有 trial 生效的 ResConfig 覆盖项：JSON 字符串或 JSON 文件路径")
     p.add_argument("--fail-value", type=float, default=-1.0, help="trial 失败时返回的目标值（默认 -1.0）")
@@ -266,13 +266,14 @@ def main() -> int:
     text_embedding_type = str(args.text_embedding_type).strip().lower()
     objective_col = _objective_key_to_column(args.objective)
 
+    num = "3"
     study_name = (
         str(args.study_name).strip()
         if args.study_name is not None and str(args.study_name).strip()
-        else f"res_{baseline_mode}_{objective_col}_full"
+        else f"res_{objective_col}_{num}"
     )
     root = _project_root()
-    study_dir = root / "experiments" / "res" / "optuna" / study_name
+    study_dir = root / "experiments" / "res" / num / study_name
     logs_dir = study_dir / "trial_logs"
     study_dir.mkdir(parents=True, exist_ok=True)
     logs_dir.mkdir(parents=True, exist_ok=True)
