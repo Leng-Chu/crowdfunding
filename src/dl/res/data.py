@@ -317,6 +317,7 @@ def _build_one_project_features(
     text_emb_path: Path,
     cover_emb_path: Path,
     title_blurb_emb_path: Path,
+    use_first_impression: bool,
     image_dim: int,
     text_dim: int,
     max_seq_len: int,
@@ -343,25 +344,33 @@ def _build_one_project_features(
 
     # First impression：cover + title/blurb（固定形状）
     #
-    # 需求：若缺失则用零向量，并由外层统计计数（不跳过样本）。
-    if cover_emb_path.exists():
-        cover_emb = _as_2d_embedding(np.load(cover_emb_path), cover_emb_path.name)
-        if int(cover_emb.shape[0]) != 1:
-            raise ValueError(f"项目 {project_id} cover_image 行数不合法：期望 1，但得到 {cover_emb.shape}")
-        if int(cover_emb.shape[1]) != int(image_dim):
-            raise ValueError(f"项目 {project_id} cover_image dim 不一致：期望 {image_dim}，但得到 {cover_emb.shape[1]}")
+    # - 当 use_first_impression=False 时，完全跳过 cover/title_blurb 的读取与校验；
+    #   以便与 seq 的 trm_pos 且 use_prefix=False 对齐（不依赖这些文件）。
+    # - 当 use_first_impression=True 时：若缺失则用零向量，并由外层统计计数（不跳过样本）。
+    if bool(use_first_impression):
+        if cover_emb_path.exists():
+            cover_emb = _as_2d_embedding(np.load(cover_emb_path), cover_emb_path.name)
+            if int(cover_emb.shape[0]) != 1:
+                raise ValueError(f"项目 {project_id} cover_image 行数不合法：期望 1，但得到 {cover_emb.shape}")
+            if int(cover_emb.shape[1]) != int(image_dim):
+                raise ValueError(f"项目 {project_id} cover_image dim 不一致：期望 {image_dim}，但得到 {cover_emb.shape[1]}")
+        else:
+            cover_emb = np.zeros((1, int(image_dim)), dtype=np.float32)
+
+        if title_blurb_emb_path.exists():
+            title_blurb_emb = _as_2d_embedding(np.load(title_blurb_emb_path), title_blurb_emb_path.name)
+            if int(title_blurb_emb.shape[0]) != 2:
+                raise ValueError(
+                    f"项目 {project_id} title_blurb 行数不合法：期望 2（固定 [title, blurb]），但得到 {title_blurb_emb.shape}"
+                )
+            if int(title_blurb_emb.shape[1]) != int(text_dim):
+                raise ValueError(
+                    f"项目 {project_id} title_blurb dim 不一致：期望 {text_dim}，但得到 {title_blurb_emb.shape[1]}"
+                )
+        else:
+            title_blurb_emb = np.zeros((2, int(text_dim)), dtype=np.float32)
     else:
         cover_emb = np.zeros((1, int(image_dim)), dtype=np.float32)
-
-    if title_blurb_emb_path.exists():
-        title_blurb_emb = _as_2d_embedding(np.load(title_blurb_emb_path), title_blurb_emb_path.name)
-        if int(title_blurb_emb.shape[0]) != 2:
-            raise ValueError(
-                f"项目 {project_id} title_blurb 行数不合法：期望 2（固定 [title, blurb]），但得到 {title_blurb_emb.shape}"
-            )
-        if int(title_blurb_emb.shape[1]) != int(text_dim):
-            raise ValueError(f"项目 {project_id} title_blurb dim 不一致：期望 {text_dim}，但得到 {title_blurb_emb.shape[1]}")
-    else:
         title_blurb_emb = np.zeros((2, int(text_dim)), dtype=np.float32)
 
     # 正文 embedding（允许某个模态数量为 0；但若数量>0 必须存在文件）
@@ -478,6 +487,7 @@ def _build_features_for_split(
     projects_root: Path,
     cfg: ResConfig,
     meta_enabled: bool,
+    use_first_impression: bool,
     image_dim: int,
     text_dim: int,
     logger=None,
@@ -571,11 +581,12 @@ def _build_features_for_split(
             n_img_expected = int(sum(1 for x in seq if str(x.get("type", "")).strip().lower() == "image"))
             n_txt_expected = int(sum(1 for x in seq if str(x.get("type", "")).strip().lower() == "text"))
 
-            # First impression 缺失：允许用零向量替代，并计数（不跳过样本）。
-            if not cover_emb_path.exists():
-                stats["missing_cover_image_embedding"] += 1
-            if not title_blurb_emb_path.exists():
-                stats["missing_title_blurb_embedding"] += 1
+            if bool(use_first_impression):
+                # First impression 缺失：允许用零向量替代，并计数（不跳过样本）。
+                if not cover_emb_path.exists():
+                    stats["missing_cover_image_embedding"] += 1
+                if not title_blurb_emb_path.exists():
+                    stats["missing_title_blurb_embedding"] += 1
 
             if n_img_expected > 0 and not image_emb_path.exists():
                 stats["missing_image_embedding"] += 1
@@ -602,6 +613,7 @@ def _build_features_for_split(
                 text_emb_path=text_emb_path,
                 cover_emb_path=cover_emb_path,
                 title_blurb_emb_path=title_blurb_emb_path,
+                use_first_impression=bool(use_first_impression),
                 image_dim=int(image_dim),
                 text_dim=int(text_dim),
                 max_seq_len=int(max_seq_len),
@@ -667,6 +679,10 @@ def prepare_res_data(
 
     # res 模块默认始终使用 meta 分支（与需求对齐）。
     meta_enabled = True
+    baseline_mode = str(getattr(cfg, "baseline_mode", "res") or "res").strip().lower()
+    if baseline_mode not in {"mlp", "res"}:
+        raise ValueError(f"不支持的 baseline_mode={baseline_mode!r}，可选：mlp/res")
+    use_first_impression = True if baseline_mode != "mlp" else bool(getattr(cfg, "use_first_impression", True))
     feature_cols = [*cfg.categorical_cols, *cfg.numeric_cols]
     for col in feature_cols:
         if col not in raw_df.columns:
@@ -737,6 +753,7 @@ def prepare_res_data(
         projects_root,
         cfg,
         meta_enabled=meta_enabled,
+        use_first_impression=bool(use_first_impression),
         image_dim=int(image_dim),
         text_dim=int(text_dim),
         logger=logger,
@@ -759,6 +776,7 @@ def prepare_res_data(
         projects_root,
         cfg,
         meta_enabled=meta_enabled,
+        use_first_impression=bool(use_first_impression),
         image_dim=int(image_dim),
         text_dim=int(text_dim),
         logger=logger,
@@ -781,6 +799,7 @@ def prepare_res_data(
         projects_root,
         cfg,
         meta_enabled=meta_enabled,
+        use_first_impression=bool(use_first_impression),
         image_dim=int(image_dim),
         text_dim=int(text_dim),
         logger=logger,

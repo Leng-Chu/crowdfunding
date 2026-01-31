@@ -38,6 +38,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="实验组：mlp / res。",
     )
     parser.add_argument(
+        "--use-first-impression",
+        default=None,
+        action=argparse.BooleanOptionalAction,
+        help="是否使用第一印象分支（仅对 baseline_mode=mlp 生效）。",
+    )
+    parser.add_argument(
         "--image-embedding-type",
         default=None,
         choices=["clip", "siglip", "resnet"],
@@ -134,6 +140,8 @@ def main() -> int:
         cfg = replace(cfg, run_name=str(args.run_name))
     if args.baseline_mode is not None:
         cfg = replace(cfg, baseline_mode=str(args.baseline_mode))
+    if getattr(args, "use_first_impression", None) is not None:
+        cfg = replace(cfg, use_first_impression=bool(args.use_first_impression))
     if args.image_embedding_type is not None:
         cfg = replace(cfg, image_embedding_type=str(args.image_embedding_type))
     if args.text_embedding_type is not None:
@@ -175,7 +183,14 @@ def main() -> int:
 
     logger = setup_logger(run_dir / "train.log")
 
-    logger.info("模式=%s | run_id=%s | baseline_mode=%s | meta_enabled=%s", mode, run_id, baseline_mode, bool(meta_enabled))
+    logger.info(
+        "模式=%s | run_id=%s | baseline_mode=%s | meta_enabled=%s | use_first_impression=%s",
+        mode,
+        run_id,
+        baseline_mode,
+        bool(meta_enabled),
+        bool(getattr(cfg, "use_first_impression", True)),
+    )
     logger.info("python=%s | 平台=%s", sys.version.replace("\n", " "), platform.platform())
     logger.info("data_csv=%s", str(csv_path))
     logger.info("projects_root=%s", str(projects_root))

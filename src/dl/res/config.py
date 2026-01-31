@@ -89,6 +89,10 @@ class ResConfig:
     meta_dropout: float = 0.3
 
     # First Impression（title/blurb/cover）分支的 dropout
+    # 仅对 baseline_mode=mlp 生效：是否使用“第一印象”分支（v_key）
+    # - True：与当前 res/mlp 默认行为一致（使用 v_key）
+    # - False：应与 seq 的 trm_pos 且 use_prefix=False 完全一致
+    use_first_impression: bool = True
     key_dropout: float = 0.5
 
     # -----------------------------
@@ -98,7 +102,6 @@ class ResConfig:
     # 为了与 seq 模块对齐，分类头超参命名统一为 fusion_*。
     fusion_hidden_dim: int = 512
     fusion_dropout: float = 0.5
-    head_activation: str = "relu"  # relu / gelu（仅用于 baseline_mode=mlp 的分类头）
 
     # baseline_mode=res：z_base = MLP_base( concat(LN(h_seq), LN(meta_proj(v_meta))) )
     # 关键：MLP_base 结构需与 src/dl/seq/model.py 的融合头一致
@@ -108,7 +111,6 @@ class ResConfig:
     # baseline_mode=res：z_res = MLP_prior( concat(LN(key_proj(v_key)), LN(meta_proj(v_meta)), LN(key_proj(v_key)⊙meta_proj(v_meta))) )
     prior_hidden_dim: int = 256
     prior_dropout: float = 0.5
-    prior_activation: str = "relu"  # relu / gelu
 
     # baseline_mode=res：z = z_base + delta_scale * z_res（delta_scale 为可学习标量）
     delta_scale_init: float = 0.0

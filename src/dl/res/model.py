@@ -343,19 +343,13 @@ class ContentSeqEncoder(nn.Module):
         return pooled
 
 
-def _activation_module(name: str) -> nn.Module:
-    name = str(name or "").strip().lower()
-    if name == "relu":
-        return nn.ReLU()
-    if name == "gelu":
-        return nn.GELU()
-    raise ValueError(f"不支持的 activation={name!r}，可选：relu/gelu")
-
-
 class TwoLayerMLPHead(nn.Module):
-    """2-layer MLP：Linear -> (ReLU/GELU) -> Dropout -> Linear(1)"""
+    """
+    2-layer MLP（与 SeqFusionHead 对齐）：
+    LayerNorm(input) -> Linear -> ReLU -> Dropout -> Linear(1)
+    """
 
-    def __init__(self, input_dim: int, hidden_dim: int, dropout: float, activation: str = "relu") -> None:
+    def __init__(self, input_dim: int, hidden_dim: int, dropout: float) -> None:
         super().__init__()
         if int(input_dim) <= 0:
             raise ValueError(f"input_dim 需要 > 0，但得到 {input_dim}")
@@ -364,8 +358,8 @@ class TwoLayerMLPHead(nn.Module):
         if float(dropout) < 0.0 or float(dropout) >= 1.0:
             raise ValueError("dropout 需要在 [0, 1) 之间")
 
+        self.fusion_in_ln = nn.LayerNorm(int(input_dim))
         self.fc1 = nn.Linear(int(input_dim), int(hidden_dim))
-        self.act = _activation_module(str(activation))
         self.drop = nn.Dropout(p=float(dropout))
         self.fc2 = nn.Linear(int(hidden_dim), 1)
         self.input_dim = int(input_dim)
@@ -377,8 +371,8 @@ class TwoLayerMLPHead(nn.Module):
         _init_linear(self.fc2)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.fc1(x)
-        x = self.act(x)
+        x = self.fusion_in_ln(x)
+        x = torch.relu(self.fc1(x))
         x = self.drop(x)
         return self.fc2(x).squeeze(-1)
 
@@ -438,12 +432,11 @@ class ResBinaryClassifier(nn.Module):
         meta_dropout: float,
         fusion_hidden_dim: int,
         fusion_dropout: float,
-        head_activation: str,
         base_hidden_dim: int,
         base_dropout: float,
         prior_hidden_dim: int,
         prior_dropout: float,
-        prior_activation: str,
+        use_first_impression: bool = True,
         delta_scale_init: float = 0.0,
         delta_scale_max: float = 0.5,
         residual_logit_max: float = 2.0,
@@ -457,6 +450,7 @@ class ResBinaryClassifier(nn.Module):
         self.baseline_mode = str(baseline_mode or "").strip().lower()
         if self.baseline_mode not in {"mlp", "res"}:
             raise ValueError(f"不支持的 baseline_mode={self.baseline_mode!r}，可选：mlp/res")
+        self.use_first_impression = bool(use_first_impression) if self.baseline_mode == "mlp" else True
 
         if int(meta_input_dim) <= 0:
             raise ValueError("meta_input_dim 需要 > 0（res 模块默认始终使用 meta 分支）。")
@@ -511,7 +505,14 @@ class ResBinaryClassifier(nn.Module):
             input_dim=int(3 * d_model),
             hidden_dim=int(fusion_hidden_dim),
             dropout=float(fusion_dropout),
-            activation=str(head_activation),
+        )
+        # 对齐 seq：trm_pos + use_meta=True + use_prefix=False（仅在 mlp 且 use_first_impression=False 时使用）
+        no_fi_in_dim = int(d_model) + int(self.meta_hidden_dim)
+        no_fi_hidden_dim = int(fusion_hidden_dim) if int(fusion_hidden_dim) > 0 else int(2 * no_fi_in_dim)
+        self.head_no_first_impression = SeqFusionHead(
+            input_dim=int(no_fi_in_dim),
+            hidden_dim=int(no_fi_hidden_dim),
+            dropout=float(fusion_dropout),
         )
         self.fusion_hidden_dim = int(fusion_hidden_dim)
 
@@ -526,7 +527,6 @@ class ResBinaryClassifier(nn.Module):
             input_dim=int(3 * d_model),
             hidden_dim=int(prior_hidden_dim),
             dropout=float(prior_dropout),
-            activation=str(prior_activation),
         )
         self.prior_hidden_dim = int(prior_hidden_dim)
 
@@ -566,8 +566,15 @@ class ResBinaryClassifier(nn.Module):
                 self.gate_bias.requires_grad_(False)
             if self.gate_scale_raw is not None:
                 self.gate_scale_raw.requires_grad_(False)
+            if self.use_first_impression:
+                self.head_no_first_impression.requires_grad_(False)
+            else:
+                self.key.requires_grad_(False)
+                self.meta_proj.requires_grad_(False)
+                self.head.requires_grad_(False)
         else:
             self.head.requires_grad_(False)
+            self.head_no_first_impression.requires_grad_(False)
 
     def effective_delta_scale(self) -> torch.Tensor:
         """返回当前有效 delta_scale（有界，标量 Tensor）。"""
@@ -600,7 +607,6 @@ class ResBinaryClassifier(nn.Module):
             raise ValueError("x_meta 不能为空（res 模块默认始终使用 meta 分支）。")
 
         if self.baseline_mode == "mlp":
-            v_key = self.key(title_blurb=title_blurb, cover=cover)  # [B, d]
             h_seq = self.seq(
                 x_img=x_img,
                 x_txt=x_txt,
@@ -608,7 +614,14 @@ class ResBinaryClassifier(nn.Module):
                 seq_attr=seq_attr,
                 seq_mask=seq_mask,
             )  # [B, d]
-            v_meta_d = self.meta_proj(self.meta(x_meta))  # [B, d]
+            v_meta = self.meta(x_meta)  # [B, meta_hidden_dim]
+
+            if not bool(self.use_first_impression):
+                fused = torch.cat([h_seq, v_meta], dim=1)
+                return self.head_no_first_impression(fused)
+
+            v_key = self.key(title_blurb=title_blurb, cover=cover)  # [B, d]
+            v_meta_d = self.meta_proj(v_meta)  # [B, d]
             v_key_d = self.key_proj(v_key)  # [B, d]
             fused = torch.cat(
                 [
@@ -705,6 +718,7 @@ def build_res_model(
         d_model=int(getattr(cfg, "d_model", 256)),
         token_dropout=float(getattr(cfg, "token_dropout", 0.0)),
         key_dropout=float(getattr(cfg, "key_dropout", 0.0)),
+        use_first_impression=bool(getattr(cfg, "use_first_impression", True)),
         max_seq_len=int(getattr(cfg, "max_seq_len", 40)),
         transformer_num_layers=int(getattr(cfg, "transformer_num_layers", 2)),
         transformer_num_heads=int(getattr(cfg, "transformer_num_heads", 4)),
@@ -714,12 +728,10 @@ def build_res_model(
         meta_dropout=float(getattr(cfg, "meta_dropout", 0.3)),
         fusion_hidden_dim=int(getattr(cfg, "fusion_hidden_dim", 512)),
         fusion_dropout=float(getattr(cfg, "fusion_dropout", 0.5)),
-        head_activation=str(getattr(cfg, "head_activation", "relu")),
         base_hidden_dim=int(getattr(cfg, "base_hidden_dim", 512)),
         base_dropout=float(getattr(cfg, "base_dropout", 0.5)),
         prior_hidden_dim=int(getattr(cfg, "prior_hidden_dim", 512)),
         prior_dropout=float(getattr(cfg, "prior_dropout", 0.5)),
-        prior_activation=str(getattr(cfg, "prior_activation", "relu")),
         delta_scale_init=float(getattr(cfg, "delta_scale_init", 0.0)),
         delta_scale_max=float(getattr(cfg, "delta_scale_max", 0.5)),
         residual_logit_max=float(getattr(cfg, "residual_logit_max", 0.0)),
