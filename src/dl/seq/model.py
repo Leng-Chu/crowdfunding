@@ -214,7 +214,9 @@ class SeqBinaryClassifier(nn.Module):
             token_dropout=float(token_dropout),
         )
 
-        self.set_attn_pool = SetAttentionPooling(int(d_model))
+        self.set_attn_pool: Optional[SetAttentionPooling] = None
+        if self.baseline_mode == "set_attn":
+            self.set_attn_pool = SetAttentionPooling(int(d_model))
 
         self.transformer: Optional[nn.Module] = None
         self.pos: Optional[nn.Module] = None
@@ -279,6 +281,8 @@ class SeqBinaryClassifier(nn.Module):
         if self.baseline_mode == "set_mean":
             pooled = masked_mean_pool(x, seq_mask)
         elif self.baseline_mode == "set_attn":
+            if self.set_attn_pool is None:
+                raise RuntimeError("set_attn_pool 未初始化。")
             pooled = self.set_attn_pool(x, seq_mask)
         elif self.baseline_mode == "trm_no_pos":
             if self.transformer is None:

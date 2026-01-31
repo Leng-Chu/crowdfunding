@@ -98,7 +98,7 @@ class ResConfig:
     # -----------------------------
     # Head / MLP 超参
     # -----------------------------
-    # baseline_mode=mlp：logit = Fusion( concat(LN(h_seq), LN(meta_enc(v_meta)), LN(key_proj(v_key))) )
+    # baseline_mode=mlp：logit = Head( concat(h_seq, meta_enc(v_meta), [v_key]) )（是否包含 v_key 由 use_first_impression 控制）
     # 为了与 seq 模块对齐，分类头超参命名统一为 fusion_*。
     fusion_hidden_dim: int = 768
     fusion_dropout: float = 0.45
@@ -108,7 +108,7 @@ class ResConfig:
     base_hidden_dim: int = 512
     base_dropout: float = 0.5
 
-    # baseline_mode=res：z_res = MLP_prior( concat(LN(key_proj(v_key)), LN(meta_proj(v_meta)), LN(key_proj(v_key)⊙meta_proj(v_meta))) )
+    # baseline_mode=res：z_res = MLP_prior( concat(LN(v_key), LN(meta_proj(v_meta)), LN(v_key⊙meta_proj(v_meta))) )
     prior_hidden_dim: int = 256
     prior_dropout: float = 0.5
 

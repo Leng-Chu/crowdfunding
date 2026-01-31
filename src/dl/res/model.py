@@ -9,19 +9,24 @@
 
 两种 baseline_mode：
 1) baseline_mode="mlp"
-   logit = Head( concat( LN(h_seq), LN(meta_proj(meta_enc(v_meta))), LN(key_proj(v_key)) ) )
+   分类头两路/三路仅由 use_first_impression 决定：
+   - use_first_impression=False：
+       logit = Head( concat( h_seq, meta_enc(v_meta) ) )
+       （对齐 seq：trm_pos + use_meta=True + use_prefix=False）
+   - use_first_impression=True：
+       logit = Head( concat( h_seq, meta_enc(v_meta), v_key ) )
 2) baseline_mode="res"
    z_base = MLP_base( concat( LN(h_seq), LN(meta_proj(meta_enc(v_meta))) ) )
-   z_res  = MLP_prior( concat( LN(key_proj(v_key)), LN(meta_proj(meta_enc(v_meta))), LN(key_proj(v_key)⊙meta_proj(meta_enc(v_meta))) ) )
+   z_res  = MLP_prior( concat( LN(v_key), LN(meta_proj(meta_enc(v_meta))), LN(v_key⊙meta_proj(meta_enc(v_meta))) ) )
    logit  = z_base + delta
 
 其中：
 - meta_enc：metadata 表格特征的 MLP 编码（与 seq 的 meta encoder 对齐）
-- meta_proj/key_proj：把向量投影到与 h_seq 相同维度 d（若已为 d 则 identity）
+- meta_proj：把 meta_enc(v_meta) 投影到与 h_seq 相同维度 d（仅 baseline_mode="res" 使用；若已为 d 则 identity）
 - delta：残差修正项。为缓解“残差拟合过强/过拟合”，默认使用有界残差：
-    - z_res 使用 tanh 软裁剪（限制到 [-residual_logit_max, residual_logit_max]）
-    - delta_scale 使用 tanh 参数化（限制到 [-delta_scale_max, delta_scale_max]）
-    - 可选：基于 |z_base| 的“置信门控”（base 越自信，残差越小）
+     - z_res 使用 tanh 软裁剪（限制到 [-residual_logit_max, residual_logit_max]）
+     - delta_scale 使用 tanh 参数化（限制到 [-delta_scale_max, delta_scale_max]）
+     - 可选：基于 |z_base| 的“置信门控”（base 越自信，残差越小）
 - 关键：MLP_base 的结构必须与 src/dl/seq/model.py 的融合头一致（LN -> Linear -> ReLU -> Dropout -> Linear(1)）。
 """
 
@@ -173,31 +178,6 @@ def masked_mean_pool(x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     return s / d
 
 
-class SetAttentionPooling(nn.Module):
-    """单个全局 query 的单头 attention pooling（不含位置信息）。"""
-
-    def __init__(self, d_model: int) -> None:
-        super().__init__()
-        if int(d_model) <= 0:
-            raise ValueError(f"d_model 需要 > 0，但得到 {d_model}")
-        self.query = nn.Parameter(torch.zeros(int(d_model)))
-        self.scale = float(1.0 / math.sqrt(float(d_model)))
-        self._init_weights()
-
-    def _init_weights(self) -> None:
-        # 对齐 src/dl/seq/model.py：query 用 N(0, 0.02) 初始化
-        nn.init.normal_(self.query, mean=0.0, std=0.02)
-
-    def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        if x.ndim != 3 or mask.ndim != 2:
-            raise ValueError(f"x/mask 形状不合法：x={tuple(x.shape)} mask={tuple(mask.shape)}")
-        scores = torch.einsum("bld,d->bl", x, self.query) * float(self.scale)
-        scores = scores.masked_fill(~mask, torch.finfo(scores.dtype).min)
-        weights = torch.softmax(scores, dim=1).unsqueeze(-1)
-        pooled = torch.sum(x * weights, dim=1)
-        return pooled
-
-
 class SinusoidalPositionalEncoding(nn.Module):
     """标准 sinusoidal 位置编码（固定）。"""
 
@@ -223,118 +203,6 @@ class SinusoidalPositionalEncoding(nn.Module):
         L = int(x.shape[1])
         pos = self.pe[:L].unsqueeze(0).to(device=x.device, dtype=x.dtype)
         return x + pos * mask.unsqueeze(-1).to(dtype=x.dtype)
-
-
-class SeqTrmPosCompatBinaryClassifier(nn.Module):
-    """
-    严格对齐 `src/dl/seq/model.py` 的 `baseline_mode=trm_pos` 且 `use_meta=True` 的实现：
-    - TokenEncoder + sinusoidal PE + Transformer + masked mean pooling
-    - concat(meta) 后：LayerNorm -> Linear -> ReLU -> Dropout -> Linear(1)
-
-    该模型用于 `res` 模块在 `baseline_mode=mlp` 且 `use_first_impression=False` 时，
-    保证与 `seq` 的 `trm_pos + use_prefix=False` 行为（包含初始化顺序/参数集合）完全一致。
-    """
-
-    def __init__(
-        self,
-        meta_input_dim: int,
-        image_embedding_dim: int,
-        text_embedding_dim: int,
-        d_model: int,
-        token_dropout: float,
-        max_seq_len: int,
-        transformer_num_layers: int,
-        transformer_num_heads: int,
-        transformer_dim_feedforward: int,
-        transformer_dropout: float,
-        meta_hidden_dim: int,
-        meta_dropout: float,
-        fusion_hidden_dim: int,
-        fusion_dropout: float,
-    ) -> None:
-        super().__init__()
-        if int(meta_input_dim) <= 0:
-            raise ValueError("meta_input_dim 需要 > 0（该兼容模式强制启用 meta 分支）。")
-        if int(d_model) % int(transformer_num_heads) != 0:
-            raise ValueError(f"d_model={d_model} 必须能被 num_heads={transformer_num_heads} 整除。")
-
-        # 与 seq 完全一致的初始化顺序：token -> set_attn_pool(即使不用) -> transformer -> pos -> meta -> head
-        self.baseline_mode = "trm_pos"
-        self.use_meta = True
-
-        self.token = TokenEncoder(
-            image_embedding_dim=int(image_embedding_dim),
-            text_embedding_dim=int(text_embedding_dim),
-            d_model=int(d_model),
-            token_dropout=float(token_dropout),
-        )
-        self.set_attn_pool = SetAttentionPooling(int(d_model))  # 不在 forward 使用，仅用于对齐初始化/参数集合
-
-        layer = nn.TransformerEncoderLayer(
-            d_model=int(d_model),
-            nhead=int(transformer_num_heads),
-            dim_feedforward=int(transformer_dim_feedforward),
-            dropout=float(transformer_dropout),
-            activation="relu",
-            batch_first=True,
-            norm_first=True,
-        )
-        self.transformer = nn.TransformerEncoder(
-            layer, num_layers=int(transformer_num_layers), enable_nested_tensor=False
-        )
-        self.pos = SinusoidalPositionalEncoding(int(max_seq_len), int(d_model))
-
-        self.meta = MetaMLPEncoder(
-            input_dim=int(meta_input_dim),
-            hidden_dim=int(meta_hidden_dim),
-            dropout=float(meta_dropout),
-        )
-
-        fusion_in_dim = int(d_model) + int(meta_hidden_dim)
-        if int(fusion_hidden_dim) <= 0:
-            fusion_hidden_dim = int(2 * fusion_in_dim)
-
-        self.fusion_fc = nn.Linear(int(fusion_in_dim), int(fusion_hidden_dim))
-        self.fusion_in_ln = nn.LayerNorm(int(fusion_in_dim))
-        self.fusion_drop = nn.Dropout(p=float(fusion_dropout))
-        self.head = nn.Linear(int(fusion_hidden_dim), 1)
-        self.fusion_in_dim = int(fusion_in_dim)
-        self.fusion_hidden_dim = int(fusion_hidden_dim)
-        self._init_weights()
-
-    def _init_weights(self) -> None:
-        _init_linear(self.fusion_fc)
-        _init_linear(self.head)
-
-    def forward(
-        self,
-        title_blurb: torch.Tensor,
-        cover: torch.Tensor,
-        x_img: torch.Tensor,
-        x_txt: torch.Tensor,
-        seq_type: torch.Tensor,
-        seq_attr: torch.Tensor,
-        seq_mask: torch.Tensor,
-        x_meta: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
-        # title_blurb / cover 在该兼容模式下应被完全忽略（对齐 seq 的 use_prefix=False）
-        _ = title_blurb
-        _ = cover
-
-        if x_meta is None:
-            raise ValueError("use_meta=True 但 x_meta 为空。")
-
-        x = self.token(x_img=x_img, x_txt=x_txt, seq_type=seq_type, seq_attr=seq_attr)
-        x2 = self.pos(x, seq_mask)
-        z = self.transformer(x2, src_key_padding_mask=~seq_mask)
-        pooled = masked_mean_pool(z, seq_mask)
-
-        fused = torch.cat([pooled, self.meta(x_meta)], dim=1)
-        fused = self.fusion_in_ln(fused)
-        fused = torch.relu(self.fusion_fc(fused))
-        fused = self.fusion_drop(fused)
-        logits = self.head(fused).squeeze(-1)
-        return logits
 
 
 class FirstImpressionEncoder(nn.Module):
@@ -451,7 +319,6 @@ class ContentSeqEncoder(nn.Module):
             d_model=int(d_model),
             token_dropout=float(token_dropout),
         )
-        self.pos = SinusoidalPositionalEncoding(int(max_seq_len), int(d_model))
 
         layer = nn.TransformerEncoderLayer(
             d_model=int(d_model),
@@ -463,6 +330,8 @@ class ContentSeqEncoder(nn.Module):
             norm_first=True,
         )
         self.transformer = nn.TransformerEncoder(layer, num_layers=int(transformer_num_layers), enable_nested_tensor=False)
+        # 为了与 src/dl/seq/model.py 的初始化顺序对齐：pos 放在 transformer 之后创建
+        self.pos = SinusoidalPositionalEncoding(int(max_seq_len), int(d_model))
         self.d_model = int(d_model)
 
     def forward(
@@ -594,13 +463,6 @@ class ResBinaryClassifier(nn.Module):
 
         self.d_model = int(d_model)
 
-        # 三个分支编码器（与 gate 对齐）
-        self.key = FirstImpressionEncoder(
-            image_embedding_dim=int(image_embedding_dim),
-            text_embedding_dim=int(text_embedding_dim),
-            d_model=int(d_model),
-            dropout=float(key_dropout),
-        )
         self.seq = ContentSeqEncoder(
             image_embedding_dim=int(image_embedding_dim),
             text_embedding_dim=int(text_embedding_dim),
@@ -613,13 +475,58 @@ class ResBinaryClassifier(nn.Module):
             transformer_dropout=float(transformer_dropout),
         )
 
-        # Meta 分支：先对 metadata 表格特征做 MLP 编码（与 seq 对齐），再投影到 d_model 便于融合/交互
+        # Meta 分支：先对 metadata 表格特征做 MLP 编码（与 seq 对齐）
         self.meta = MetaMLPEncoder(
             input_dim=int(meta_input_dim),
             hidden_dim=int(meta_hidden_dim),
             dropout=float(meta_dropout),
         )
         self.meta_hidden_dim = int(self.meta.output_dim)
+
+        # baseline_mode=mlp：只构建必要模块；use_first_impression 仅决定 Head 是两路还是三路
+        if self.baseline_mode == "mlp":
+            self.key: FirstImpressionEncoder | None = None
+            if bool(self.use_first_impression):
+                self.key = FirstImpressionEncoder(
+                    image_embedding_dim=int(image_embedding_dim),
+                    text_embedding_dim=int(text_embedding_dim),
+                    d_model=int(d_model),
+                    dropout=float(key_dropout),
+                )
+
+            head_in_dim = int(d_model) + int(self.meta_hidden_dim) + (int(d_model) if self.use_first_impression else 0)
+            head_hidden_dim = int(fusion_hidden_dim) if int(fusion_hidden_dim) > 0 else int(2 * head_in_dim)
+            self.head = SeqFusionHead(
+                input_dim=int(head_in_dim),
+                hidden_dim=int(head_hidden_dim),
+                dropout=float(fusion_dropout),
+            )
+            self.fusion_hidden_dim = int(head_hidden_dim)
+
+            # res 模式相关占位（不创建任何多余参数/模块）
+            self.meta_proj = None
+            self.ln_seq = None
+            self.ln_meta = None
+            self.ln_key = None
+            self.ln_key_meta_mul = None
+            self.mlp_base = None
+            self.mlp_prior = None
+            self.delta_scale_max = float(delta_scale_max)
+            self.delta_scale_raw = None
+            self.residual_logit_max = float(residual_logit_max)
+            self.residual_gate_mode = "none"
+            self.residual_detach_base_in_gate = bool(residual_detach_base_in_gate)
+            self.gate_bias = None
+            self.gate_scale_raw = None
+            return
+
+        # baseline_mode=res：需要 key 分支 + 残差头
+        self.key = FirstImpressionEncoder(
+            image_embedding_dim=int(image_embedding_dim),
+            text_embedding_dim=int(text_embedding_dim),
+            d_model=int(d_model),
+            dropout=float(key_dropout),
+        )
 
         self.meta_proj: nn.Module
         if int(self.meta_hidden_dim) == int(d_model):
@@ -628,30 +535,13 @@ class ResBinaryClassifier(nn.Module):
             self.meta_proj = nn.Linear(int(self.meta_hidden_dim), int(d_model))
             _init_linear(self.meta_proj)  # type: ignore[arg-type]
 
-        # v_key 已经输出 d；保留 key_proj 以满足“若已为 d 则 identity”的约束
-        self.key_proj: nn.Module = nn.Identity()
-
         # 分支 LN（按需求：在 concat 前对各向量做归一化）
         self.ln_seq = nn.LayerNorm(int(d_model))
         self.ln_meta = nn.LayerNorm(int(d_model))
         self.ln_key = nn.LayerNorm(int(d_model))
         self.ln_key_meta_mul = nn.LayerNorm(int(d_model))
 
-        # heads
-        self.head = TwoLayerMLPHead(
-            input_dim=int(3 * d_model),
-            hidden_dim=int(fusion_hidden_dim),
-            dropout=float(fusion_dropout),
-        )
-        # 对齐 seq：trm_pos + use_meta=True + use_prefix=False（仅在 mlp 且 use_first_impression=False 时使用）
-        no_fi_in_dim = int(d_model) + int(self.meta_hidden_dim)
-        no_fi_hidden_dim = int(fusion_hidden_dim) if int(fusion_hidden_dim) > 0 else int(2 * no_fi_in_dim)
-        self.head_no_first_impression = SeqFusionHead(
-            input_dim=int(no_fi_in_dim),
-            hidden_dim=int(no_fi_hidden_dim),
-            dropout=float(fusion_dropout),
-        )
-        self.fusion_hidden_dim = int(fusion_hidden_dim)
+        # baseline_mode=res 不使用分类 head（z_base + delta 直接作为 logits）
 
         self.mlp_base = SeqFusionHead(
             input_dim=int(2 * d_model),
@@ -694,30 +584,14 @@ class ResBinaryClassifier(nn.Module):
                 torch.tensor(_softplus_inverse(float(residual_gate_scale_init)), dtype=torch.float32)
             )
 
-        # 冻结未使用分支，避免 AdamW weight_decay 在“无梯度参数”上产生漂移。
-        if self.baseline_mode == "mlp":
-            self.mlp_base.requires_grad_(False)
-            self.mlp_prior.requires_grad_(False)
-            self.delta_scale_raw.requires_grad_(False)
-            if self.gate_bias is not None:
-                self.gate_bias.requires_grad_(False)
-            if self.gate_scale_raw is not None:
-                self.gate_scale_raw.requires_grad_(False)
-            if self.use_first_impression:
-                self.head_no_first_impression.requires_grad_(False)
-            else:
-                self.key.requires_grad_(False)
-                self.meta_proj.requires_grad_(False)
-                self.head.requires_grad_(False)
-        else:
-            self.head.requires_grad_(False)
-            self.head_no_first_impression.requires_grad_(False)
-
     def effective_delta_scale(self) -> torch.Tensor:
         """返回当前有效 delta_scale（有界，标量 Tensor）。"""
-        if not (self.delta_scale_max > 0.0):
-            return torch.zeros((), device=self.delta_scale_raw.device, dtype=self.delta_scale_raw.dtype)
-        return float(self.delta_scale_max) * torch.tanh(self.delta_scale_raw)
+        raw = self.delta_scale_raw
+        if raw is None or not (self.delta_scale_max > 0.0):
+            device = raw.device if raw is not None else None
+            dtype = raw.dtype if raw is not None else torch.float32
+            return torch.zeros((), device=device, dtype=dtype)
+        return float(self.delta_scale_max) * torch.tanh(raw)
 
     def _confidence_gate(self, z_base: torch.Tensor) -> torch.Tensor:
         if self.residual_gate_mode != "conf":
@@ -752,22 +626,14 @@ class ResBinaryClassifier(nn.Module):
                 seq_mask=seq_mask,
             )  # [B, d]
             v_meta = self.meta(x_meta)  # [B, meta_hidden_dim]
+            feats = [h_seq, v_meta]
+            if bool(self.use_first_impression):
+                if self.key is None:
+                    raise RuntimeError("use_first_impression=True 但 key 分支未初始化。")
+                v_key = self.key(title_blurb=title_blurb, cover=cover)  # [B, d]
+                feats.append(v_key)
 
-            if not bool(self.use_first_impression):
-                fused = torch.cat([h_seq, v_meta], dim=1)
-                return self.head_no_first_impression(fused)
-
-            v_key = self.key(title_blurb=title_blurb, cover=cover)  # [B, d]
-            v_meta_d = self.meta_proj(v_meta)  # [B, d]
-            v_key_d = self.key_proj(v_key)  # [B, d]
-            fused = torch.cat(
-                [
-                    self.ln_seq(h_seq),
-                    self.ln_meta(v_meta_d),
-                    self.ln_key(v_key_d),
-                ],
-                dim=1,
-            )
+            fused = torch.cat(feats, dim=1)
             return self.head(fused)
 
         # baseline_mode == "res"
@@ -821,7 +687,7 @@ class ResBinaryClassifier(nn.Module):
             seq_mask=seq_mask,
         )  # [B, d]
         v_meta_d = self.meta_proj(self.meta(x_meta))  # [B, d]
-        v_key_d = self.key_proj(v_key)  # [B, d]
+        v_key_d = v_key  # [B, d]
 
         base_in = torch.cat([self.ln_seq(h_seq), self.ln_meta(v_meta_d)], dim=1)
         z_base = self.mlp_base(base_in)
@@ -846,29 +712,7 @@ def build_res_model(
     meta_input_dim: int,
     image_embedding_dim: int,
     text_embedding_dim: int,
-) -> nn.Module:
-    baseline_mode = str(getattr(cfg, "baseline_mode", "res") or "res").strip().lower()
-    use_first_impression = bool(getattr(cfg, "use_first_impression", True))
-
-    # mlp + no-first-impression：要求与 seq/trm_pos + use_prefix=False 完全一致
-    if baseline_mode == "mlp" and not bool(use_first_impression):
-        return SeqTrmPosCompatBinaryClassifier(
-            meta_input_dim=int(meta_input_dim),
-            image_embedding_dim=int(image_embedding_dim),
-            text_embedding_dim=int(text_embedding_dim),
-            d_model=int(getattr(cfg, "d_model", 256)),
-            token_dropout=float(getattr(cfg, "token_dropout", 0.0)),
-            max_seq_len=int(getattr(cfg, "max_seq_len", 40)),
-            transformer_num_layers=int(getattr(cfg, "transformer_num_layers", 2)),
-            transformer_num_heads=int(getattr(cfg, "transformer_num_heads", 4)),
-            transformer_dim_feedforward=int(getattr(cfg, "transformer_dim_feedforward", 512)),
-            transformer_dropout=float(getattr(cfg, "transformer_dropout", 0.1)),
-            meta_hidden_dim=int(getattr(cfg, "meta_hidden_dim", 256)),
-            meta_dropout=float(getattr(cfg, "meta_dropout", 0.3)),
-            fusion_hidden_dim=int(getattr(cfg, "fusion_hidden_dim", 512)),
-            fusion_dropout=float(getattr(cfg, "fusion_dropout", 0.5)),
-        )
-
+) -> ResBinaryClassifier:
     return ResBinaryClassifier(
         baseline_mode=str(getattr(cfg, "baseline_mode", "res")),
         meta_input_dim=int(meta_input_dim),
@@ -877,7 +721,7 @@ def build_res_model(
         d_model=int(getattr(cfg, "d_model", 256)),
         token_dropout=float(getattr(cfg, "token_dropout", 0.0)),
         key_dropout=float(getattr(cfg, "key_dropout", 0.0)),
-        use_first_impression=bool(use_first_impression),
+        use_first_impression=bool(getattr(cfg, "use_first_impression", True)),
         max_seq_len=int(getattr(cfg, "max_seq_len", 40)),
         transformer_num_layers=int(getattr(cfg, "transformer_num_layers", 2)),
         transformer_num_heads=int(getattr(cfg, "transformer_num_heads", 4)),
