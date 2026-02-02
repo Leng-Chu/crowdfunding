@@ -82,6 +82,8 @@ class LateConfig:
     baseline_mode: str = "attn_pool"  # attn_pool / trm_no_pos
 
     d_model: int = 256
+    token_dropout: float = 0.33
+    share_encoder: bool = True  # 与 seq 容量对齐：图/文共享同一套 set encoder 权重
 
     # trm_no_pos（容量对照：不使用任何 position encoding）
     transformer_n_layers: int = 2

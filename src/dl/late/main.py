@@ -378,6 +378,8 @@ def main() -> int:
             "max_seq_len": int(getattr(cfg, "max_seq_len", 0)),
             "truncation_strategy": str(getattr(cfg, "truncation_strategy", "")),
             "d_model": int(getattr(cfg, "d_model", 0)),
+            "token_dropout": float(getattr(cfg, "token_dropout", 0.0)),
+            "share_encoder": bool(getattr(cfg, "share_encoder", True)),
             "transformer_n_layers": int(getattr(cfg, "transformer_n_layers", 0)),
             "transformer_n_heads": int(getattr(cfg, "transformer_n_heads", 0)),
             "transformer_ffn_dim": int(getattr(cfg, "transformer_ffn_dim", 0)),

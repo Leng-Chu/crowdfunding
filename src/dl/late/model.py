@@ -164,14 +164,27 @@ class TransformerNoPosSetEncoder(nn.Module):
         if dropout < 0.0 or dropout >= 1.0:
             raise ValueError("dropout 需要在 [0, 1) 之间")
 
-        layer = nn.TransformerEncoderLayer(
-            d_model=int(d_model),
-            nhead=int(n_heads),
-            dim_feedforward=int(ffn_dim),
-            dropout=float(dropout),
-            activation="relu",
-            batch_first=True,
-        )
+        # 与 seq 对齐：Transformer 使用 pre-LN（norm_first=True），更稳定。
+        # 兼容旧版本 torch：若不支持 norm_first 参数则回退到默认实现。
+        try:
+            layer = nn.TransformerEncoderLayer(
+                d_model=int(d_model),
+                nhead=int(n_heads),
+                dim_feedforward=int(ffn_dim),
+                dropout=float(dropout),
+                activation="relu",
+                batch_first=True,
+                norm_first=True,
+            )
+        except TypeError:
+            layer = nn.TransformerEncoderLayer(
+                d_model=int(d_model),
+                nhead=int(n_heads),
+                dim_feedforward=int(ffn_dim),
+                dropout=float(dropout),
+                activation="relu",
+                batch_first=True,
+            )
         self.encoder = nn.TransformerEncoder(layer, num_layers=int(n_layers), enable_nested_tensor=False)
         self.d_model = int(d_model)
 
@@ -215,6 +228,8 @@ class LateFusionBinaryClassifier(nn.Module):
         text_embedding_dim: int,
         baseline_mode: str = "attn_pool",
         d_model: int = 256,
+        token_dropout: float = 0.0,
+        share_encoder: bool = True,
         transformer_n_layers: int = 2,
         transformer_n_heads: int = 8,
         transformer_ffn_dim: int = 512,
@@ -232,12 +247,15 @@ class LateFusionBinaryClassifier(nn.Module):
             raise ValueError(f"text_embedding_dim 需要 > 0，但得到 {text_embedding_dim}")
         if d_model <= 0:
             raise ValueError(f"d_model 需要 > 0，但得到 {d_model}")
+        if token_dropout < 0.0 or token_dropout >= 1.0:
+            raise ValueError("token_dropout 需要在 [0, 1) 之间")
         if fusion_dropout < 0.0 or fusion_dropout >= 1.0:
             raise ValueError("fusion_dropout 需要在 [0, 1) 之间")
 
         self.use_meta = bool(use_meta)
         self.baseline_mode = _normalize_baseline_mode(baseline_mode)
         self.d_model = int(d_model)
+        self.share_encoder = bool(share_encoder)
 
         # 3.1 Modality Projection
         self.img_proj = nn.Linear(int(image_embedding_dim), int(self.d_model))
@@ -247,26 +265,46 @@ class LateFusionBinaryClassifier(nn.Module):
         self.txt_attr_proj = nn.Linear(1, int(self.d_model))
         self.img_ln = nn.LayerNorm(int(self.d_model))
         self.txt_ln = nn.LayerNorm(int(self.d_model))
+        # 与 seq 对齐：在 token-level 直接扰动输入表示（仅对有效 token 生效由 mask/Pooling 保证）。
+        self.token_drop = nn.Dropout(p=float(token_dropout))
 
         # 3.2 集合编码（模态内）
+        self.shared_encoder: nn.Module | None = None
+        self.img_encoder: nn.Module | None = None
+        self.txt_encoder: nn.Module | None = None
         if self.baseline_mode == "attn_pool":
-            self.img_encoder = AttentionPoolingSetEncoder(d_model=int(self.d_model), dropout=float(transformer_dropout))
-            self.txt_encoder = AttentionPoolingSetEncoder(d_model=int(self.d_model), dropout=float(transformer_dropout))
+            if self.share_encoder:
+                self.shared_encoder = AttentionPoolingSetEncoder(
+                    d_model=int(self.d_model),
+                    dropout=float(transformer_dropout),
+                )
+            else:
+                self.img_encoder = AttentionPoolingSetEncoder(d_model=int(self.d_model), dropout=float(transformer_dropout))
+                self.txt_encoder = AttentionPoolingSetEncoder(d_model=int(self.d_model), dropout=float(transformer_dropout))
         elif self.baseline_mode == "trm_no_pos":
-            self.img_encoder = TransformerNoPosSetEncoder(
-                d_model=int(self.d_model),
-                n_layers=int(transformer_n_layers),
-                n_heads=int(transformer_n_heads),
-                ffn_dim=int(transformer_ffn_dim),
-                dropout=float(transformer_dropout),
-            )
-            self.txt_encoder = TransformerNoPosSetEncoder(
-                d_model=int(self.d_model),
-                n_layers=int(transformer_n_layers),
-                n_heads=int(transformer_n_heads),
-                ffn_dim=int(transformer_ffn_dim),
-                dropout=float(transformer_dropout),
-            )
+            if self.share_encoder:
+                self.shared_encoder = TransformerNoPosSetEncoder(
+                    d_model=int(self.d_model),
+                    n_layers=int(transformer_n_layers),
+                    n_heads=int(transformer_n_heads),
+                    ffn_dim=int(transformer_ffn_dim),
+                    dropout=float(transformer_dropout),
+                )
+            else:
+                self.img_encoder = TransformerNoPosSetEncoder(
+                    d_model=int(self.d_model),
+                    n_layers=int(transformer_n_layers),
+                    n_heads=int(transformer_n_heads),
+                    ffn_dim=int(transformer_ffn_dim),
+                    dropout=float(transformer_dropout),
+                )
+                self.txt_encoder = TransformerNoPosSetEncoder(
+                    d_model=int(self.d_model),
+                    n_layers=int(transformer_n_layers),
+                    n_heads=int(transformer_n_heads),
+                    ffn_dim=int(transformer_ffn_dim),
+                    dropout=float(transformer_dropout),
+                )
         else:
             raise ValueError(f"不支持的 baseline_mode={self.baseline_mode!r}，可选：attn_pool/trm_no_pos")
 
@@ -351,13 +389,21 @@ class LateFusionBinaryClassifier(nn.Module):
         img_base = torch.relu(self.img_proj(x_image))
         img_attr = self.img_attr_proj(attr_image.to(dtype=img_base.dtype).unsqueeze(-1))
         Img = self.img_ln(img_base + img_attr)
+        Img = self.token_drop(Img)
 
         txt_base = torch.relu(self.txt_proj(x_text))
         txt_attr = self.txt_attr_proj(attr_text.to(dtype=txt_base.dtype).unsqueeze(-1))
         Txt = self.txt_ln(txt_base + txt_attr)
+        Txt = self.token_drop(Txt)
 
-        h_img = self.img_encoder(Img, img_mask)
-        h_txt = self.txt_encoder(Txt, txt_mask)
+        if self.shared_encoder is not None:
+            h_img = self.shared_encoder(Img, img_mask)
+            h_txt = self.shared_encoder(Txt, txt_mask)
+        else:
+            if self.img_encoder is None or self.txt_encoder is None:
+                raise RuntimeError("img_encoder/txt_encoder 未初始化。")
+            h_img = self.img_encoder(Img, img_mask)
+            h_txt = self.txt_encoder(Txt, txt_mask)
 
         fused = torch.cat([h_img, h_txt], dim=1)
         if self.use_meta:
@@ -386,6 +432,8 @@ def build_late_model(
         text_embedding_dim=int(text_embedding_dim),
         baseline_mode=str(getattr(cfg, "baseline_mode", "attn_pool")),
         d_model=int(getattr(cfg, "d_model", 256)),
+        token_dropout=float(getattr(cfg, "token_dropout", 0.0)),
+        share_encoder=bool(getattr(cfg, "share_encoder", True)),
         transformer_n_layers=int(getattr(cfg, "transformer_n_layers", 2)),
         transformer_n_heads=int(getattr(cfg, "transformer_n_heads", 8)),
         transformer_ffn_dim=int(getattr(cfg, "transformer_ffn_dim", 512)),
