@@ -275,14 +275,13 @@ def main() -> int:
     text_embedding_type = str(args.text_embedding_type).strip().lower()
     objective_col = _objective_key_to_column(args.objective)
 
-    num = "3"
     study_name = (
         str(args.study_name).strip()
         if args.study_name is not None and str(args.study_name).strip()
-        else f"res_{objective_col}_{num}"
+        else f"res_{objective_col}_{args.sampler_seed}"
     )
     root = _project_root()
-    study_dir = root / "experiments" / "res" / num / study_name
+    study_dir = root / "experiments" / "res" / str(args.sampler_seed) / study_name
     logs_dir = study_dir / "trial_logs"
     study_dir.mkdir(parents=True, exist_ok=True)
     logs_dir.mkdir(parents=True, exist_ok=True)

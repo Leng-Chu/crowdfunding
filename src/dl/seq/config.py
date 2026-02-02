@@ -30,7 +30,7 @@ class SeqConfig:
     # -----------------------------
     data_csv: str = "data/metadata/now_processed.csv"
     projects_root: str = "data/projects/now"
-    experiment_root: str = "experiments/test"
+    experiment_root: str = "experiments/newtest"
 
     # -----------------------------
     # 模式
@@ -83,26 +83,26 @@ class SeqConfig:
     # 模型结构超参
     # -----------------------------
     d_model: int = 256
-    token_dropout: float = 0.1
+    token_dropout: float = 0.33
 
-    transformer_num_layers: int = 3
-    transformer_num_heads: int = 2
-    transformer_dim_feedforward: int = 1024
+    transformer_num_layers: int = 2
+    transformer_num_heads: int = 4
+    transformer_dim_feedforward: int = 512
     transformer_dropout: float = 0.1
 
     # meta encoder（与 mlp baseline 对齐）
-    meta_hidden_dim: int = 64
-    meta_dropout: float = 0.45
+    meta_hidden_dim: int = 128
+    meta_dropout: float = 0.2
 
     # 分类头（Linear -> ReLU -> Dropout -> Linear(->1)）
-    fusion_hidden_dim: int = 768
-    fusion_dropout: float = 0.45
+    fusion_hidden_dim: int = 512
+    fusion_dropout: float = 0.5
 
     # -----------------------------
     # 训练超参
     # -----------------------------
-    alpha: float = 4e-6  # weight_decay
-    learning_rate_init: float = 2e-4
+    alpha: float = 4e-4  # weight_decay
+    learning_rate_init: float = 5e-4
     batch_size: int = 256
 
     max_epochs: int = 80
@@ -112,7 +112,7 @@ class SeqConfig:
 
     max_grad_norm: float = 1.0
 
-    random_seed: int = 72
+    random_seed: int = 42
     save_plots: bool = True
 
     def to_dict(self) -> dict:

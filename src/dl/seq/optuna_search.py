@@ -4,12 +4,12 @@ Optuna 超参搜索（seq：只针对 trm_pos+meta）。
 
 特点：
 - 每个 trial 通过“调用现有 CLI -> 读取 reports/metrics.json -> 返回目标值”的黑盒方式执行；
-- 默认目标：最大化 test_f1（可通过 --objective 切换为 val_auc / val_accuracy / test_*）；
+- 默认目标：最大化 test_auc（可通过 --objective 切换为 val_auc / val_accuracy / test_*）；
 - 每个 trial 固定 random_seed，尽量保证可复现；
 - 自动汇总：输出 summary.csv（trial_id、params、objective、run_dir、关键 val/test 指标）。
 
 推荐运行方式（从仓库根目录）：
-  conda run -n crowdfunding python src/dl/seq/optuna_search.py --device cuda:0 --n-trials 100
+  conda run -n crowdfunding python src/dl/seq/optuna_search.py --device cuda:0 --n-trials 200 --random-seed 72 --sampler-seed 0
 """
 
 from __future__ import annotations
@@ -153,23 +153,23 @@ def _suggest_params(trial) -> Dict[str, Any]:
     返回的是 SeqConfig 字段名/值，最终通过环境变量覆盖到训练脚本。
     本搜索只针对 trm_pos+meta，因此不提供 baseline_mode/use_meta 的搜索分支。
     """
-    lr = trial.suggest_float("learning_rate_init", 1e-5, 8e-4, log=True)
-    wd = trial.suggest_float("alpha", 1e-6, 1e-2, log=True)
-    batch_size = trial.suggest_categorical("batch_size", [256, 512, 1024, 2048])
+    lr = trial.suggest_float("learning_rate_init", 1e-5, 5e-4, log=True)
+    wd = trial.suggest_float("alpha", 3e-6, 5e-4, log=True)
+    batch_size = trial.suggest_categorical("batch_size", [256, 512, 1024])
 
-    d_model = trial.suggest_categorical("d_model", [128, 192, 256])
+    d_model = trial.suggest_categorical("d_model", [128, 192, 256, 384])
     # nn.TransformerEncoderLayer 要求 d_model % nhead == 0
     valid_heads = [h for h in (2, 4, 8) if int(d_model) % int(h) == 0]
     n_heads = trial.suggest_categorical("transformer_num_heads", valid_heads)
-    n_layers = trial.suggest_int("transformer_num_layers", 1, 4)
-    ff_ratio = trial.suggest_categorical("ffn_ratio", [2, 4, 6])
+    n_layers = trial.suggest_int("transformer_num_layers", 2, 3)
+    ff_ratio = trial.suggest_categorical("ffn_ratio", [2, 4])
     ff_dim = int(ff_ratio) * int(d_model)
 
     token_dropout = trial.suggest_float("token_dropout", 0.0, 0.35)
     transformer_dropout = trial.suggest_float("transformer_dropout", 0.0, 0.35)
-    meta_hidden_dim = trial.suggest_categorical("meta_hidden_dim", [64, 128, 256, 512])
-    meta_dropout = trial.suggest_float("meta_dropout", 0.2, 0.5)
-    fusion_dropout = trial.suggest_float("fusion_dropout", 0.2, 0.7)
+    meta_hidden_dim = trial.suggest_categorical("meta_hidden_dim", [64, 128, 256, 384])
+    meta_dropout = trial.suggest_float("meta_dropout", 0.1, 0.5)
+    fusion_dropout = trial.suggest_float("fusion_dropout", 0.3, 0.6)
 
     # fusion_hidden_dim：0 表示自动（2 * fusion_in_dim）
     fusion_hidden_dim = trial.suggest_categorical(
@@ -178,7 +178,7 @@ def _suggest_params(trial) -> Dict[str, Any]:
     )
 
     # 早停相关（不建议调太大；否则 trial 太慢）
-    early_stop_patience = trial.suggest_int("early_stop_patience", 5, 15)
+    early_stop_patience = 10
 
     return {
         "learning_rate_init": float(lr),
@@ -258,13 +258,11 @@ def _arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--n-trials", type=int, default=20, help="trial 数量")
     p.add_argument("--timeout", type=int, default=None, help="总超时（秒），可选")
     p.add_argument("--study-name", default=None, help="study 名称（默认自动生成）")
-    p.add_argument("--objective", default="test_f1", help="目标（默认最大化 test_f1")
+    p.add_argument("--objective", default="test_auc", help="目标（默认最大化 test_auc")
     p.add_argument("--random-seed", type=int, default=42, help="固定 random_seed（每个 trial 相同）")
     p.add_argument("--sampler-seed", type=int, default=42, help="Optuna sampler 的随机种子")
     p.add_argument("--fixed-overrides", default=None, help="对所有 trial 生效的 SeqConfig 覆盖项：JSON 字符串或 JSON 文件路径")
     p.add_argument("--fail-value", type=float, default=-1.0, help="trial 失败时返回的目标值（默认 -1.0）")
-
-    p.add_argument("--save-plots", action="store_true", help="是否保存 plots（默认不保存以加速调参）")
     p.add_argument("--keep-trial-logs", action="store_true", help="是否保留每个 trial 的 stdout/stderr 日志文件")
     return p
 
@@ -286,11 +284,11 @@ def main() -> int:
     study_name = (
         str(args.study_name).strip()
         if args.study_name is not None and str(args.study_name).strip()
-        else f"seq_trm_pos_metad_{objective_col}"
+        else f"trm_pos_meta_{objective_col}_{args.sampler_seed}"
     )
 
     root = _project_root()
-    study_dir = root / "experiments" / "seq" / "optuna" / study_name
+    study_dir = root / "experiments" / "seq" / str(args.sampler_seed) / study_name
     logs_dir = study_dir / "trial_logs"
     study_dir.mkdir(parents=True, exist_ok=True)
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -302,7 +300,7 @@ def main() -> int:
     fixed_overrides["baseline_mode"] = "trm_pos"
     fixed_overrides["use_meta"] = True
     fixed_overrides["random_seed"] = int(args.random_seed)
-    fixed_overrides["save_plots"] = bool(args.save_plots)
+    fixed_overrides["save_plots"] = True
 
     db_path = study_dir / "study.db"
     storage_url = f"sqlite:///{db_path.as_posix()}"
