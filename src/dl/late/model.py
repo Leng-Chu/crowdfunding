@@ -1,7 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 模型定义（late）：
-- 图像集合与文本集合分别编码（不使用任何 position encoding）
+- 图像集合与文本集合分别编码
+- baseline_mode:
+  - mean_pool：masked mean pooling（无位置编码）
+  - attn_pool：集合 attention pooling（无位置编码）
+  - trm_no_pos：Transformer（无位置编码）
+  - trm_pos：Transformer（图/文各自使用模态内序号的 sinusoidal 位置编码）
 - 晚期融合（concat）后接与 mlp baseline 一致的分类头（Linear→ReLU→Dropout→Linear）
 """
 
@@ -18,8 +23,8 @@ from config import LateConfig
 
 def _normalize_baseline_mode(baseline_mode: str) -> str:
     mode = str(baseline_mode or "").strip().lower()
-    if mode not in {"attn_pool", "trm_no_pos"}:
-        raise ValueError(f"不支持的 baseline_mode={mode!r}，可选：attn_pool/trm_no_pos")
+    if mode not in {"mean_pool", "attn_pool", "trm_no_pos", "trm_pos"}:
+        raise ValueError(f"不支持的 baseline_mode={mode!r}，可选：mean_pool/attn_pool/trm_no_pos/trm_pos")
     return mode
 
 
@@ -139,6 +144,75 @@ class AttentionPoolingSetEncoder(nn.Module):
         return pooled
 
 
+class MeanPoolingSetEncoder(nn.Module):
+    """masked mean pooling（不含位置信息）。"""
+
+    def __init__(self, d_model: int) -> None:
+        super().__init__()
+        if d_model <= 0:
+            raise ValueError(f"d_model 需要 > 0，但得到 {d_model}")
+        self.d_model = int(d_model)
+
+    def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        if x.ndim != 3:
+            raise ValueError(f"输入 x 需要为 3 维张量 (B, S, D)，但得到 {tuple(x.shape)}")
+        if mask.ndim != 2:
+            raise ValueError(f"输入 mask 需要为 2 维张量 (B, S)，但得到 {tuple(mask.shape)}")
+
+        B, S, D = x.shape
+        if int(D) != int(self.d_model):
+            raise ValueError(f"d_model 不一致：期望 {self.d_model}，但输入为 {D}")
+
+        if int(S) <= 0:
+            return x.new_zeros((int(B), int(D)))
+
+        mask = mask.to(torch.bool)
+        all_pad = ~mask.any(dim=1)  # [B]
+
+        m = mask.to(dtype=x.dtype).unsqueeze(-1)
+        summed = (x * m).sum(dim=1)
+        denom = m.sum(dim=1).clamp(min=1.0)
+        pooled = summed / denom
+
+        if bool(torch.any(all_pad)):
+            pooled = torch.where(all_pad.unsqueeze(-1), pooled.new_zeros((int(B), int(D))), pooled)
+        return pooled
+
+
+class SinusoidalPositionalEncoding(nn.Module):
+    """标准 sinusoidal 位置编码（按模态内序号，padding 位置不加）。"""
+
+    def __init__(self, d_model: int) -> None:
+        super().__init__()
+        if d_model <= 0:
+            raise ValueError(f"d_model 需要 > 0，但得到 {d_model}")
+        self.d_model = int(d_model)
+
+    def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        if x.ndim != 3 or mask.ndim != 2:
+            raise ValueError(f"x/mask 形状不合法：x={tuple(x.shape)} mask={tuple(mask.shape)}")
+        B, S, D = x.shape
+        if int(D) != int(self.d_model):
+            raise ValueError(f"d_model 不一致：期望 {self.d_model}，但输入为 {D}")
+        if int(S) <= 0:
+            return x
+
+        mask = mask.to(torch.bool)
+        pos = torch.arange(int(S), device=x.device, dtype=torch.float32).unsqueeze(1)  # [S, 1]
+        div_term = torch.exp(
+            torch.arange(0, int(D), 2, device=x.device, dtype=torch.float32)
+            * (-math.log(10000.0) / float(D))
+        )  # [ceil(D/2)]
+
+        pe = torch.zeros((int(S), int(D)), device=x.device, dtype=torch.float32)  # [S, D]
+        pe[:, 0::2] = torch.sin(pos * div_term)
+        if int(D) > 1:
+            pe[:, 1::2] = torch.cos(pos * div_term[: int(D) // 2])
+
+        pe = pe.unsqueeze(0).to(dtype=x.dtype)  # [1, S, D]
+        return x + pe * mask.unsqueeze(-1).to(dtype=x.dtype)
+
+
 class TransformerNoPosSetEncoder(nn.Module):
     """集合编码器：Transformer Encoder（不使用任何 position encoding），最后做 masked mean pooling。"""
 
@@ -165,26 +239,15 @@ class TransformerNoPosSetEncoder(nn.Module):
             raise ValueError("dropout 需要在 [0, 1) 之间")
 
         # 与 seq 对齐：Transformer 使用 pre-LN（norm_first=True），更稳定。
-        # 兼容旧版本 torch：若不支持 norm_first 参数则回退到默认实现。
-        try:
-            layer = nn.TransformerEncoderLayer(
-                d_model=int(d_model),
-                nhead=int(n_heads),
-                dim_feedforward=int(ffn_dim),
-                dropout=float(dropout),
-                activation="relu",
-                batch_first=True,
-                norm_first=True,
-            )
-        except TypeError:
-            layer = nn.TransformerEncoderLayer(
-                d_model=int(d_model),
-                nhead=int(n_heads),
-                dim_feedforward=int(ffn_dim),
-                dropout=float(dropout),
-                activation="relu",
-                batch_first=True,
-            )
+        layer = nn.TransformerEncoderLayer(
+            d_model=int(d_model),
+            nhead=int(n_heads),
+            dim_feedforward=int(ffn_dim),
+            dropout=float(dropout),
+            activation="relu",
+            batch_first=True,
+            norm_first=True,
+        )
         self.encoder = nn.TransformerEncoder(layer, num_layers=int(n_layers), enable_nested_tensor=False)
         self.d_model = int(d_model)
 
@@ -217,6 +280,74 @@ class TransformerNoPosSetEncoder(nn.Module):
         return pooled
 
 
+class TransformerPosSetEncoder(nn.Module):
+    """集合编码器：Transformer Encoder（使用 sinusoidal 位置编码），最后做 masked mean pooling。"""
+
+    def __init__(
+        self,
+        d_model: int,
+        n_layers: int = 2,
+        n_heads: int = 8,
+        ffn_dim: int = 512,
+        dropout: float = 0.1,
+    ) -> None:
+        super().__init__()
+        if d_model <= 0:
+            raise ValueError(f"d_model 需要 > 0，但得到 {d_model}")
+        if n_layers <= 0:
+            raise ValueError(f"n_layers 需要 > 0，但得到 {n_layers}")
+        if n_heads <= 0:
+            raise ValueError(f"n_heads 需要 > 0，但得到 {n_heads}")
+        if int(d_model) % int(n_heads) != 0:
+            raise ValueError(f"d_model={d_model} 需要能被 n_heads={n_heads} 整除")
+        if ffn_dim <= 0:
+            raise ValueError(f"ffn_dim 需要 > 0，但得到 {ffn_dim}")
+        if dropout < 0.0 or dropout >= 1.0:
+            raise ValueError("dropout 需要在 [0, 1) 之间")
+
+        self.pos = SinusoidalPositionalEncoding(int(d_model))
+        layer = nn.TransformerEncoderLayer(
+            d_model=int(d_model),
+            nhead=int(n_heads),
+            dim_feedforward=int(ffn_dim),
+            dropout=float(dropout),
+            activation="relu",
+            batch_first=True,
+            norm_first=True,
+        )
+        self.encoder = nn.TransformerEncoder(layer, num_layers=int(n_layers), enable_nested_tensor=False)
+        self.d_model = int(d_model)
+
+    def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        if x.ndim != 3:
+            raise ValueError(f"输入 x 需要为 3 维张量 (B, S, D)，但得到 {tuple(x.shape)}")
+        if mask.ndim != 2:
+            raise ValueError(f"输入 mask 需要为 2 维张量 (B, S)，但得到 {tuple(mask.shape)}")
+
+        B, S, D = x.shape
+        if int(D) != int(self.d_model):
+            raise ValueError(f"d_model 不一致：期望 {self.d_model}，但输入为 {D}")
+
+        if int(S) <= 0:
+            return x.new_zeros((int(B), int(D)))
+
+        mask = mask.to(torch.bool)
+        all_pad = ~mask.any(dim=1)  # [B]
+
+        x2 = self.pos(x, mask)
+        src_key_padding_mask = ~mask  # True=padding
+        out = self.encoder(x2, src_key_padding_mask=src_key_padding_mask)  # [B, S, D]
+
+        mask_f = mask.to(out.dtype).unsqueeze(-1)
+        summed = (out * mask_f).sum(dim=1)
+        denom = mask_f.sum(dim=1).clamp(min=1.0)
+        pooled = summed / denom
+
+        if bool(torch.any(all_pad)):
+            pooled = torch.where(all_pad.unsqueeze(-1), pooled.new_zeros((int(B), int(D))), pooled)
+        return pooled
+
+
 class LateFusionBinaryClassifier(nn.Module):
     """图像/文本分别编码 + 晚期融合二分类（输出 logits）。"""
 
@@ -229,7 +360,6 @@ class LateFusionBinaryClassifier(nn.Module):
         baseline_mode: str = "attn_pool",
         d_model: int = 256,
         token_dropout: float = 0.0,
-        share_encoder: bool = True,
         transformer_n_layers: int = 2,
         transformer_n_heads: int = 8,
         transformer_ffn_dim: int = 512,
@@ -255,7 +385,6 @@ class LateFusionBinaryClassifier(nn.Module):
         self.use_meta = bool(use_meta)
         self.baseline_mode = _normalize_baseline_mode(baseline_mode)
         self.d_model = int(d_model)
-        self.share_encoder = bool(share_encoder)
 
         # 3.1 Modality Projection
         self.img_proj = nn.Linear(int(image_embedding_dim), int(self.d_model))
@@ -269,44 +398,46 @@ class LateFusionBinaryClassifier(nn.Module):
         self.token_drop = nn.Dropout(p=float(token_dropout))
 
         # 3.2 集合编码（模态内）
-        self.shared_encoder: nn.Module | None = None
-        self.img_encoder: nn.Module | None = None
-        self.txt_encoder: nn.Module | None = None
-        if self.baseline_mode == "attn_pool":
-            if self.share_encoder:
-                self.shared_encoder = AttentionPoolingSetEncoder(
-                    d_model=int(self.d_model),
-                    dropout=float(transformer_dropout),
-                )
-            else:
-                self.img_encoder = AttentionPoolingSetEncoder(d_model=int(self.d_model), dropout=float(transformer_dropout))
-                self.txt_encoder = AttentionPoolingSetEncoder(d_model=int(self.d_model), dropout=float(transformer_dropout))
+        if self.baseline_mode == "mean_pool":
+            self.img_encoder = MeanPoolingSetEncoder(d_model=int(self.d_model))
+            self.txt_encoder = MeanPoolingSetEncoder(d_model=int(self.d_model))
+        elif self.baseline_mode == "attn_pool":
+            self.img_encoder = AttentionPoolingSetEncoder(d_model=int(self.d_model), dropout=float(transformer_dropout))
+            self.txt_encoder = AttentionPoolingSetEncoder(d_model=int(self.d_model), dropout=float(transformer_dropout))
         elif self.baseline_mode == "trm_no_pos":
-            if self.share_encoder:
-                self.shared_encoder = TransformerNoPosSetEncoder(
-                    d_model=int(self.d_model),
-                    n_layers=int(transformer_n_layers),
-                    n_heads=int(transformer_n_heads),
-                    ffn_dim=int(transformer_ffn_dim),
-                    dropout=float(transformer_dropout),
-                )
-            else:
-                self.img_encoder = TransformerNoPosSetEncoder(
-                    d_model=int(self.d_model),
-                    n_layers=int(transformer_n_layers),
-                    n_heads=int(transformer_n_heads),
-                    ffn_dim=int(transformer_ffn_dim),
-                    dropout=float(transformer_dropout),
-                )
-                self.txt_encoder = TransformerNoPosSetEncoder(
-                    d_model=int(self.d_model),
-                    n_layers=int(transformer_n_layers),
-                    n_heads=int(transformer_n_heads),
-                    ffn_dim=int(transformer_ffn_dim),
-                    dropout=float(transformer_dropout),
-                )
+            self.img_encoder = TransformerNoPosSetEncoder(
+                d_model=int(self.d_model),
+                n_layers=int(transformer_n_layers),
+                n_heads=int(transformer_n_heads),
+                ffn_dim=int(transformer_ffn_dim),
+                dropout=float(transformer_dropout),
+            )
+            self.txt_encoder = TransformerNoPosSetEncoder(
+                d_model=int(self.d_model),
+                n_layers=int(transformer_n_layers),
+                n_heads=int(transformer_n_heads),
+                ffn_dim=int(transformer_ffn_dim),
+                dropout=float(transformer_dropout),
+            )
+        elif self.baseline_mode == "trm_pos":
+            self.img_encoder = TransformerPosSetEncoder(
+                d_model=int(self.d_model),
+                n_layers=int(transformer_n_layers),
+                n_heads=int(transformer_n_heads),
+                ffn_dim=int(transformer_ffn_dim),
+                dropout=float(transformer_dropout),
+            )
+            self.txt_encoder = TransformerPosSetEncoder(
+                d_model=int(self.d_model),
+                n_layers=int(transformer_n_layers),
+                n_heads=int(transformer_n_heads),
+                ffn_dim=int(transformer_ffn_dim),
+                dropout=float(transformer_dropout),
+            )
         else:
-            raise ValueError(f"不支持的 baseline_mode={self.baseline_mode!r}，可选：attn_pool/trm_no_pos")
+            raise ValueError(
+                f"不支持的 baseline_mode={self.baseline_mode!r}，可选：mean_pool/attn_pool/trm_no_pos/trm_pos"
+            )
 
         # meta 分支（可选）
         self.meta: Optional[MetaMLPEncoder] = None
@@ -396,14 +527,8 @@ class LateFusionBinaryClassifier(nn.Module):
         Txt = self.txt_ln(txt_base + txt_attr)
         Txt = self.token_drop(Txt)
 
-        if self.shared_encoder is not None:
-            h_img = self.shared_encoder(Img, img_mask)
-            h_txt = self.shared_encoder(Txt, txt_mask)
-        else:
-            if self.img_encoder is None or self.txt_encoder is None:
-                raise RuntimeError("img_encoder/txt_encoder 未初始化。")
-            h_img = self.img_encoder(Img, img_mask)
-            h_txt = self.txt_encoder(Txt, txt_mask)
+        h_img = self.img_encoder(Img, img_mask)
+        h_txt = self.txt_encoder(Txt, txt_mask)
 
         fused = torch.cat([h_img, h_txt], dim=1)
         if self.use_meta:
@@ -433,7 +558,6 @@ def build_late_model(
         baseline_mode=str(getattr(cfg, "baseline_mode", "attn_pool")),
         d_model=int(getattr(cfg, "d_model", 256)),
         token_dropout=float(getattr(cfg, "token_dropout", 0.0)),
-        share_encoder=bool(getattr(cfg, "share_encoder", True)),
         transformer_n_layers=int(getattr(cfg, "transformer_n_layers", 2)),
         transformer_n_heads=int(getattr(cfg, "transformer_n_heads", 8)),
         transformer_ffn_dim=int(getattr(cfg, "transformer_ffn_dim", 512)),

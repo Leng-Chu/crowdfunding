@@ -1,10 +1,10 @@
 import subprocess
-import sys
 import threading
+import time
 from typing import List
 
 
-def run_command(cmd: str, experiment_name: str):
+def run_command(cmd: List[str], experiment_name: str) -> None:
     """
     运行单个命令
     """
@@ -18,42 +18,53 @@ def run_command(cmd: str, experiment_name: str):
         print(f"实验 '{experiment_name}' 失败，返回码: {e.returncode}")
 
 
-def run_all_experiments():
-    """
-    运行所有late实验
-    """
-    # 定义所有实验命令
-    all_commands = [
-        # 使用meta数据的不同baseline模式
-        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode attn_pool --use-meta --device cuda:0",
-         "Late: late_attn_pool+meta (CLIP)"),
-        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode trm_no_pos --use-meta --device cuda:1",
-         "Late: late_trm_no_pos+meta (CLIP)"),
-         
-        # 不使用meta数据的不同baseline模式
-        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode attn_pool --no-use-meta --device cuda:2",
-         "Late: late_attn_pool (CLIP)"),
-        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode trm_no_pos --no-use-meta --device cuda:3",
-         "Late: late_trm_no_pos (CLIP)")
-    ]
-    
+def _run_command_group(commands: List[tuple[str, str]], group_name: str) -> None:
+    print(group_name)
+    print("-" * 50)
+
     threads = []
-    
-    for cmd_str, experiment_name in all_commands:
+    for cmd_str, experiment_name in commands:
         cmd = cmd_str.split()
         print(f"启动实验: {experiment_name}")
         thread = threading.Thread(target=run_command, args=(cmd, experiment_name))
         threads.append(thread)
         thread.start()
-        
-        # 等待一小段时间再启动下一个实验，避免资源冲突
-        import time
+
+        # 等待一小段时间再启动下一个实验，避免瞬时资源冲突
         time.sleep(2)
-    
-    # 等待所有线程完成
+
     for thread in threads:
         thread.join()
-    
+
+
+def run_all_experiments() -> None:
+    """
+    运行所有late实验
+    """
+    meta_commands = [
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode mean_pool --use-meta --device cuda:0",
+         "Late: late_mean_pool+meta (CLIP)"),
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode attn_pool --use-meta --device cuda:1",
+         "Late: late_attn_pool+meta (CLIP)"),
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode trm_no_pos --use-meta --device cuda:2",
+         "Late: late_trm_no_pos+meta (CLIP)"),
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode trm_pos --use-meta --device cuda:3",
+         "Late: late_trm_pos+meta (CLIP)"),
+    ]
+
+    no_meta_commands = [
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode mean_pool --no-use-meta --device cuda:0",
+         "Late: late_mean_pool (CLIP)"),
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode attn_pool --no-use-meta --device cuda:1",
+         "Late: late_attn_pool (CLIP)"),
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode trm_no_pos --no-use-meta --device cuda:2",
+         "Late: late_trm_no_pos (CLIP)"),
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode trm_pos --no-use-meta --device cuda:3",
+         "Late: late_trm_pos (CLIP)"),
+    ]
+
+    _run_command_group(meta_commands, group_name="第一组：使用 meta 特征")
+    _run_command_group(no_meta_commands, group_name="第二组：不使用 meta 特征")
     print("所有实验已完成！")
 
 

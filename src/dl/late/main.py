@@ -2,7 +2,7 @@
 """
 late 主程序入口：
 
-- 图像集合 + 文本集合分别建模（attn_pool / trm_no_pos）
+- 图像集合 + 文本集合分别建模（mean_pool / attn_pool / trm_no_pos / trm_pos）
 - 晚期融合后做二分类（BCEWithLogitsLoss）
 
 说明：
@@ -53,7 +53,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--baseline-mode",
         default=None,
-        choices=["attn_pool", "trm_no_pos"],
+        choices=["mean_pool", "attn_pool", "trm_no_pos", "trm_pos"],
         help="baseline 模式（默认读取 config.py）。",
     )
     parser.add_argument(
@@ -116,8 +116,8 @@ def _save_single_row_csv(save_path: Path, row: dict) -> None:
 
 def _normalize_baseline_mode(baseline_mode: str) -> str:
     mode = str(baseline_mode or "").strip().lower()
-    if mode not in {"attn_pool", "trm_no_pos"}:
-        raise ValueError(f"不支持的 baseline_mode={mode!r}，可选：attn_pool/trm_no_pos")
+    if mode not in {"mean_pool", "attn_pool", "trm_no_pos", "trm_pos"}:
+        raise ValueError(f"不支持的 baseline_mode={mode!r}，可选：mean_pool/attn_pool/trm_no_pos/trm_pos")
     return mode
 
 
@@ -379,7 +379,6 @@ def main() -> int:
             "truncation_strategy": str(getattr(cfg, "truncation_strategy", "")),
             "d_model": int(getattr(cfg, "d_model", 0)),
             "token_dropout": float(getattr(cfg, "token_dropout", 0.0)),
-            "share_encoder": bool(getattr(cfg, "share_encoder", True)),
             "transformer_n_layers": int(getattr(cfg, "transformer_n_layers", 0)),
             "transformer_n_heads": int(getattr(cfg, "transformer_n_heads", 0)),
             "transformer_ffn_dim": int(getattr(cfg, "transformer_ffn_dim", 0)),
