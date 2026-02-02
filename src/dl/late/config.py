@@ -32,7 +32,7 @@ class LateConfig:
     # -----------------------------
     data_csv: str = "data/metadata/now_processed.csv"
     projects_root: str = "data/projects/now"
-    experiment_root: str = "experiments/late"
+    experiment_root: str = "experiments/newtest"
 
     # -----------------------------
     # 分支开关

@@ -41,7 +41,7 @@ def run_all_experiments() -> None:
     """
     运行所有late实验
     """
-    commands = [
+    all_commands = [
         ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode mean_pool --use-meta --device cuda:0",
          "Late: late_mean_pool+meta (CLIP)"),
         ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode attn_pool --use-meta --device cuda:1",
@@ -59,8 +59,31 @@ def run_all_experiments() -> None:
         ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode trm_pos --no-use-meta --device cuda:3",
          "Late: late_trm_pos (CLIP)")
     ]
+    rand_commands = [
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode mean_pool --use-meta --device cuda:0",
+         "Late: late_mean_pool+meta (CLIP)"),
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode mean_pool --no-use-meta --device cuda:1",
+         "Late: late_mean_pool (CLIP)"),
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 43 --seed 43 --baseline-mode mean_pool --use-meta --device cuda:2",
+         "Late: late_mean_pool+meta (CLIP)"),
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 43 --seed 43 --baseline-mode mean_pool --no-use-meta --device cuda:3",
+         "Late: late_mean_pool (CLIP)"),
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 44 --seed 44 --baseline-mode mean_pool --use-meta --device cuda:0",
+         "Late: late_mean_pool+meta (CLIP)"),
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 44 --seed 44 --baseline-mode mean_pool --no-use-meta --device cuda:1",
+         "Late: late_mean_pool (CLIP)"),
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 45 --seed 45 --baseline-mode mean_pool --use-meta --device cuda:2",
+         "Late: late_mean_pool+meta (CLIP)"),
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 45 --seed 45 --baseline-mode mean_pool --no-use-meta --device cuda:3",
+         "Late: late_mean_pool (CLIP)"),
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 46 --seed 46 --baseline-mode mean_pool --use-meta --device cuda:2",
+         "Late: late_mean_pool+meta (CLIP)"),
+        ("conda run -n crowdfunding python src/dl/late/main.py --run-name 46 --seed 46 --baseline-mode mean_pool --no-use-meta --device cuda:3",
+         "Late: late_mean_pool (CLIP)")
+    ]
 
-    _run_command_group(commands, group_name="")
+    #_run_command_group(all_commands, group_name="所有baseline")
+    _run_command_group(rand_commands, group_name="多seed实验")
     print("所有实验已完成！")
 
 
