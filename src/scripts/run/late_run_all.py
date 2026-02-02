@@ -41,7 +41,7 @@ def run_all_experiments() -> None:
     """
     运行所有late实验
     """
-    meta_commands = [
+    commands = [
         ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode mean_pool --use-meta --device cuda:0",
          "Late: late_mean_pool+meta (CLIP)"),
         ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode attn_pool --use-meta --device cuda:1",
@@ -50,9 +50,6 @@ def run_all_experiments() -> None:
          "Late: late_trm_no_pos+meta (CLIP)"),
         ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode trm_pos --use-meta --device cuda:3",
          "Late: late_trm_pos+meta (CLIP)"),
-    ]
-
-    no_meta_commands = [
         ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode mean_pool --no-use-meta --device cuda:0",
          "Late: late_mean_pool (CLIP)"),
         ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode attn_pool --no-use-meta --device cuda:1",
@@ -60,11 +57,10 @@ def run_all_experiments() -> None:
         ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode trm_no_pos --no-use-meta --device cuda:2",
          "Late: late_trm_no_pos (CLIP)"),
         ("conda run -n crowdfunding python src/dl/late/main.py --run-name 42 --seed 42 --baseline-mode trm_pos --no-use-meta --device cuda:3",
-         "Late: late_trm_pos (CLIP)"),
+         "Late: late_trm_pos (CLIP)")
     ]
 
-    _run_command_group(meta_commands, group_name="第一组：使用 meta 特征")
-    _run_command_group(no_meta_commands, group_name="第二组：不使用 meta 特征")
+    _run_command_group(commands, group_name="")
     print("所有实验已完成！")
 
 

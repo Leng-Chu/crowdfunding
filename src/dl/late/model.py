@@ -348,6 +348,51 @@ class TransformerPosSetEncoder(nn.Module):
         return pooled
 
 
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class EncoderSpec:
+    d_model: int
+    n_layers: int
+    n_heads: int
+    ffn_dim: int
+    dropout: float
+
+def _build_set_encoder(mode: str, spec: EncoderSpec) -> nn.Module:
+    mode = _normalize_baseline_mode(mode)
+    if mode == "mean_pool":
+        return MeanPoolingSetEncoder(d_model=spec.d_model)
+    if mode == "attn_pool":
+        return AttentionPoolingSetEncoder(d_model=spec.d_model, dropout=spec.dropout)
+    if mode == "trm_no_pos":
+        return TransformerNoPosSetEncoder(
+            d_model=spec.d_model,
+            n_layers=spec.n_layers,
+            n_heads=spec.n_heads,
+            ffn_dim=spec.ffn_dim,
+            dropout=spec.dropout,
+        )
+    if mode == "trm_pos":
+        return TransformerPosSetEncoder(
+            d_model=spec.d_model,
+            n_layers=spec.n_layers,
+            n_heads=spec.n_heads,
+            ffn_dim=spec.ffn_dim,
+            dropout=spec.dropout,
+        )
+    raise ValueError(f"不支持的 baseline_mode={mode!r}")
+
+def _assign_encoders(mode: str, spec: EncoderSpec, share: bool) -> tuple[nn.Module | None, nn.Module | None, nn.Module | None]:
+    """
+    返回 (shared_encoder, img_encoder, txt_encoder)
+    - share=True: 仅 shared_encoder 非空
+    - share=False: img/txt 分别一套
+    """
+    if share:
+        return _build_set_encoder(mode, spec), None, None
+    return None, _build_set_encoder(mode, spec), _build_set_encoder(mode, spec)
+
+
 class LateFusionBinaryClassifier(nn.Module):
     """图像/文本分别编码 + 晚期融合二分类（输出 logits）。"""
 
@@ -360,6 +405,7 @@ class LateFusionBinaryClassifier(nn.Module):
         baseline_mode: str = "attn_pool",
         d_model: int = 256,
         token_dropout: float = 0.0,
+        share_encoder: bool = True,
         transformer_n_layers: int = 2,
         transformer_n_heads: int = 8,
         transformer_ffn_dim: int = 512,
@@ -385,6 +431,7 @@ class LateFusionBinaryClassifier(nn.Module):
         self.use_meta = bool(use_meta)
         self.baseline_mode = _normalize_baseline_mode(baseline_mode)
         self.d_model = int(d_model)
+        self.share_encoder = bool(share_encoder)
 
         # 3.1 Modality Projection
         self.img_proj = nn.Linear(int(image_embedding_dim), int(self.d_model))
@@ -398,46 +445,18 @@ class LateFusionBinaryClassifier(nn.Module):
         self.token_drop = nn.Dropout(p=float(token_dropout))
 
         # 3.2 集合编码（模态内）
-        if self.baseline_mode == "mean_pool":
-            self.img_encoder = MeanPoolingSetEncoder(d_model=int(self.d_model))
-            self.txt_encoder = MeanPoolingSetEncoder(d_model=int(self.d_model))
-        elif self.baseline_mode == "attn_pool":
-            self.img_encoder = AttentionPoolingSetEncoder(d_model=int(self.d_model), dropout=float(transformer_dropout))
-            self.txt_encoder = AttentionPoolingSetEncoder(d_model=int(self.d_model), dropout=float(transformer_dropout))
-        elif self.baseline_mode == "trm_no_pos":
-            self.img_encoder = TransformerNoPosSetEncoder(
-                d_model=int(self.d_model),
-                n_layers=int(transformer_n_layers),
-                n_heads=int(transformer_n_heads),
-                ffn_dim=int(transformer_ffn_dim),
-                dropout=float(transformer_dropout),
-            )
-            self.txt_encoder = TransformerNoPosSetEncoder(
-                d_model=int(self.d_model),
-                n_layers=int(transformer_n_layers),
-                n_heads=int(transformer_n_heads),
-                ffn_dim=int(transformer_ffn_dim),
-                dropout=float(transformer_dropout),
-            )
-        elif self.baseline_mode == "trm_pos":
-            self.img_encoder = TransformerPosSetEncoder(
-                d_model=int(self.d_model),
-                n_layers=int(transformer_n_layers),
-                n_heads=int(transformer_n_heads),
-                ffn_dim=int(transformer_ffn_dim),
-                dropout=float(transformer_dropout),
-            )
-            self.txt_encoder = TransformerPosSetEncoder(
-                d_model=int(self.d_model),
-                n_layers=int(transformer_n_layers),
-                n_heads=int(transformer_n_heads),
-                ffn_dim=int(transformer_ffn_dim),
-                dropout=float(transformer_dropout),
-            )
-        else:
-            raise ValueError(
-                f"不支持的 baseline_mode={self.baseline_mode!r}，可选：mean_pool/attn_pool/trm_no_pos/trm_pos"
-            )
+        spec = EncoderSpec(
+            d_model=int(self.d_model),
+            n_layers=int(transformer_n_layers),
+            n_heads=int(transformer_n_heads),
+            ffn_dim=int(transformer_ffn_dim),
+            dropout=float(transformer_dropout),
+        )
+        self.shared_encoder, self.img_encoder, self.txt_encoder = _assign_encoders(
+            mode=self.baseline_mode,
+            spec=spec,
+            share=bool(share_encoder),
+        )
 
         # meta 分支（可选）
         self.meta: Optional[MetaMLPEncoder] = None
@@ -527,8 +546,14 @@ class LateFusionBinaryClassifier(nn.Module):
         Txt = self.txt_ln(txt_base + txt_attr)
         Txt = self.token_drop(Txt)
 
-        h_img = self.img_encoder(Img, img_mask)
-        h_txt = self.txt_encoder(Txt, txt_mask)
+        if self.shared_encoder is not None:
+            h_img = self.shared_encoder(Img, img_mask)
+            h_txt = self.shared_encoder(Txt, txt_mask)
+        else:
+            if self.img_encoder is None or self.txt_encoder is None:
+                raise RuntimeError("img_encoder/txt_encoder 未初始化。")
+            h_img = self.img_encoder(Img, img_mask)
+            h_txt = self.txt_encoder(Txt, txt_mask)
 
         fused = torch.cat([h_img, h_txt], dim=1)
         if self.use_meta:
@@ -558,6 +583,7 @@ def build_late_model(
         baseline_mode=str(getattr(cfg, "baseline_mode", "attn_pool")),
         d_model=int(getattr(cfg, "d_model", 256)),
         token_dropout=float(getattr(cfg, "token_dropout", 0.0)),
+        share_encoder=bool(getattr(cfg, "share_encoder", True)),
         transformer_n_layers=int(getattr(cfg, "transformer_n_layers", 2)),
         transformer_n_heads=int(getattr(cfg, "transformer_n_heads", 8)),
         transformer_ffn_dim=int(getattr(cfg, "transformer_ffn_dim", 512)),

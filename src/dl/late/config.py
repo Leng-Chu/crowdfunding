@@ -32,7 +32,7 @@ class LateConfig:
     # -----------------------------
     data_csv: str = "data/metadata/now_processed.csv"
     projects_root: str = "data/projects/now"
-    experiment_root: str = "experiments/newtest"
+    experiment_root: str = "experiments/late"
 
     # -----------------------------
     # 分支开关
@@ -83,8 +83,8 @@ class LateConfig:
 
     d_model: int = 256
     token_dropout: float = 0.33
-
-    # trm_no_pos（容量对照：不使用任何 position encoding）
+    share_encoder: bool = True  # 与 seq 容量对齐：图/文共享同一套 set encoder 权重
+    
     transformer_n_layers: int = 2
     transformer_n_heads: int = 4
     transformer_ffn_dim: int = 512
