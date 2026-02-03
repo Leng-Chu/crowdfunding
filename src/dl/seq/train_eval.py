@@ -340,6 +340,79 @@ def _positive_proba_seq(
     return np.concatenate(probs, axis=0).reshape(-1)
 
 
+@torch.no_grad()
+def _positive_proba_and_loss_seq(
+    model: nn.Module,
+    use_meta: bool,
+    X_meta: np.ndarray | None,
+    X_img: np.ndarray,
+    X_txt: np.ndarray,
+    seq_type: np.ndarray,
+    seq_attr: np.ndarray,
+    seq_mask: np.ndarray,
+    y: np.ndarray,
+    project_ids: List[str],
+    cfg: SeqConfig,
+    device: torch.device,
+    batch_size: int,
+    criterion: nn.Module,
+) -> Tuple[np.ndarray, float]:
+    """返回正类概率 + 平均 loss（按 BCEWithLogitsLoss）。"""
+    model.eval()
+    use_amp = device.type == "cuda"
+
+    ds = SeqDataset(
+        use_meta=bool(use_meta),
+        X_meta=X_meta,
+        X_img=X_img,
+        X_txt=X_txt,
+        seq_type=seq_type,
+        seq_attr=seq_attr,
+        seq_mask=seq_mask,
+        y=y,
+        project_ids=project_ids,
+        shuffle_tokens=_need_shuffle_tokens(cfg),
+        random_seed=int(getattr(cfg, "random_seed", 42)),
+    )
+    loader = DataLoader(ds, batch_size=max(1, int(batch_size)), shuffle=False)
+
+    probs: List[np.ndarray] = []
+    loss_sum = 0.0
+    n_seen = 0
+    for batch in loader:
+        if use_meta:
+            x_meta, x_img, x_txt, t, a, m, yb = batch
+            x_meta = x_meta.to(device)
+        else:
+            x_img, x_txt, t, a, m, yb = batch
+            x_meta = None
+
+        yb = yb.to(device).float().view(-1)
+
+        with _amp_autocast(device, enabled=bool(use_amp)):
+            logits = model(
+                x_img=x_img.to(device),
+                x_txt=x_txt.to(device),
+                seq_type=t.to(device),
+                seq_attr=a.to(device),
+                seq_mask=m.to(device),
+                x_meta=x_meta,
+            )
+        logits_1d = logits.float().view(-1)
+
+        loss = criterion(logits_1d, yb)
+        bs = int(yb.shape[0])
+        loss_sum += float(loss.detach().cpu()) * bs
+        n_seen += bs
+
+        prob = torch.sigmoid(logits_1d).detach().cpu().numpy().astype(np.float64, copy=False)
+        probs.append(prob)
+
+    if not probs:
+        return np.zeros((0,), dtype=np.float64), 0.0
+    return np.concatenate(probs, axis=0).reshape(-1), float(loss_sum / max(1, n_seen))
+
+
 def train_seq_with_early_stopping(
     model: nn.Module,
     use_meta: bool,
@@ -471,7 +544,7 @@ def train_seq_with_early_stopping(
             ema_logged = True
 
         with ema.swap_to_ema(model):
-            train_prob = _positive_proba_seq(
+            train_prob, _ = _positive_proba_and_loss_seq(
                 model,
                 use_meta=use_meta,
                 X_meta=X_meta_train,
@@ -485,8 +558,9 @@ def train_seq_with_early_stopping(
                 cfg=cfg,
                 device=device,
                 batch_size=int(cfg.batch_size),
+                criterion=criterion,
             )
-            val_prob = _positive_proba_seq(
+            val_prob, val_epoch_loss = _positive_proba_and_loss_seq(
                 model,
                 use_meta=use_meta,
                 X_meta=X_meta_val,
@@ -500,6 +574,7 @@ def train_seq_with_early_stopping(
                 cfg=cfg,
                 device=device,
                 batch_size=int(cfg.batch_size),
+                criterion=criterion,
             )
 
         train_tf = compute_threshold_free_metrics(y_train, train_prob)
@@ -511,6 +586,7 @@ def train_seq_with_early_stopping(
         for k, v in val_tf.items():
             row[f"val_{k}"] = v
         row["train_epoch_loss"] = float(train_epoch_loss)
+        row["val_epoch_loss"] = float(val_epoch_loss)
         row["train_grad_norm"] = float(grad_norm_sum / max(1, grad_norm_n))
         history.append(row)
 
@@ -545,8 +621,8 @@ def train_seq_with_early_stopping(
             int(epoch),
             int(cfg.max_epochs),
             lr_now,
-            float(train_tf.get("log_loss", 0.0)),
-            float(val_log_loss),
+            float(train_epoch_loss),
+            float(val_epoch_loss),
             val_auc_str,
             float(row["train_grad_norm"]),
             int(best_epoch),

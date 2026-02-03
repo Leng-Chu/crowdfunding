@@ -370,13 +370,18 @@ def plot_history(history: List[Dict[str, Any]], save_path: Path) -> None:
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 
-    train_x, train_y = _extract_xy("train_log_loss")
-    val_x, val_y = _extract_xy("val_log_loss")
+    train_x, train_y = _extract_xy("train_epoch_loss")
+    val_x, val_y = _extract_xy("val_epoch_loss")
+    loss_title = "Loss"
+    if not (train_y or val_y):
+        train_x, train_y = _extract_xy("train_log_loss")
+        val_x, val_y = _extract_xy("val_log_loss")
+        loss_title = "Log Loss"
     if train_y:
         axes[0].plot(train_x, train_y, label="train")
     if val_y:
         axes[0].plot(val_x, val_y, label="val")
-    axes[0].set_title("Log Loss")
+    axes[0].set_title(loss_title)
     axes[0].set_xlabel("Epoch")
     axes[0].grid(True, alpha=0.3)
     axes[0].legend()
