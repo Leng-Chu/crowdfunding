@@ -7,7 +7,7 @@
 ### 1.1 输入
 
 - 原始 metadata CSV：通常为 `data/metadata/all.csv` 或按时间段/年份切分的 CSV。
-- 对应的项目目录：`data/projects/<dataset>/<project_id>/...`（用于后续 embedding 与训练阶段对齐）。
+- 对应的项目目录：`data/projects/<dataset>/<project_id>/...`（用于后续生成 embedding 与训练读取）。
 
 ### 1.2 输出（核心）
 
@@ -64,7 +64,7 @@
 
 关键处理：
 
-1. **保留对齐用字段**
+1. **保留关键字段**
    - `project_id`
    - `time`：将 `launched_at` 转换为日期字符串（`YYYY-MM-DD`），并重命名为 `time`（便于按时间排序/做时序划分）。
 2. **删除不用于 meta 特征的列**
@@ -77,7 +77,7 @@
 5. **按时间排序**
    - 使用 `time` 排序，保证整行数据随时间移动（为后续“按时间顺序切分”做准备）。
 
-输出列（默认训练用）与 `src/dl/mlp/config.py` 对齐：`category/country/currency/duration_days/log_usd_goal/state`，以及对齐字段 `project_id/time`。
+输出列（默认训练用）：`category/country/currency/duration_days/log_usd_goal/state`，以及辅助字段 `project_id/time`。
 
 ### 3.4 `check_status.py`：数据概览与缺失检查（辅助）
 

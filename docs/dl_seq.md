@@ -3,7 +3,7 @@
 ## 1. 任务定义与输入输出
 
 - **任务**：Kickstarter 项目二分类（成功/失败）。
-- **标签**：来自表格数据 `state` 字段（`successful` 视为正类，其余为负类；同时兼容 0/1 数值标签）。
+- **标签**：来自表格数据 `state` 字段（0/1；正类为 1）。
 - **输入**：预先计算好的 embedding（不涉及原始模态特征的编码器）。
   - **内容序列侧**：由 `content.json` 的 `title/blurb/cover_image` 与 `content_sequence` 构造的“图文交替统一序列”，并读取对应的 embedding 文件：
     - 前缀（固定拼在最前面）：`title → blurb → cover_image`
@@ -12,7 +12,7 @@
   - **可选 meta**：表格元数据特征（类别 + 数值），仅在分类前与 pooled 表示拼接（`use_meta=True` 时启用）。
 - **输出**：二分类 **logits**（训练使用 `BCEWithLogitsLoss`），推理时对 logits 施加 `sigmoid` 得到正类概率。
 
-> 约束（用于论文/实验对齐）：
+> 约束（用于实验复现）：
 > - 同一配置下，仅修改 `baseline_mode` 即可复现实验组。
 > - 所有 baseline 的 token 输入 `X` 必须完全一致（该阶段不包含任何位置信息）。
 > - 顺序信息仅通过 position encoding 注入（仅对 `trm_pos / trm_pos_shuffled` 生效）。
@@ -26,7 +26,7 @@
 默认配置见 `src/dl/seq/config.py:SeqConfig`：
 
 - `data_csv`：默认 `data/metadata/now_processed.csv`
-- 关键列名（与 `docs/dl_mlp.md` 对齐）：
+- 关键列名：
   - `id_col`：`project_id`
   - `target_col`：`state`
   - `categorical_cols`：`category, country, currency`
@@ -55,13 +55,13 @@ data/projects/<dataset>/<project_id>/
   - 正文：`image_{emb_type}.npy` 与 `text_{emb_type}.npy`（当正文该模态数量为 0 时允许缺失）
 - 图片尺寸与文本长度属性已预处理写入 `content.json`（见下节字段要求），代码不读取本地图片文件，以避免数据加载速度过慢。
 
-### 2.3 统一序列与 embedding 对齐规则
+### 2.3 统一序列与 embedding 约定
 
 `content.json` 中必须包含：
 
-- `title`（字符串，可为空）
-- `blurb`（字符串，可为空）
-- `cover_image`（必须包含 `width/height` 的对象）
+- `title`（dict，可为空；字段：`content`、可选 `content_length`）
+- `blurb`（dict，可为空；字段：`content`、可选 `content_length`）
+- `cover_image`（dict，必须包含 `width/height`）
 - `content_sequence`：按页面呈现顺序排列的列表；每个元素至少包含：
 
 - `type ∈ {"text", "image"}`
@@ -110,7 +110,7 @@ data/projects/<dataset>/<project_id>/
 只采用一种截断方式：对交替后的统一序列按 `max_seq_len` 截断，支持两种策略：
 
 - `truncation_strategy="first"`：取前 `max_seq_len`
-- `truncation_strategy="random"`：在 `[0, L-max_seq_len]` 中随机选取一个窗口（为可复现，随机种子为 `random_seed + hash(project_id)`）
+- `truncation_strategy="random"`：在 `[0, L-max_seq_len]` 中随机选取一个窗口（为可复现，随机种子为 `random_seed + sha256(project_id)` 的稳定映射）
 
 注意：截断发生在 **拼接完 title/blurb/cover_image 前缀之后**，因此当 `max_seq_len` 较小，会优先保留前缀并截掉部分正文 token。
 
@@ -194,7 +194,7 @@ X ∈ R^{B×L×d_model}
 
 ### 4.5 `trm_pos_shuffled`：Transformer with Position Encoding + Shuffled Order
 
-- 在 data 阶段对每个样本的有效 token 随机打乱（`X_img/X_txt/seq_type/seq_attr/seq_mask` 同步打乱；随机种子同样为 `random_seed + hash(project_id)`，保证可复现）
+- 在 data 阶段对每个样本的有效 token 随机打乱（`X_img/X_txt/seq_type/seq_attr/seq_mask` 同步打乱；随机种子为 `random_seed + sha256(project_id)` 的稳定映射，保证可复现）
 - position encoding 按打乱后的顺序重新编号（即新的位置 0..L-1）
 - 其余结构与 `trm_pos` 完全一致
 
@@ -202,19 +202,20 @@ X ∈ R^{B×L×d_model}
 
 ---
 
-## 5. 融合与分类头（与 mlp baseline 对齐）
+## 5. 融合与分类头
 
 ### 5.1 pooled 表示
 
 得到 pooled 表示 `h ∈ [B, d_model]` 后：
 
 - 若 `use_meta=True`：
-  - meta encoder 与 `mlp baseline` 的结构与处理方式一致（one-hot + 标准化；encoder 为 `Linear → ReLU → Dropout`）
+  - meta 预处理：one-hot + 数值标准化（仅在训练集拟合）
+  - meta encoder：`Linear → ReLU → Dropout`
   - meta 仅在分类前与 `h` concat：`concat([h, h_meta])`
 
 ### 5.2 分类头
 
-分类头结构与 `mlp baseline` 一致：
+分类头结构：
 
 - `Linear → ReLU → Dropout → Linear(→1)`
 - `fusion_hidden_dim<=0` 时自动取 `2 * fusion_in_dim`
@@ -301,5 +302,5 @@ X ∈ R^{B×L×d_model}
   - `--fixed-overrides "{\"max_epochs\": 20, \"early_stop_min_epochs\": 3}"`
 
 输出：
-- Optuna 产物：`experiments/seq/optuna/<study_name>/summary.csv`、`best.json`、`study.db`、`trial_logs/`
-- 每个 trial 的训练产物仍会写入：`experiments/ch1/trm_pos+meta/<run_id>/...`
+- Optuna 产物：`experiments/seq/<sampler_seed>/<study_name>/summary.csv`、`best.json`、`study.db`、`trial_logs/`
+- 每个 trial 的训练产物仍会写入：`experiments/seq/<mode>/<run_id>/...`

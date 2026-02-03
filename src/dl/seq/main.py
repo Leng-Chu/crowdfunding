@@ -2,10 +2,6 @@
 """
 seq 主程序入口（Chapter 1：图文内容块序列建模）：
 
-说明：
-- 本目录代码不依赖 `src/dl/mlp` 的训练代码，可独立运行
-- 工程行为与输出结构对齐 mlp baseline，便于横向对比
-
 运行（在项目根目录）：
 - 使用默认配置：
   `conda run -n crowdfunding python src/dl/seq/main.py`
@@ -125,7 +121,7 @@ def main() -> int:
     cfg = SeqConfig()
 
     # Windows 下 torch 与 numpy/pandas 的 OpenMP 运行库可能有冲突；
-    # 先 import torch，可避免部分环境出现 DLL 初始化失败（对齐 mlp/main.py 的做法）。
+    # 先 import torch，可避免部分环境出现 DLL 初始化失败。
     import torch  # noqa: F401
 
     from data import prepare_seq_data

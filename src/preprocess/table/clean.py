@@ -62,7 +62,7 @@ X["log_usd_goal"] = np.log1p(X["usd_goal"])
 X.drop(columns=["usd_goal"], inplace=True)
 
 # ===== 6. 合并保留的列和编码后的特征 =====
-# 确保所有数据在同一索引下对齐
+# 确保所有数据使用相同的索引顺序
 # 将y转换为DataFrame并重命名列
 y_df = y.reset_index(drop=True).to_frame(name='state')
 final_data = pd.concat([project_info.reset_index(drop=True), X.reset_index(drop=True), y_df], axis=1)

@@ -3,12 +3,12 @@
 ## 1. 任务定义与输入输出
 
 - **任务**：Kickstarter 项目二分类（成功/失败）。
-- **标签**：来自表格数据 `state` 字段（`successful` 视为正类，其余为负类）。
+- **标签**：来自表格数据 `state` 字段（0/1；正类为 1）。
 - **输入**：
   - `image`：项目图片向量集合（embedding set，不建模顺序），其中 **封面图向量** 会拼接在集合最前面。
-  - `attr_image`：与 `image` 中每个 token 对齐的数值属性（1 个标量），默认取 `log(max(1, area))`；padding 为 0。
+  - `attr_image`：与 `image` 中每个 token 一一对应的数值属性（1 个标量），默认取 `log(max(1, area))`；padding 为 0。
   - `text`：项目文本向量集合（embedding set，不建模顺序），其中 **title/blurb 向量** 会拼接在集合最前面。
-  - `attr_text`：与 `text` 中每个 token 对齐的数值属性（1 个标量），默认取 `log(max(1, length))`；padding 为 0。
+  - `attr_text`：与 `text` 中每个 token 一一对应的数值属性（1 个标量），默认取 `log(max(1, length))`；padding 为 0。
   - `meta`（可选）：表格元数据特征（类别 + 数值），开关为 `use_meta`。
 - **输出**：二分类 **logits**（训练使用 `BCEWithLogitsLoss`），推理时对 logits 施加 `sigmoid` 得到正类概率。
 
@@ -51,9 +51,9 @@ data/projects/<dataset>/<project_id>/
 另外，本 baseline 会从 `content.json` 中提取 token 属性（attr）：
 - `cover_image.width/height` → `area`
 - `content_sequence[].width/height`（image）→ `area`
-- `title/blurb`（或其 `content_length`）与 `content_sequence[].content_length`（text）→ `length`
+- `title.content_length` / `blurb.content_length` 与 `content_sequence[].content_length`（text）→ `length`
 
-### 2.3 向量文件命名（与 `src/preprocess/embedding` 对齐）
+### 2.3 向量文件命名约定
 
 `src/dl/late/data.py` 约定如下文件名（`{emb_type}` 来自配置项 `image_embedding_type/text_embedding_type`）：
 
@@ -92,7 +92,7 @@ data/projects/<dataset>/<project_id>/
 先读取 `content.json` 的 `content_sequence`，按 `max_seq_len` 对其截断得到前 `L` 个内容块：
 
 - `truncation_strategy=first`：取前 `L` 个内容块
-- `truncation_strategy=random`：从所有长度为 `L` 的窗口中随机选一个（对每个项目基于 `random_seed + hash(project_id)` 固定，保证可复现）
+- `truncation_strategy=random`：从所有长度为 `L` 的窗口中随机选一个（对每个项目基于 `random_seed + sha256(project_id)` 的稳定映射固定，保证可复现）
 
 注意：该截断仅用于控制每个样本使用的内容块数量，不用于顺序建模。
 
@@ -115,7 +115,7 @@ data/projects/<dataset>/<project_id>/
 
 注意：`cover_image/title_blurb` **不参与** `content_sequence` 的统一序列截断，它们总是被保留。
 
-同时构造并拼接 token 属性（attr），并保持与 token 一一对齐：
+同时构造并拼接 token 属性（attr），并保持与 token 一一对应：
 
 - `attr_image = concat([attr_cover_image, attr_image_story_keep])`
 - `attr_text = concat([attr_title_blurb, attr_text_story_keep])`
@@ -171,13 +171,13 @@ data/projects/<dataset>/<project_id>/
 - 不使用跨模态 attention
 - 不进行图文 token 级交互
 
-### 5.3 晚期融合与分类头（与 mlp baseline 对齐）
+### 5.3 晚期融合与分类头
 
 - 融合：`h = concat(h_img, h_txt)`
 - 若 `use_meta=True`：
-  - `meta_h = MetaEncoder(meta_features)`（结构与 mlp baseline 一致）
+  - `meta_h = MetaEncoder(meta_features)`（`Linear → ReLU → Dropout`）
   - `h = concat(h, meta_h)`
-- 分类头（与 mlp baseline 完全一致）：`Linear → ReLU → Dropout → Linear(→1)`
+- 分类头：`Linear → ReLU → Dropout → Linear(→1)`
 - 输出：`logits ∈ [B]`
 
 ## 6. 训练与评估
@@ -223,7 +223,7 @@ data/projects/<dataset>/<project_id>/
 - 指定嵌入类型 / baseline 模式 / 显卡：
   - `conda run -n crowdfunding python src/dl/late/main.py --image-embedding-type clip --text-embedding-type bge --baseline-mode attn_pool --device cuda:0`
 
-### 8.2 输出目录结构（与 mlp baseline 对齐）
+### 8.2 输出目录结构
 
 默认写入 `experiments/late/<mode>/<run_id>/`：
 
@@ -232,5 +232,5 @@ data/projects/<dataset>/<project_id>/
 - `plots/`：训练曲线与 ROC 图（若 `save_plots=True`）
 
 其中：
-- `mode` 取 `late_attn_pool` / `late_trm_no_pos`，并按需追加 `+meta`
-- `baseline_mode`（配置项）取 `attn_pool` 或 `trm_no_pos`
+- `mode` 取 `mean_pool / attn_pool / trm_no_pos / trm_pos`，并按需追加 `+meta`
+- `baseline_mode`（配置项）取 `mean_pool / attn_pool / trm_no_pos / trm_pos`

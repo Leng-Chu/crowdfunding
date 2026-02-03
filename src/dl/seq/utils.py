@@ -310,7 +310,7 @@ def find_best_f1_threshold(y_true: np.ndarray, y_prob: np.ndarray) -> Tuple[floa
     if n == 0:
         return 0.0, 0.0
 
-    # 只保留有限值（与 compute_binary_metrics 的鲁棒性对齐）
+    # 只保留有限值（与指标计算的输入约束一致）
     mask = np.isfinite(y_prob)
     if int(np.sum(mask)) != n:
         y_true = y_true[mask]

@@ -75,19 +75,25 @@ def _normalize_project_id(value: Any) -> str:
 
 
 def _encode_binary_target(series: pd.Series) -> np.ndarray:
-    """将标签编码为 0/1（兼容数值/字符串）。"""
-    if pd.api.types.is_numeric_dtype(series):
-        s = series.fillna(0)
-        try:
-            uniq = pd.unique(s)
-            uniq_set = {int(v) for v in uniq if pd.notna(v)}
-        except Exception:
-            uniq_set = set()
-        if uniq_set.issubset({0, 1}):
-            return s.astype(int).to_numpy(dtype=np.int64)
-        return (s.astype(float) > 0).astype(int).to_numpy(dtype=np.int64)
-    s = series.fillna("").astype(str).str.strip().str.lower()
-    return (s == "successful").astype(int).to_numpy(dtype=np.int64)
+    """
+    将标签编码为 0/1。
+
+    约定：target_col 为数值标签，取值只能是 0/1。
+    """
+    if not pd.api.types.is_numeric_dtype(series):
+        raise ValueError("target_col 需要为 0/1 的数值标签。")
+
+    s = series.fillna(0)
+    uniq = pd.unique(s)
+    try:
+        uniq_set = {int(v) for v in uniq if pd.notna(v)}
+    except Exception as e:
+        raise ValueError(f"target_col 无法解析为整数标签：{e}") from e
+
+    if not uniq_set.issubset({0, 1}):
+        raise ValueError(f"target_col 取值必须为 0/1，但得到：{sorted(uniq_set)}")
+
+    return s.astype(int).to_numpy(dtype=np.int64)
 
 
 def _as_2d_embedding(arr: np.ndarray, name: str) -> np.ndarray:
@@ -251,7 +257,7 @@ class PreparedLateData:
     text_embedding_dim: int
     max_text_keep_len: int
 
-    # 统一截断配置（用于复现与对齐）
+    # 统一截断配置（用于复现）
     max_seq_len: int
 
     stats: Dict[str, int]
@@ -273,30 +279,25 @@ def _read_content_json(content_json_path: Path) -> Dict[str, Any]:
 def _extract_text_content(value: Any) -> str:
     if value is None:
         return ""
-    if isinstance(value, dict):
-        return str(value.get("content", "") or "")
-    return str(value or "")
+    if not isinstance(value, dict):
+        raise ValueError(f"期望文本字段为 dict（包含 content/content_length），但得到 {type(value).__name__}")
+    return str(value.get("content", "") or "")
 
 
 def _extract_text_length(value: Any) -> int:
     """
-    从 content.json 中提取文本长度：
-    - 若为 dict，优先使用 content_length，其次使用 content 的字符串长度
-    - 若为 str，使用字符串长度
-    - 其余类型，转为 str 后取长度
+    从 content.json 中提取文本长度：优先使用 content_length，其次使用 content 的字符串长度。
     """
     if value is None:
         return 0
-    if isinstance(value, dict):
-        if "content_length" in value:
-            try:
-                return int(value.get("content_length") or 0)
-            except Exception:
-                pass
-        return int(len(_extract_text_content(value)))
-    if isinstance(value, str):
-        return int(len(value))
-    return int(len(str(value)))
+    if not isinstance(value, dict):
+        raise ValueError(f"期望文本字段为 dict（包含 content/content_length），但得到 {type(value).__name__}")
+    if "content_length" in value:
+        try:
+            return int(value.get("content_length") or 0)
+        except Exception:
+            pass
+    return int(len(_extract_text_content(value)))
 
 
 def _extract_cover_area(content_obj: Dict[str, Any]) -> int:
@@ -315,9 +316,9 @@ def _extract_cover_area(content_obj: Dict[str, Any]) -> int:
 
 def _build_title_blurb_attr(content_obj: Dict[str, Any], n_rows: int) -> np.ndarray:
     """
-    构造 title_blurb token 的 attr：与 title_blurb_{emb}.npy 的行数对齐。
+    构造 title_blurb token 的 attr：行数必须与 title_blurb_{emb}.npy 相同。
 
-    说明：不同数据版本中 title/blurb 可能是 str 或 dict（包含 content/content_length）。
+    说明：title/blurb 来自 content.json 的 `title`/`blurb` 字段，字段形式为 dict（包含 content/content_length）。
     """
     n = int(n_rows)
     if n <= 0:
@@ -584,15 +585,18 @@ def _late_load_project_keep_sets(
 
 def _infer_embedding_dims(projects_root: Path, project_ids: List[str], cfg: LateConfig) -> Tuple[int, int]:
     """
-    为了支持“某个 split 内全为空集合”的极端情况，提前从全量项目中推断 D_img / D_txt。
-    - 只要找到任意一个存在的 embedding 文件即可
-    - 若始终无法推断，将报错（因为模型投影层需要明确输入维度）
+    从项目目录推断 image/text embedding 的维度。
+
+    约定：
+    - image 维度来自 `cover_image_{image_embedding_type}.npy`
+    - text 维度来自 `title_blurb_{text_embedding_type}.npy`
     """
     img_type = str(getattr(cfg, "image_embedding_type", "") or "").strip().lower()
     txt_type = str(getattr(cfg, "text_embedding_type", "") or "").strip().lower()
 
-    image_dim = 0
-    text_dim = 0
+    missing_strategy = str(getattr(cfg, "missing_strategy", "error") or "error").strip().lower()
+    if missing_strategy not in {"skip", "error"}:
+        raise ValueError(f"不支持的 missing_strategy={cfg.missing_strategy!r}，可选：skip/error")
 
     for pid in project_ids:
         pid = _normalize_project_id(pid)
@@ -600,34 +604,39 @@ def _infer_embedding_dims(projects_root: Path, project_ids: List[str], cfg: Late
             continue
         project_dir = projects_root / pid
         if not project_dir.exists():
-            continue
+            if missing_strategy == "skip":
+                continue
+            raise FileNotFoundError(f"找不到项目目录：{project_dir}")
 
-        if image_dim <= 0:
-            p = project_dir / f"cover_image_{img_type}.npy"
-            if not p.exists():
-                p = project_dir / f"image_{img_type}.npy"
-            if p.exists():
-                try:
-                    arr = _as_2d_embedding(np.load(p), p.name)
-                    image_dim = int(arr.shape[1])
-                except Exception:
-                    pass
+        cover_path = project_dir / f"cover_image_{img_type}.npy"
+        title_blurb_path = project_dir / f"title_blurb_{txt_type}.npy"
+        if not cover_path.exists() or not title_blurb_path.exists():
+            if missing_strategy == "skip":
+                continue
+            if not cover_path.exists():
+                raise FileNotFoundError(f"缺少 cover_image 嵌入文件：{cover_path}")
+            raise FileNotFoundError(f"缺少 title_blurb 嵌入文件：{title_blurb_path}")
 
-        if text_dim <= 0:
-            p = project_dir / f"title_blurb_{txt_type}.npy"
-            if not p.exists():
-                p = project_dir / f"text_{txt_type}.npy"
-            if p.exists():
-                try:
-                    arr = _as_2d_embedding(np.load(p), p.name)
-                    text_dim = int(arr.shape[1])
-                except Exception:
-                    pass
+        try:
+            cover = _as_2d_embedding(np.load(cover_path), cover_path.name)
+            title_blurb = _as_2d_embedding(np.load(title_blurb_path), title_blurb_path.name)
+        except Exception:
+            if missing_strategy == "skip":
+                continue
+            raise
 
-        if int(image_dim) > 0 and int(text_dim) > 0:
-            break
+        if int(cover.shape[0]) != 1:
+            if missing_strategy == "skip":
+                continue
+            raise ValueError(f"项目 {pid} cover_image 行数不合法：期望 1，但得到 {cover.shape}")
+        if int(title_blurb.shape[0]) <= 0:
+            if missing_strategy == "skip":
+                continue
+            raise ValueError(f"项目 {pid} title_blurb 为空：{title_blurb_path}")
 
-    return int(image_dim), int(text_dim)
+        return int(cover.shape[1]), int(title_blurb.shape[1])
+
+    raise RuntimeError("无法推断 embedding dim：未找到任何包含必需 embedding 文件的项目。")
 
 
 def _late_build_features_for_split(
@@ -636,8 +645,8 @@ def _late_build_features_for_split(
     projects_root: Path,
     cfg: LateConfig,
     use_meta: bool,
-    fallback_image_dim: int,
-    fallback_text_dim: int,
+    expected_image_dim: int,
+    expected_text_dim: int,
 ) -> Tuple[
     np.ndarray | None,
     np.ndarray,
@@ -676,8 +685,8 @@ def _late_build_features_for_split(
 
     skipped_total = 0
     missing_project_dir = 0
-    image_dim = int(fallback_image_dim)
-    text_dim = int(fallback_text_dim)
+    image_dim = int(expected_image_dim)
+    text_dim = int(expected_text_dim)
 
     missing_strategy = str(getattr(cfg, "missing_strategy", "error") or "error").strip().lower()
     if missing_strategy not in {"skip", "error"}:
@@ -836,11 +845,11 @@ def prepare_late_data(
     )
 
     all_project_ids: List[str] = [_normalize_project_id(v) for v in raw_df[cfg.id_col].tolist()]
-    fallback_image_dim, fallback_text_dim = _infer_embedding_dims(projects_root, all_project_ids, cfg)
-    if int(fallback_image_dim) <= 0:
-        raise RuntimeError("无法推断 image_embedding_dim：可能所有项目都缺少 image_*.npy。")
-    if int(fallback_text_dim) <= 0:
-        raise RuntimeError("无法推断 text_embedding_dim：可能所有项目都缺少 text_*.npy。")
+    expected_image_dim, expected_text_dim = _infer_embedding_dims(projects_root, all_project_ids, cfg)
+    if int(expected_image_dim) <= 0:
+        raise RuntimeError("无法推断 image_embedding_dim。")
+    if int(expected_text_dim) <= 0:
+        raise RuntimeError("无法推断 text_embedding_dim。")
 
     preprocessor = None
     feature_names: List[str] = []
@@ -881,8 +890,8 @@ def prepare_late_data(
         projects_root,
         cfg,
         use_meta,
-        fallback_image_dim=fallback_image_dim,
-        fallback_text_dim=fallback_text_dim,
+        expected_image_dim=expected_image_dim,
+        expected_text_dim=expected_text_dim,
     )
     (
         X_meta_val,
@@ -905,8 +914,8 @@ def prepare_late_data(
         projects_root,
         cfg,
         use_meta,
-        fallback_image_dim=fallback_image_dim,
-        fallback_text_dim=fallback_text_dim,
+        expected_image_dim=expected_image_dim,
+        expected_text_dim=expected_text_dim,
     )
     (
         X_meta_test,
@@ -929,8 +938,8 @@ def prepare_late_data(
         projects_root,
         cfg,
         use_meta,
-        fallback_image_dim=fallback_image_dim,
-        fallback_text_dim=fallback_text_dim,
+        expected_image_dim=expected_image_dim,
+        expected_text_dim=expected_text_dim,
     )
 
     if int(img_dim_val) != int(img_dim) or int(img_dim_test) != int(img_dim):

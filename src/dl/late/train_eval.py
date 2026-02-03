@@ -31,31 +31,20 @@ _DEFAULT_MAX_GRAD_NORM = 1.0
 
 
 def _build_grad_scaler(enabled: bool):
-    if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler"):
-        try:
-            return torch.amp.GradScaler(device_type="cuda", enabled=bool(enabled))
-        except TypeError:
-            try:
-                return torch.amp.GradScaler("cuda", enabled=bool(enabled))
-            except TypeError:
-                return torch.amp.GradScaler(enabled=bool(enabled))
-    return torch.cuda.amp.GradScaler(enabled=bool(enabled))
+    """
+    构造 AMP GradScaler。
+
+    说明：本项目仅在 CUDA 设备上启用 AMP；CPU 上返回禁用的 scaler。
+    """
+    if bool(enabled):
+        return torch.amp.GradScaler("cuda", enabled=True)
+    return torch.amp.GradScaler(enabled=False)
 
 
 def _amp_autocast(device: torch.device, enabled: bool):
     if not bool(enabled):
         return contextlib.nullcontext()
-    if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
-        try:
-            return torch.amp.autocast(device_type=str(device.type), enabled=True)
-        except TypeError:
-            try:
-                return torch.amp.autocast(str(device.type), enabled=True)
-            except TypeError:
-                pass
-    if device.type == "cuda":
-        return torch.cuda.amp.autocast(enabled=True)
-    return contextlib.nullcontext()
+    return torch.amp.autocast(device_type=str(device.type), enabled=True)
 
 
 def _build_adamw(model: nn.Module, lr: float, weight_decay: float) -> torch.optim.Optimizer:

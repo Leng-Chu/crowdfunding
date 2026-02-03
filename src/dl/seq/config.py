@@ -4,10 +4,7 @@ seq 配置（Chapter 1：图文内容块序列建模）：
 
 - 任务：Kickstarter 项目二分类（成功/失败），loss = BCEWithLogitsLoss
 - 输入：预先计算好的 image/text embedding（不涉及原始模态特征）
-- 可选：是否融合 meta 表格特征（结构与处理方式与 mlp baseline 对齐）
-
-说明：
-- 本目录代码可独立运行，不得 import 或复用 `src/dl/mlp` 的代码
+- 可选：是否融合 meta 表格特征
 - 命令行仅覆盖常用参数：--run-name / --baseline-mode / --use-meta / --image-embedding-type / --text-embedding-type / --device / --gpu
 """
 
@@ -90,7 +87,7 @@ class SeqConfig:
     transformer_dim_feedforward: int = 512
     transformer_dropout: float = 0.1
 
-    # meta encoder（与 mlp baseline 对齐）
+    # meta encoder
     meta_hidden_dim: int = 128
     meta_dropout: float = 0.2
 

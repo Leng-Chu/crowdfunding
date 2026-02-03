@@ -2,14 +2,11 @@
 """
 数据加载与特征构建（seq）：
 
-- 读取 metadata CSV（与 mlp baseline 对齐的列约定）
+- 读取 metadata CSV（样本 ID、标签、可选 meta 特征列）
 - 读取项目目录下的 content.json，并根据 title/blurb/cover_image + content_sequence 构造“图文交替统一序列”
 - 读取预计算 embedding：cover_image_{emb_type}.npy / title_blurb_{emb_type}.npy / image_{emb_type}.npy / text_{emb_type}.npy
 - 计算每个内容块的属性：文本长度 / 图片面积（直接读取 content.json 中预处理好的 content_length/width/height）
 - 支持按 max_seq_len 截断（first/random）并输出 seq_mask
-
-注意：
-- 本模块不复用 `src/dl/mlp` 的代码，但工程行为需要对齐以便横向对比。
 """
 
 from __future__ import annotations
@@ -34,7 +31,7 @@ def _split_by_ratio(
     shuffle: bool,
     seed: int,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """按比例切分 train/val/test（与 mlp baseline 一致）。"""
+    """按比例切分 train/val/test。"""
     if bool(shuffle):
         df = df.sample(frac=1.0, random_state=int(seed)).reset_index(drop=True)
 
@@ -74,19 +71,25 @@ def _normalize_project_id(value: Any) -> str:
 
 
 def _encode_binary_target(series: pd.Series) -> np.ndarray:
-    """将标签编码为 0/1（兼容数值/字符串；与 mlp baseline 一致）。"""
-    if pd.api.types.is_numeric_dtype(series):
-        s = series.fillna(0)
-        try:
-            uniq = pd.unique(s)
-            uniq_set = {int(v) for v in uniq if pd.notna(v)}
-        except Exception:
-            uniq_set = set()
-        if uniq_set.issubset({0, 1}):
-            return s.astype(int).to_numpy(dtype=np.int64)
-        return (s.astype(float) > 0).astype(int).to_numpy(dtype=np.int64)
-    s = series.fillna("").astype(str).str.strip().str.lower()
-    return (s == "successful").astype(int).to_numpy(dtype=np.int64)
+    """
+    将标签编码为 0/1。
+
+    约定：target_col 为数值标签，取值只能是 0/1。
+    """
+    if not pd.api.types.is_numeric_dtype(series):
+        raise ValueError("target_col 需要为 0/1 的数值标签。")
+
+    s = series.fillna(0)
+    uniq = pd.unique(s)
+    try:
+        uniq_set = {int(v) for v in uniq if pd.notna(v)}
+    except Exception as e:
+        raise ValueError(f"target_col 无法解析为整数标签：{e}") from e
+
+    if not uniq_set.issubset({0, 1}):
+        raise ValueError(f"target_col 取值必须为 0/1，但得到：{sorted(uniq_set)}")
+
+    return s.astype(int).to_numpy(dtype=np.int64)
 
 
 def _as_2d_embedding(arr: np.ndarray, name: str) -> np.ndarray:
@@ -108,7 +111,7 @@ def _stable_hash_int(text: str) -> int:
 
 @dataclass
 class TabularPreprocessor:
-    """轻量级表格预处理器：one-hot + 标准化（结构与 mlp baseline 对齐）。"""
+    """轻量级表格预处理器：one-hot + 数值标准化（mean/std）。"""
 
     categorical_cols: List[str]
     numeric_cols: List[str]
@@ -267,9 +270,12 @@ def _infer_embedding_dim(projects_root: Path, project_ids: List[str], filename: 
 
 def _read_content_json(content_json_path: Path) -> Dict[str, Any]:
     try:
-        return json.loads(content_json_path.read_text(encoding="utf-8"))
+        obj = json.loads(content_json_path.read_text(encoding="utf-8"))
     except Exception as e:
         raise ValueError(f"读取 content.json 失败：{content_json_path} | {type(e).__name__}: {e}") from e
+    if not isinstance(obj, dict):
+        raise ValueError(f"content.json 顶层不是 dict：{content_json_path}")
+    return dict(obj)
 
 
 def _read_content_sequence(content_json_path: Path) -> List[Dict[str, Any]]:
@@ -314,39 +320,50 @@ def _extract_title_blurb_lengths(content_obj: Dict[str, Any]) -> List[int]:
     - 若 title 和 blurb 都存在：保存 [title, blurb] 两行
     - 若只有一个存在：只保存该一个
     """
-    title = str(content_obj.get("title", "") or "").strip()
-    blurb = str(content_obj.get("blurb", "") or "").strip()
+    def _len_from_obj(v: Any) -> int:
+        if v is None:
+            return 0
+        if not isinstance(v, dict):
+            raise ValueError("content.json 的 title/blurb 需要是 dict（包含 content/content_length）。")
+        content = str(v.get("content", "") or "").strip()
+        if not content:
+            return 0
+        if "content_length" in v:
+            try:
+                return int(v.get("content_length") or 0)
+            except Exception:
+                pass
+        return int(len(content))
+
+    title_len = _len_from_obj(content_obj.get("title", None))
+    blurb_len = _len_from_obj(content_obj.get("blurb", None))
 
     lengths: List[int] = []
-    if title:
-        lengths.append(int(len(title)))
-    if blurb:
-        lengths.append(int(len(blurb)))
+    if int(title_len) > 0:
+        lengths.append(int(title_len))
+    if int(blurb_len) > 0:
+        lengths.append(int(blurb_len))
     return lengths
 
 
 def _extract_cover_area(content_obj: Dict[str, Any], project_id: str) -> int:
     """
     从 content.json 的 cover_image 字段读取 width/height，并返回 area=width*height。
-
-    cover_image 支持两种形式：
-    - dict：{"url": "...", "filename": "...", "width": 560, "height": 315}
-    - str：URL（包含 width/height query param 的情况可后续扩展；当前默认要求 dict 里提供尺寸）
     """
     cover = content_obj.get("cover_image", None)
-    if isinstance(cover, dict):
-        w = cover.get("width", None)
-        h = cover.get("height", None)
-        try:
-            w = int(w)
-            h = int(h)
-        except Exception as e:
-            raise ValueError(f"项目 {project_id} cover_image 的 width/height 不是整数：{w!r}/{h!r}") from e
-        if int(w) <= 0 or int(h) <= 0:
-            raise ValueError(f"项目 {project_id} cover_image 尺寸不合法：width={w} height={h}")
-        return int(w) * int(h)
+    if not isinstance(cover, dict):
+        raise ValueError(f"项目 {project_id} cover_image 字段不合法：期望 dict，但得到 {type(cover).__name__}")
 
-    raise ValueError(f"项目 {project_id} cover_image 字段不合法或缺少尺寸信息：{type(cover).__name__}")
+    w = cover.get("width", None)
+    h = cover.get("height", None)
+    try:
+        w = int(w)
+        h = int(h)
+    except Exception as e:
+        raise ValueError(f"项目 {project_id} cover_image 的 width/height 不是整数：{w!r}/{h!r}") from e
+    if int(w) <= 0 or int(h) <= 0:
+        raise ValueError(f"项目 {project_id} cover_image 尺寸不合法：width={w} height={h}")
+    return int(w) * int(h)
 
 
 def _build_one_project_sequence(
@@ -483,7 +500,7 @@ def _build_one_project_sequence(
             img_idx += 1
 
             # 图片尺寸已在 content.json 中预处理好：width/height
-            # 不再读取本地图片文件，避免数据加载极慢。
+            # 不读取本地图片文件（仅使用预计算 embedding）。
             w = _require_int_field(item, "width", project_id=project_id, pos=pos)
             h = _require_int_field(item, "height", project_id=project_id, pos=pos)
             if int(w) <= 0 or int(h) <= 0:

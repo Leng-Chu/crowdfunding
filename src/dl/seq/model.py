@@ -21,7 +21,7 @@ from config import SeqConfig
 
 
 class MetaMLPEncoder(nn.Module):
-    """metadata 特征 -> FC -> Dropout，输出一个定长向量（与 mlp baseline 对齐）。"""
+    """meta 特征 -> FC -> Dropout，输出一个定长向量。"""
 
     def __init__(self, input_dim: int, hidden_dim: int = 256, dropout: float = 0.3) -> None:
         super().__init__()

@@ -7,7 +7,7 @@
   - attn_pool：集合 attention pooling（无位置编码）
   - trm_no_pos：Transformer（无位置编码）
   - trm_pos：Transformer（图/文各自使用模态内序号的 sinusoidal 位置编码）
-- 晚期融合（concat）后接与 mlp baseline 一致的分类头（Linear→ReLU→Dropout→Linear）
+- 晚期融合（concat）后接二分类头（Linear→ReLU→Dropout→Linear）
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ def _normalize_baseline_mode(baseline_mode: str) -> str:
 
 
 class MetaMLPEncoder(nn.Module):
-    """metadata 特征 -> FC -> Dropout，输出一个定长向量（与 mlp baseline 一致）。"""
+    """meta 特征 -> FC -> Dropout，输出一个定长向量。"""
 
     def __init__(self, input_dim: int, hidden_dim: int = 256, dropout: float = 0.3) -> None:
         super().__init__()
@@ -238,7 +238,7 @@ class TransformerNoPosSetEncoder(nn.Module):
         if dropout < 0.0 or dropout >= 1.0:
             raise ValueError("dropout 需要在 [0, 1) 之间")
 
-        # 与 seq 对齐：Transformer 使用 pre-LN（norm_first=True），更稳定。
+        # Transformer 使用 pre-LN（norm_first=True），更稳定。
         layer = nn.TransformerEncoderLayer(
             d_model=int(d_model),
             nhead=int(n_heads),
@@ -441,7 +441,7 @@ class LateFusionBinaryClassifier(nn.Module):
         self.txt_attr_proj = nn.Linear(1, int(self.d_model))
         self.img_ln = nn.LayerNorm(int(self.d_model))
         self.txt_ln = nn.LayerNorm(int(self.d_model))
-        # 与 seq 对齐：在 token-level 直接扰动输入表示（仅对有效 token 生效由 mask/Pooling 保证）。
+        # 在 token 级别对输入表示做 dropout（有效 token 由 mask/Pooling 约束）。
         self.token_drop = nn.Dropout(p=float(token_dropout))
 
         # 3.2 集合编码（模态内）
@@ -469,7 +469,7 @@ class LateFusionBinaryClassifier(nn.Module):
             )
             meta_out_dim = int(self.meta.output_dim)
 
-        # 3.3 晚期融合与分类（与 mlp baseline 分类头一致）
+        # 3.3 晚期融合与分类
         fusion_in_dim = int(self.d_model) * 2 + int(meta_out_dim)
         if fusion_in_dim <= 0:
             raise ValueError("fusion_in_dim 需要 > 0")

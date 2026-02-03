@@ -2,7 +2,7 @@
 """
 late 配置（单文件 / 单类）：
 - 图像集合 + 文本集合分别建模
-- 晚期融合（concat）后接与 mlp baseline 一致的分类头
+- 晚期融合（concat）后接二分类头（MLP，输出 1 个 logit）
 
 运行方式（在项目根目录）：
 - 使用默认配置：
@@ -49,7 +49,7 @@ class LateConfig:
     numeric_cols: Tuple[str, ...] = ("duration_days", "log_usd_goal")
 
     # -----------------------------
-    # 划分策略（与 mlp baseline 对齐）
+    # 划分策略
     # -----------------------------
     train_ratio: float = 0.6
     val_ratio: float = 0.2
@@ -57,7 +57,7 @@ class LateConfig:
     shuffle_before_split: bool = True
 
     # -----------------------------
-    # 嵌入类型（与 src/preprocess/embedding 对齐）
+    # 嵌入类型（决定读取的 .npy 文件名后缀）
     # -----------------------------
     image_embedding_type: str = "clip"  # clip / siglip / resnet
     text_embedding_type: str = "clip"  # bge / clip / siglip
@@ -83,7 +83,7 @@ class LateConfig:
 
     d_model: int = 256
     token_dropout: float = 0.33
-    share_encoder: bool = True  # 与 seq 容量对齐：图/文共享同一套 set encoder 权重
+    share_encoder: bool = True  # 图/文共享同一套 set encoder 权重，减少参数量
     
     transformer_n_layers: int = 2
     transformer_n_heads: int = 4

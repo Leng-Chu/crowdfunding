@@ -1,6 +1,6 @@
 # 深度学习模块通用工程规范
 
-本文总结 `src/dl/seq`、`src/dl/late`、`src/dl/gate`、`src/dl/res` 四套训练代码的共同工程规范，用于保证实验可复现、指标口径一致、产物结构稳定，便于横向对比与自动化汇总。
+本文总结 `src/dl/seq` 与 `src/dl/late` 两套训练代码的共同工程规范，用于保证实验可复现、指标口径一致、产物结构稳定，便于实验比较与自动化汇总。
 
 该规范也可作为其它 `src/dl/*` 子模块的参考（尤其是二分类阈值与产物结构部分）。
 
@@ -11,7 +11,7 @@
 - 从仓库根目录运行脚本（代码内部会基于 `__file__` 推断仓库根路径，避免工作目录差异导致路径错误）。
 - 所有路径使用相对仓库根目录的相对路径（例如 `data/...`、`experiments/...`），避免硬编码绝对路径。
 - 输出目录统一写入 `experiments/<module>/<mode>/<run_id>/`，其中：
-  - `<module> ∈ {seq, late, gate, res}`
+  - `<module> ∈ {seq, late}`
   - `<mode>` 为实验组名称（由 `baseline_mode` 及开关组合得到）
   - `<run_id>` 为时间戳（可附带 `run_name` 后缀）
 
@@ -40,7 +40,7 @@
 ### 2.3 数据切分（split）
 
 - 切分比例默认：`train/val/test = 0.6/0.2/0.2`
-- 默认 `shuffle_before_split=False`，保证与数据顺序严格对齐（便于复现实验与对齐外部汇总）。
+- 默认 `shuffle_before_split=True`，在切分前打乱样本顺序。
 - `splits.csv` 必须写入 `reports/`，包含每个 `project_id` 的 `split` 与标签，便于复核。
 
 ### 2.4 meta 表格特征预处理（可选）
@@ -57,7 +57,7 @@
 
 ### 2.5 统一截断（truncation_strategy）
 
-- `max_seq_len` 表示块序列长度上限，用于对齐实验与控制计算量。
+- `max_seq_len` 表示块序列长度上限，用于控制计算量。
 - `truncation_strategy="first"`：始终取最前窗口。
 - `truncation_strategy="random"`：随机窗口必须可复现，且与样本绑定：seed 由 `hashlib.sha256(project_id)` 与 `random_seed` 混合得到，避免顺序/进程差异引入不稳定。
 
@@ -88,7 +88,7 @@
 
 ### 3.4 AMP 与 EMA
 
-- 设备为 CUDA 时启用 AMP（autocast + GradScaler），并保持实现对不同 PyTorch 版本兼容。
+- 设备为 CUDA 时启用 AMP（autocast + GradScaler）。
 - 为保证口径一致：early stopping、阈值选择、最终评估所用的 `prob` 必须来自同一权重模式（推荐使用 EMA 权重进行验证/推理），减少指标抖动并提升稳定性。
 
 ---
@@ -205,7 +205,7 @@ early stopping 与 best checkpoint 选择口径：
 
 - `state_dict`：best model 权重
 - `best_epoch / best_val_auc / best_val_log_loss / best_threshold`
-- 与模型结构/数据对齐相关的关键配置（例如 embedding 类型与维度、序列长度、head/transformer 结构参数等）
+- 与模型结构/数据相关的关键配置（例如 embedding 类型与维度、序列长度、head/transformer 结构参数等）
 
 当启用 meta 分支时，还必须包含：
 
