@@ -244,89 +244,6 @@ def _positive_proba_late(
     return np.concatenate(probs, axis=0).reshape(-1)
 
 
-@torch.no_grad()
-def _positive_proba_and_loss_late(
-    model: nn.Module,
-    use_meta: bool,
-    X_meta: np.ndarray | None,
-    X_image: np.ndarray,
-    len_image: np.ndarray,
-    attr_image: np.ndarray,
-    X_text: np.ndarray,
-    len_text: np.ndarray,
-    attr_text: np.ndarray,
-    y: np.ndarray,
-    device: torch.device,
-    batch_size: int,
-    criterion: nn.Module,
-) -> Tuple[np.ndarray, float]:
-    """返回正类概率 + 平均 loss（按 BCEWithLogitsLoss）。"""
-    model.eval()
-    use_amp = device.type == "cuda"
-
-    y_1d = np.asarray(y, dtype=np.float32).reshape(-1)
-
-    tensors: List[torch.Tensor] = []
-    if bool(use_meta):
-        if X_meta is None:
-            raise ValueError("use_meta=True 时，X_meta 不能为空。")
-        tensors.append(torch.from_numpy(np.asarray(X_meta, dtype=np.float32)))
-
-    tensors.append(torch.from_numpy(np.asarray(X_image, dtype=np.float32)))
-    tensors.append(torch.from_numpy(np.asarray(len_image, dtype=np.int64)))
-    tensors.append(torch.from_numpy(np.asarray(attr_image, dtype=np.float32)))
-    tensors.append(torch.from_numpy(np.asarray(X_text, dtype=np.float32)))
-    tensors.append(torch.from_numpy(np.asarray(len_text, dtype=np.int64)))
-    tensors.append(torch.from_numpy(np.asarray(attr_text, dtype=np.float32)))
-    tensors.append(torch.from_numpy(y_1d))
-
-    loader = DataLoader(TensorDataset(*tensors), batch_size=max(1, int(batch_size)), shuffle=False)
-
-    probs: List[np.ndarray] = []
-    loss_sum = 0.0
-    n_seen = 0
-    for batch in loader:
-        idx = 0
-        xb_meta = None
-        if bool(use_meta):
-            xb_meta = batch[idx].to(device)
-            idx += 1
-
-        xb_img = batch[idx].to(device)
-        lb_img = batch[idx + 1].to(device)
-        ab_img = batch[idx + 2].to(device)
-        xb_txt = batch[idx + 3].to(device)
-        lb_txt = batch[idx + 4].to(device)
-        ab_txt = batch[idx + 5].to(device)
-        idx += 6
-
-        yb = batch[idx].to(device).float().view(-1)
-
-        with _amp_autocast(device, enabled=bool(use_amp)):
-            logits = model(
-                x_meta=xb_meta,
-                x_image=xb_img,
-                len_image=lb_img,
-                attr_image=ab_img,
-                x_text=xb_txt,
-                len_text=lb_txt,
-                attr_text=ab_txt,
-            )
-        logits_1d = logits.float().view(-1)
-
-        loss = criterion(logits_1d, yb)
-        bs = int(yb.shape[0])
-        loss_sum += float(loss.detach().cpu()) * bs
-        n_seen += bs
-
-        prob = torch.sigmoid(logits_1d).detach().cpu().numpy()
-        probs.append(prob.astype(np.float64, copy=False))
-
-    if not probs:
-        return np.zeros((0,), dtype=np.float64), 0.0
-    return np.concatenate(probs, axis=0).reshape(-1), float(loss_sum / max(1, n_seen))
-
-
 def train_late_with_early_stopping(
     model: nn.Module,
     use_meta: bool,
@@ -475,7 +392,7 @@ def train_late_with_early_stopping(
             ema_logged = True
 
         with ema.swap_to_ema(model):
-            train_prob, _ = _positive_proba_and_loss_late(
+            train_prob = _positive_proba_late(
                 model,
                 use_meta=use_meta,
                 X_meta=X_meta_train,
@@ -485,12 +402,10 @@ def train_late_with_early_stopping(
                 X_text=X_text_train,
                 len_text=len_text_train,
                 attr_text=attr_text_train,
-                y=y_train,
                 device=device,
                 batch_size=cfg.batch_size,
-                criterion=criterion,
             )
-            val_prob, val_epoch_loss = _positive_proba_and_loss_late(
+            val_prob = _positive_proba_late(
                 model,
                 use_meta=use_meta,
                 X_meta=X_meta_val,
@@ -500,10 +415,8 @@ def train_late_with_early_stopping(
                 X_text=X_text_val,
                 len_text=len_text_val,
                 attr_text=attr_text_val,
-                y=y_val,
                 device=device,
                 batch_size=cfg.batch_size,
-                criterion=criterion,
             )
 
         train_tf = compute_threshold_free_metrics(y_train, train_prob)
@@ -515,7 +428,6 @@ def train_late_with_early_stopping(
         for k, v in val_tf.items():
             row[f"val_{k}"] = v
         row["train_epoch_loss"] = float(train_epoch_loss)
-        row["val_epoch_loss"] = float(val_epoch_loss)
         row["train_grad_norm"] = float(grad_norm_sum / max(1, grad_norm_n))
         history.append(row)
 
@@ -550,8 +462,8 @@ def train_late_with_early_stopping(
             int(epoch),
             int(cfg.max_epochs),
             lr_now,
-            float(train_epoch_loss),
-            float(val_epoch_loss),
+            float(train_tf.get("log_loss", 0.0)),
+            float(val_log_loss),
             val_auc_str,
             float(row["train_grad_norm"]),
             int(best_epoch),
