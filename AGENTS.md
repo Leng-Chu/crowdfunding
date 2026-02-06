@@ -5,14 +5,14 @@
 - `src/`: Python 源代码 (以脚本为主的仓库)
   - `crawlers/`: 获取 Kickstarter 页面/资源并写入 `data/projects/...`
   - `preprocess/`: 清洗 + 特征/嵌入生成 (`clean/`, `embedding/`, `table/`)
-  - `dl/`: 模型训练代码 (例如 `dl/mlp/`)
+  - `dl/`: 模型训练代码 (例如 `dl/mdl/`)
 - `data/`: 本地数据集 + 爬虫输出 (`metadata/`, `projects/`)
 - `experiments/`: 运行输出 (日志/指标/图表)
 - `docs/`: 文档
+  - `docs/workflow.md`: 端到端数据构建与实验复现流程（顶层说明）
   - `docs/csv_fields.md`: 数据集列说明
-  - `docs/dl_guidelines.md`: 深度学习模块通用工程规范（seq/late/gate）
-  - `docs/dl_mlp.md`: `src/dl/mlp` 模型与复现说明
-  - `docs/dl_gate.md`: `src/dl/gate` 三分支 gated fusion baseline 说明
+  - `docs/dl_guidelines.md`: 深度学习模块通用工程规范（seq/late/mdl）
+  - `docs/dl_mdl.md`: `src/dl/mdl` 模型与复现说明
   - `docs/dl_late.md`: `src/dl/late` 图文晚期融合 baseline 说明
   - `docs/dl_seq.md`: `src/dl/seq` 图文内容块序列建模说明
   - `docs/preprocess_table.md`: `src/preprocess/table` 表格预处理说明
@@ -25,7 +25,7 @@
 - 抓取项目页面: `python src/crawlers/crawl_batch.py` (读取 `data/metadata/*.csv`, 写入 `data/projects/...`)
 - 转换 JSON → 表格: `python src/crawlers/json_to_table.py`
 - 生成嵌入: `python src/preprocess/embedding/vectorize_content.py` 或 `python src/preprocess/embedding/vectorize_csv_data.py`
-- 训练 MLP 多模态模型: `python src/dl/mlp/main.py` (在 `src/dl/mlp/config.py` 中编辑参数)
+- 训练 MDL 多模态模型: `python src/dl/mdl/main.py` (在 `src/dl/mdl/config.py` 中编辑参数)
 
 注意: 某些嵌入后端会下载大型预训练模型; 请优先使用本地缓存并记录任何需要的权重。
 

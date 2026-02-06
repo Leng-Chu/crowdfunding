@@ -73,7 +73,7 @@ def make_run_dirs(experiment_root: Path, run_name: Optional[str] = None) -> Tupl
 
 def setup_logger(log_file: Path, level: int = logging.INFO) -> logging.Logger:
     """同时输出到控制台与文件的 logger（utf-8）。"""
-    logger = logging.getLogger("mlp")
+    logger = logging.getLogger("mdl")
     logger.setLevel(level)
     logger.propagate = False
 
@@ -244,14 +244,63 @@ def compute_binary_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: fl
     return out
 
 
-def find_best_f1_threshold(y_true: np.ndarray, y_prob: np.ndarray) -> float:
+def compute_threshold_free_metrics(y_true: np.ndarray, y_prob: np.ndarray) -> Dict[str, Any]:
+    """
+    计算阈值无关指标（log_loss / roc_auc）。
+
+    说明：
+    - 不计算 accuracy/precision/recall/f1/confusion 等阈值相关指标；
+    - 若某个 split 只包含单一类别，roc_auc 返回 None，并在 out 中给出 roc_auc_error。
+    """
+    y_true = np.asarray(y_true).astype(int)
+    y_prob = np.asarray(y_prob).astype(float)
+    y_prob = np.clip(y_prob, 1e-7, 1 - 1e-7)
+
+    y_true_1d = y_true.reshape(-1)
+    y_prob_1d = y_prob.reshape(-1)
+    if y_true_1d.shape != y_prob_1d.shape:
+        raise ValueError(f"y_true/y_prob 形状不一致：{y_true_1d.shape} vs {y_prob_1d.shape}")
+
+    n = int(y_true_1d.size)
+    logloss = float(
+        -np.mean(y_true_1d * np.log(y_prob_1d) + (1 - y_true_1d) * np.log(1 - y_prob_1d))
+    ) if n > 0 else 0.0
+
+    try:
+        fpr, tpr, _ = _roc_curve(y_true_1d, y_prob_1d)
+        roc_auc = _auc_trapz(fpr, tpr)
+        roc_auc_error: Optional[str] = None
+    except Exception as e:
+        roc_auc = None
+        roc_auc_error = f"{type(e).__name__}: {e}"
+        try:
+            mask = np.isfinite(y_prob_1d)
+            if int(np.sum(mask)) < int(y_prob_1d.size):
+                roc_auc = _roc_auc_rank(y_true_1d[mask], y_prob_1d[mask])
+            else:
+                roc_auc = _roc_auc_rank(y_true_1d, y_prob_1d)
+            roc_auc_error = None
+        except Exception as e2:
+            roc_auc = None
+            roc_auc_error = f"{type(e2).__name__}: {e2}"
+
+    out: Dict[str, Any] = {
+        "log_loss": float(logloss),
+        "roc_auc": None if roc_auc is None else float(roc_auc),
+    }
+    if roc_auc is None and roc_auc_error:
+        out["roc_auc_error"] = str(roc_auc_error)
+    return out
+
+
+def find_best_f1_threshold(y_true: np.ndarray, y_prob: np.ndarray) -> Tuple[float, float]:
     """
     在验证集上选择阈值：最大化 F1（预测规则：y_pred = y_prob >= threshold）。
 
     说明：
     - 为保证可复现与效率，使用排序 + 累积统计的方式遍历所有“分数变化点”的阈值候选。
-    - 若出现多个阈值 F1 相同，选择“阈值更大”的那个（更保守，减少误报），保证确定性。
-    - 若验证集中没有正样本或没有负样本，返回 0.5（避免异常）。
+    - 若出现多个阈值 F1 相同，选择“阈值更小”的那个，保证确定性（并与工程阈值口径统一）。
+    - 返回 (best_threshold, best_f1)。
     """
     y_true = np.asarray(y_true).astype(int).reshape(-1)
     y_prob = np.asarray(y_prob).astype(float).reshape(-1)
@@ -260,12 +309,7 @@ def find_best_f1_threshold(y_true: np.ndarray, y_prob: np.ndarray) -> float:
 
     n = int(y_true.size)
     if n == 0:
-        return 0.5
-
-    n_pos = int(np.sum(y_true == 1))
-    n_neg = int(np.sum(y_true == 0))
-    if n_pos == 0 or n_neg == 0:
-        return 0.5
+        return 0.0, 0.0
 
     mask = np.isfinite(y_prob)
     if int(np.sum(mask)) != n:
@@ -273,11 +317,9 @@ def find_best_f1_threshold(y_true: np.ndarray, y_prob: np.ndarray) -> float:
         y_prob = y_prob[mask]
         n = int(y_true.size)
         if n == 0:
-            return 0.5
-        n_pos = int(np.sum(y_true == 1))
-        n_neg = int(np.sum(y_true == 0))
-        if n_pos == 0 or n_neg == 0:
-            return 0.5
+            return 0.0, 0.0
+
+    n_pos = int(np.sum(y_true == 1))
 
     order = np.argsort(-y_prob, kind="mergesort")
     y_true_sorted = y_true[order]
@@ -290,7 +332,7 @@ def find_best_f1_threshold(y_true: np.ndarray, y_prob: np.ndarray) -> float:
     cum_fp = (1 + thr_idx) - cum_tp
 
     best_f1 = -1.0
-    best_thr = 0.5
+    best_thr = float("inf")
     for tp, fp, idx in zip(cum_tp, cum_fp, thr_idx):
         tp = int(tp)
         fp = int(fp)
@@ -298,13 +340,13 @@ def find_best_f1_threshold(y_true: np.ndarray, y_prob: np.ndarray) -> float:
         denom = 2 * tp + fp + fn
         f1 = (2.0 * tp / denom) if denom > 0 else 0.0
         thr = float(y_prob_sorted[int(idx)])
-        if f1 > best_f1 or (abs(f1 - best_f1) <= 1e-15 and thr > best_thr):
+        if f1 > best_f1 or (abs(f1 - best_f1) <= 1e-15 and thr < best_thr):
             best_f1 = float(f1)
             best_thr = float(thr)
 
     if not np.isfinite(best_thr):
-        return 0.5
-    return float(np.clip(best_thr, 0.0, 1.0))
+        return 0.0, float(max(0.0, best_f1))
+    return float(best_thr), float(max(0.0, best_f1))
 
 
 def plot_history(history: List[Dict[str, Any]], save_path: Path) -> None:

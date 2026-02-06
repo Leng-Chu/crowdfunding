@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 import os
 import json
 from pathlib import Path
+from typing import Any, Dict, Optional
 
 
 def _ensure_output_dirs(output_dir):
@@ -56,6 +57,20 @@ def _is_leaf_text_div(element, block_tags):
     return True
 
 
+def _as_text_field(value: Any) -> Optional[Dict[str, Any]]:
+    """
+    将文本转成 content.json 约定的 dict 格式：
+    - {"content": "...", "content_length": 123}
+    空/全空白则返回 None。
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    return {"content": text, "content_length": int(len(text))}
+
+
 def _extract_story_content(soup, selectors, include_div=False):
     """提取故事内容中的图像和文本序列"""
     content_sequence = []
@@ -86,6 +101,8 @@ def _extract_story_content(soup, selectors, include_div=False):
                                 "type": "image",
                                 "url": img_url,
                                 "filename": relative_name,
+                                "width": 0,
+                                "height": 0,
                             }
                         )
                         image_counter += 1
@@ -98,8 +115,15 @@ def _extract_story_content(soup, selectors, include_div=False):
                         # 如果上一项也是文本，则合并到上一项
                         if last_item_was_text and content_sequence and content_sequence[-1]["type"] == "text":
                             content_sequence[-1]["content"] += "\n" + text
+                            content_sequence[-1]["content_length"] = int(len(content_sequence[-1]["content"]))
                         else:
-                            content_sequence.append({"type": "text", "content": text})
+                            content_sequence.append(
+                                {
+                                    "type": "text",
+                                    "content": text,
+                                    "content_length": int(len(text)),
+                                }
+                            )
                             last_item_was_text = True
         break
 
@@ -111,6 +135,8 @@ def parse_story_content(
     output_dir,
     project_url=None,
     cover_url=None,
+    title=None,
+    blurb=None,
     overwrite_content=False,
     logger=None,
 ):
@@ -134,8 +160,19 @@ def parse_story_content(
 
     soup = BeautifulSoup(html_content, "html.parser")
     
-    # 现在封面图片URL直接从参数传入，不再从HTML中提取
-    cover_image_url = cover_url
+    title_field = _as_text_field(title)
+    blurb_field = _as_text_field(blurb)
+
+    # 封面图片URL默认从参数传入；若为空则置为 None（由上游决定是否判失败）
+    cover_image_url = str(cover_url).strip() if cover_url is not None else ""
+    cover_image = None
+    if cover_image_url:
+        cover_image = {
+            "url": cover_image_url,
+            "filename": "",
+            "width": 0,
+            "height": 0,
+        }
     
     # 从HTML中提取视频URL
     video_url = _extract_video_url(soup, logger=log)
@@ -150,10 +187,15 @@ def parse_story_content(
 
     result = {
         "project_url": project_url,  # 添加项目URL
-        "cover_image": cover_image_url,
+        "title": title_field,
+        "blurb": blurb_field,
+        "cover_image": cover_image,
         "video": video_url,
         "content_sequence": content_sequence,
     }
+
+    # 移除空字段，避免 downstream 误判
+    result = {k: v for k, v in result.items() if v is not None}
 
     with open(result_file, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)

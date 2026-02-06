@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-模型定义（mlp）：
+模型定义（mdl）：
 - 使用 encoder + concat + fusion head 的方式进行多模态特征融合
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import List, Optional
 import torch
 import torch.nn as nn
-from config import MlpConfig
+from config import MdlConfig
 
 
 class MetaMLPEncoder(nn.Module):
@@ -370,7 +370,7 @@ class MultiModalBinaryClassifier(nn.Module):
 
 
 def build_multimodal_model(
-    cfg: MlpConfig,
+    cfg: MdlConfig,
     use_meta: bool,
     use_image: bool,
     use_text: bool,

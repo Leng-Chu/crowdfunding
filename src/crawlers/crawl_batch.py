@@ -124,16 +124,29 @@ def main():
                 str(project_dir),
                 project_url=project_url,
                 cover_url=cover_url,  # 传递封面图片URL参数
+                title=row.get("title"),
+                blurb=row.get("blurb"),
                 overwrite_content=overwrite_content,
                 logger=simple_log,
             )
 
             # 检查是否有问题
             issues = []
-            if not result or not result.get("cover_image"):
+            cover_obj = (result or {}).get("cover_image", None)
+            cover_url_ok = isinstance(cover_obj, dict) and bool(str(cover_obj.get("url", "") or "").strip())
+            if not cover_url_ok:
                 issues.append("missing_cover_image")
             if not result or not result.get("content_sequence"):
                 issues.append("empty_content_sequence")
+
+            has_title = isinstance((result or {}).get("title", None), dict) and bool(
+                str((result or {}).get("title", {}).get("content", "") or "").strip()
+            )
+            has_blurb = isinstance((result or {}).get("blurb", None), dict) and bool(
+                str((result or {}).get("blurb", {}).get("content", "") or "").strip()
+            )
+            if not has_title and not has_blurb:
+                issues.append("missing_title_blurb")
 
             if issues:
                 issue_str = ','.join(issues)

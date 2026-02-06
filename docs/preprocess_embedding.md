@@ -92,6 +92,10 @@ data/projects/<dataset>/<project_id>/
 - 若输出文件已存在则跳过该模态的向量化。
 - 脚本内提供 `enable_text_vector/enable_image_vector` 两个全局开关，用于只跑某一侧向量化。
 
+说明：
+
+- `content_length/width/height` 由爬虫流水线生成/补全：`src/crawlers/crawl_batch*.py`（写入文本长度）+ `src/crawlers/download_batch.py`（下载图片并写入尺寸/修正扩展名）。
+
 ## 4. 本地 embedding 后端
 
 后端选择由 `src/preprocess/embedding/backends.py` 完成。

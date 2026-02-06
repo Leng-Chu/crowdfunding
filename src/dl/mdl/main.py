@@ -1,20 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-mlp 主程序入口：
+mdl 主程序入口：
 - 三路输入：metadata / image / text
 - 通过 use_meta / use_image / use_text 三个开关自由组合分支
 
 说明：
-- 本目录代码不依赖 `src/dl/mlp` 之外的其他训练代码，可独立运行
+- 本目录代码不依赖 `src/dl/mdl` 之外的其他训练代码，可独立运行
 - fusion_hidden_dim 会在构建模型时根据实际启用的分支自动计算
 
 运行（在项目根目录）：
 - 使用默认配置：
-  `conda run -n crowdfunding python src/dl/mlp/main.py`
+  `conda run -n crowdfunding python src/dl/mdl/main.py`
 - 指定 run_name / 嵌入类型 / 显卡：
-  `conda run -n crowdfunding python src/dl/mlp/main.py --run-name clip --image-embedding-type clip --text-embedding-type clip --device cuda:0`
+  `conda run -n crowdfunding python src/dl/mdl/main.py --run-name clip --image-embedding-type clip --text-embedding-type clip --device cuda:0`
 - 使用第 2 张 GPU（等价写法）：
-  `conda run -n crowdfunding python src/dl/mlp/main.py --gpu 1`
+  `conda run -n crowdfunding python src/dl/mdl/main.py --gpu 1`
 """
 
 from __future__ import annotations
@@ -27,12 +27,13 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from config import MlpConfig
+from config import MdlConfig
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="mlp 训练入口（支持命令行覆盖部分配置）。")
+    parser = argparse.ArgumentParser(description="mdl 训练入口（支持命令行覆盖部分配置）。")
     parser.add_argument("--run-name", default=None, help="实验名称后缀，用于产物目录命名。")
+    parser.add_argument("--seed", type=int, default=None, help="随机数种子（覆盖 config.py 的 random_seed）")
     parser.add_argument(
         "--use-meta",
         default=None,
@@ -133,12 +134,13 @@ def _mode_name(use_meta: bool, use_image: bool, use_text: bool) -> str:
         parts.append("image")
     if use_text:
         parts.append("text")
-    return "+".join(parts) if parts else "none"
+    inner = "+".join(parts) if parts else "none"
+    return f"mdl_{inner}"
 
 
 def main() -> int:
     args = _parse_args()
-    cfg = MlpConfig()
+    cfg = MdlConfig()
 
     import torch
 
@@ -176,6 +178,9 @@ def main() -> int:
     elif args.gpu is not None:
         cfg = replace(cfg, device=f"cuda:{int(args.gpu)}")
 
+    if args.seed is not None:
+        cfg = replace(cfg, random_seed=int(args.seed))
+
     use_meta = bool(cfg.use_meta)
     use_image = bool(cfg.use_image)
     use_text = bool(cfg.use_text)
@@ -206,11 +211,14 @@ def main() -> int:
     logger.info("data_csv=%s", str(csv_path))
     logger.info("projects_root=%s", str(projects_root))
     logger.info("device=%s", str(getattr(cfg, "device", "auto")))
+    logger.info("random_seed=%d", int(getattr(cfg, "random_seed", 0)))
     logger.info(
-        "嵌入类型：image=%s text=%s | 缺失策略=%s",
-        cfg.image_embedding_type,
-        cfg.text_embedding_type,
-        cfg.missing_strategy,
+        "embedding：image=%s text=%s | max_seq_len=%d trunc=%s | missing=%s",
+        (cfg.image_embedding_type if use_image else None),
+        (cfg.text_embedding_type if use_text else None),
+        int(getattr(cfg, "max_seq_len", 0)),
+        str(getattr(cfg, "truncation_strategy", "")),
+        str(getattr(cfg, "missing_strategy", "")),
     )
 
     set_global_seed(cfg.random_seed)
@@ -225,13 +233,14 @@ def main() -> int:
         logger=logger,
     )
     logger.info(
-        "数据集：train=%d val=%d test=%d | meta_dim=%d | image_dim=%d text_dim=%d | max_img_len=%d max_txt_len=%d",
+        "数据集：train=%d val=%d test=%d | meta_dim=%d | img_dim=%d txt_dim=%d | max_seq_len=%d | max_img_keep=%d max_txt_keep=%d",
         int(prepared.y_train.shape[0]),
         int(prepared.y_val.shape[0]),
         int(prepared.y_test.shape[0]),
         int(prepared.meta_dim),
         int(prepared.image_embedding_dim),
         int(prepared.text_embedding_dim),
+        int(getattr(prepared, "max_seq_len", 0)),
         int(prepared.max_image_seq_len),
         int(prepared.max_text_seq_len),
     )
@@ -281,13 +290,14 @@ def main() -> int:
             "meta_dim": int(prepared.meta_dim),
             "image_embedding_dim": int(prepared.image_embedding_dim),
             "text_embedding_dim": int(prepared.text_embedding_dim),
+            "max_seq_len": int(getattr(prepared, "max_seq_len", 0)),
             "fusion_hidden_dim": None if fusion_hidden_dim is None else int(fusion_hidden_dim),
             **cfg.to_dict(),
         },
         reports_dir / "config.json",
     )
 
-    best_model, history, best_info = train_multimodal_with_early_stopping(
+    best_state, best_epoch, history, best_info = train_multimodal_with_early_stopping(
         model,
         use_meta=use_meta,
         use_image=use_image,
@@ -307,6 +317,8 @@ def main() -> int:
         cfg=cfg,
         logger=logger,
     )
+    model.load_state_dict(best_state)
+    best_model = model
 
     try:
         import pandas as pd
@@ -356,25 +368,31 @@ def main() -> int:
     )
 
     # 用验证集为本次模型选择阈值（最大化 F1），并用该阈值计算 train/val/test 指标。
-    best_threshold = find_best_f1_threshold(prepared.y_val, val_out["prob"])
-    train_out["metrics"] = compute_binary_metrics(prepared.y_train, train_out["prob"], threshold=best_threshold)
-    val_out["metrics"] = compute_binary_metrics(prepared.y_val, val_out["prob"], threshold=best_threshold)
-    test_out["metrics"] = compute_binary_metrics(prepared.y_test, test_out["prob"], threshold=best_threshold)
-    logger.info("阈值选择：best_threshold=%.6f（val_f1=%.6f）", float(best_threshold), float(val_out["metrics"]["f1"]))
+    best_threshold, _best_val_f1 = find_best_f1_threshold(prepared.y_val, val_out["prob"])
+    train_metrics = compute_binary_metrics(prepared.y_train, train_out["prob"], threshold=float(best_threshold))
+    val_metrics = compute_binary_metrics(prepared.y_val, val_out["prob"], threshold=float(best_threshold))
+    test_metrics = compute_binary_metrics(prepared.y_test, test_out["prob"], threshold=float(best_threshold))
+    logger.info("阈值选择：best_threshold=%.6f（val_f1=%.6f）", float(best_threshold), float(val_metrics["f1"]))
 
     results = {
         "run_id": run_id,
         "best_info": best_info,
         "selected_threshold": float(best_threshold),
-        "train": train_out["metrics"],
-        "val": val_out["metrics"],
-        "test": test_out["metrics"],
+        "train": train_metrics,
+        "val": val_metrics,
+        "test": test_metrics,
     }
     save_json(results, reports_dir / "metrics.json")
 
     torch.save(
         {
-            "state_dict": best_model.state_dict(),
+            "state_dict": best_state,
+            "best_epoch": int(best_epoch),
+            "best_val_auc": best_info.get("best_val_auc", None),
+            "best_val_log_loss": best_info.get("best_val_log_loss", None),
+            "metric_for_best": best_info.get("metric_for_best", None),
+            "tie_breaker": best_info.get("tie_breaker", None),
+            "best_threshold": float(best_threshold),
             "use_meta": bool(use_meta),
             "use_image": bool(use_image),
             "use_text": bool(use_text),
@@ -384,6 +402,8 @@ def main() -> int:
             "image_embedding_type": cfg.image_embedding_type,
             "text_embedding_type": cfg.text_embedding_type,
             "missing_strategy": str(cfg.missing_strategy),
+            "max_seq_len": int(getattr(prepared, "max_seq_len", 0)),
+            "truncation_strategy": str(getattr(cfg, "truncation_strategy", "")),
             "meta_hidden_dim": int(cfg.meta_hidden_dim),
             "meta_dropout": float(cfg.meta_dropout),
             "image_conv_channels": int(cfg.image_conv_channels),
@@ -425,11 +445,13 @@ def main() -> int:
         plot_roc(prepared.y_test, test_out["prob"], plots_dir / "roc_test.png")
 
     try:
-        test_metrics = dict(test_out.get("metrics", {}) or {})
         _save_single_row_csv(
             run_dir / "result.csv",
             {
                 "mode": mode,
+                "use_meta": int(bool(use_meta)),
+                "use_image": int(bool(use_image)),
+                "use_text": int(bool(use_text)),
                 "image_embedding_type": cfg.image_embedding_type,
                 "text_embedding_type": cfg.text_embedding_type,
                 "threshold": float(best_threshold),
@@ -444,7 +466,7 @@ def main() -> int:
         logger.warning("保存单行结果 CSV 失败：%s", e)
 
     logger.info("完成：产物已保存到 %s", str(run_dir))
-    logger.info("测试集指标：%s", test_out["metrics"])
+    logger.info("测试集指标：%s", test_metrics)
     return 0
 
 

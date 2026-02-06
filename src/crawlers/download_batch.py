@@ -166,6 +166,9 @@ def download_for_success_rows(
                 max_workers=download_workers,
                 overwrite_files=overwrite_assets,
                 download_video=download_video,
+                title=row.get("title"),
+                blurb=row.get("blurb"),
+                cover_url=row.get("cover_url"),
                 logger=lambda msg: log(
                     msg, csv_row_index=csv_row_index, project_id=project_id
                 ),

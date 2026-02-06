@@ -39,10 +39,30 @@ def check_download_status(project_folder, download_video=False):
         content = json.load(f)
 
     required_paths = []
-    cover_image_url = content.get("cover_image")
+    cover_image = content.get("cover_image")
+    cover_image_url = ""
+    cover_image_filename = ""
+    if isinstance(cover_image, dict):
+        cover_image_url = str(cover_image.get("url", "") or "").strip()
+        cover_image_filename = str(cover_image.get("filename", "") or "").strip()
+    elif isinstance(cover_image, str):
+        cover_image_url = str(cover_image).strip()
     video_url = content.get("video")
-    if cover_image_url:
-        required_paths.append(project_folder / "cover" / "cover_image.jpg")
+    if cover_image_url or cover_image_filename:
+        if cover_image_filename:
+            required_paths.append(project_folder / cover_image_filename)
+        else:
+            # 兼容旧数据：未记录 filename 时，尝试匹配 cover/cover_image.*
+            cover_dir = project_folder / "cover"
+            found = False
+            for ext in [".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"]:
+                p = cover_dir / f"cover_image{ext}"
+                if p.exists():
+                    required_paths.append(p)
+                    found = True
+                    break
+            if not found:
+                required_paths.append(cover_dir / "cover_image.jpg")
     if video_url and download_video:
         required_paths.append(project_folder / "cover" / "project_video.mp4")
     for item in content.get("content_sequence", []):

@@ -1,6 +1,6 @@
 # CSV 字段说明
 
-本文件说明由 `scripts/json_to_table.py` 生成的 CSV中的字段含义。读取的JSON文件来源于https://webrobots.io/kickstarter-datasets/。
+本文件说明由 `src/crawlers/json_to_table.py` 生成的 CSV 中字段含义。读取的 JSON 文件通常来源于 https://webrobots.io/kickstarter-datasets/ 。
 时间字段已转换为 `YYYY-MM-DD`。
 
 ## 字段解释

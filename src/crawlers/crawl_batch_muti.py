@@ -51,6 +51,8 @@ def process_project(args, csv_path: Path, csv_lock: threading.Lock) -> None:
         project_url, project_id, output_root, csv_row_index,
         overwrite_html, overwrite_content,
         cover_url,
+        title,
+        blurb,
     ) = args
 
     prefix = _format_prefix(csv_row_index, project_id)
@@ -82,6 +84,8 @@ def process_project(args, csv_path: Path, csv_lock: threading.Lock) -> None:
             str(project_dir),
             project_url=project_url,
             cover_url=cover_url,
+            title=title,
+            blurb=blurb,
             overwrite_content=overwrite_content,
             logger=log_with_prefix,
         )
@@ -91,10 +95,21 @@ def process_project(args, csv_path: Path, csv_lock: threading.Lock) -> None:
         return
 
     issues = []
-    if not result or not result.get("cover_image"):
+    cover_obj = (result or {}).get("cover_image", None)
+    cover_url_ok = isinstance(cover_obj, dict) and bool(str(cover_obj.get("url", "") or "").strip())
+    if not cover_url_ok:
         issues.append("missing_cover_image")
     if not result or not result.get("content_sequence"):
         issues.append("empty_content_sequence")
+
+    has_title = isinstance((result or {}).get("title", None), dict) and bool(
+        str((result or {}).get("title", {}).get("content", "") or "").strip()
+    )
+    has_blurb = isinstance((result or {}).get("blurb", None), dict) and bool(
+        str((result or {}).get("blurb", {}).get("content", "") or "").strip()
+    )
+    if not has_title and not has_blurb:
+        issues.append("missing_title_blurb")
 
 
     if issues:
@@ -134,12 +149,16 @@ def main() -> None:
         project_id = row.get("project_id")
         project_url = row.get("project_url")
         cover_url = row.get("cover_url")
+        title = row.get("title")
+        blurb = row.get("blurb")
 
         args_list.append((
             project_url, project_id, output_root,
             row_idx + 1,
             overwrite_html, overwrite_content,
             cover_url,
+            title,
+            blurb,
         ))
 
     simple_log(

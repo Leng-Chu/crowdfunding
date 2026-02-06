@@ -81,7 +81,7 @@ data/projects/<dataset>/<project_id>/
 按比例切分 train/val/test（可选是否在切分前打乱），对应 `src/dl/late/config.py:LateConfig`：
 
 - `train_ratio / val_ratio / test_ratio`：三段比例（默认 `0.6/0.2/0.2`）
-- `shuffle_before_split`：是否在切分前打乱（默认 `False`）
+- `shuffle_before_split`：是否在切分前打乱（默认 `True`）
 
 为保证与其他 baseline 横向对比，建议固定 `random_seed`，并保持数据划分配置一致。
 
@@ -225,12 +225,12 @@ data/projects/<dataset>/<project_id>/
 
 ### 8.2 输出目录结构
 
-默认写入 `experiments/late/<mode>/<run_id>/`：
+默认写入 `experiments/newtest/<mode>/<run_id>/`：
 
 - `artifacts/`：best model 权重（`model.pt`，含 `best_epoch/best_val_auc/best_val_log_loss/best_threshold`）、表格预处理器（`preprocessor.pkl`）等可复现产物
 - `reports/`：`config.json`、`metrics.json`、`history.csv`、`splits.csv`、预测结果 CSV 等
 - `plots/`：训练曲线与 ROC 图（若 `save_plots=True`）
 
 其中：
-- `mode` 取 `mean_pool / attn_pool / trm_no_pos / trm_pos`，并按需追加 `+meta`
+- `mode` 取 `late_mean_pool / late_attn_pool / late_trm_no_pos / late_trm_pos`，并按需追加 `+meta`
 - `baseline_mode`（配置项）取 `mean_pool / attn_pool / trm_no_pos / trm_pos`

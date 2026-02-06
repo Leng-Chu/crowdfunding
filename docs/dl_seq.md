@@ -244,7 +244,7 @@ X ∈ R^{B×L×d_model}
 
 ### 7.1 输出目录结构
 
-默认写入 `experiments/seq/<mode>/<run_id>/`，其中：
+默认写入 `experiments/newtest/<mode>/<run_id>/`，其中：
 
 - `mode = baseline_mode` 或 `baseline_mode+meta`（当 `use_meta=True` 时）
 
@@ -303,4 +303,4 @@ X ∈ R^{B×L×d_model}
 
 输出：
 - Optuna 产物：`experiments/seq/<sampler_seed>/<study_name>/summary.csv`、`best.json`、`study.db`、`trial_logs/`
-- 每个 trial 的训练产物仍会写入：`experiments/seq/<mode>/<run_id>/...`
+- 每个 trial 的训练产物仍会写入：`experiments/newtest/<mode>/<run_id>/...`

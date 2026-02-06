@@ -11,7 +11,7 @@
     - embedding/ 文本、图片向量化
     - table/ 表格数据处理与特征工程
   - dl/ 深度学习代码
-  - scipts/ 临时脚本
+  - scripts/ 临时脚本
 - data/ 数据与缓存
   - projects/ 项目数据（一个项目一个文件夹）
     - <project_id>/ 项目目录
@@ -25,3 +25,5 @@
     - model/ 实验运行产物
     - log/ 实验日志
 - docs/ 文档
+
+建议从 `docs/workflow.md` 开始阅读（端到端数据构建 + 实验复现顶层流程），再按需查看各模块的细分文档。
