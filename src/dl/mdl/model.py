@@ -129,7 +129,8 @@ class ImageCNNEncoder(nn.Module):
             max_len = int(z.shape[-1])
             idx = torch.arange(max_len, device=z.device).unsqueeze(0)
             mask = idx < l2.unsqueeze(1)
-            z = z.masked_fill(~mask.unsqueeze(1), -1e9)
+            mask_fill_value = torch.finfo(z.dtype).min
+            z = z.masked_fill(~mask.unsqueeze(1), mask_fill_value)
 
         feat = torch.amax(z, dim=-1)
         return feat
@@ -241,7 +242,8 @@ class TextCNNEncoder(nn.Module):
             max_len = int(z.shape[-1])
             idx = torch.arange(max_len, device=z.device).unsqueeze(0)
             mask = idx < l3.unsqueeze(1)
-            z = z.masked_fill(~mask.unsqueeze(1), -1e9)
+            mask_fill_value = torch.finfo(z.dtype).min
+            z = z.masked_fill(~mask.unsqueeze(1), mask_fill_value)
 
         feat = torch.amax(z, dim=-1)
         return feat
