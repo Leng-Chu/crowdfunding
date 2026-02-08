@@ -4,13 +4,13 @@ MDL 模型实验运行脚本
 使用示例:
 
 # 1. 运行全部实验组合，使用指定 seed（默认 42）
-python mdl_run_all.py all --seed 42
+python src/scripts/run/mdl_run_all.py all --seed 42
 
 # 2. 在一个 seed 区间内同时运行全部实验组合
-python mdl_run_all.py single --start-seed 42 --end-seed 46
+python src/scripts/run/mdl_run_all.py single --start-seed 42 --end-seed 46
 
 # 3. 只运行区间内的 image_text_meta 组合
-python mdl_run_all.py single --experiment-mode image_text_meta --start-seed 40 --end-seed 50
+python src/scripts/run/mdl_run_all.py single --experiment-mode image_text_meta --start-seed 40 --end-seed 50
 """
 
 import argparse
@@ -62,8 +62,8 @@ def _build_command(seed: int, device: str, experiment_mode: str) -> CommandItem:
         f"--run-name {seed} --seed {seed} "
     )
     mode_to_suffix = {
-        "image_text_meta": "--image-embedding-type clip --text-embedding-type clip --use-meta --use-image --use-text",
-        "image_text": "--image-embedding-type clip --text-embedding-type clip --use-image --use-text",
+        "image_text_meta": "--image-embedding-type clip --text-embedding-type clip --use-meta",
+        "image_text": "--image-embedding-type clip --text-embedding-type clip --no-use-meta",
     }
     mode_to_name = {
         "image_text_meta": "MDL: clip image+text+meta",

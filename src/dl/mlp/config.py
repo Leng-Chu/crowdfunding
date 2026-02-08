@@ -39,8 +39,6 @@ class MlpConfig:
     # 分支开关
     # -----------------------------
     use_meta: bool = True
-    use_image: bool = True
-    use_text: bool = True
 
     # -----------------------------
     # 列配置（CSV）

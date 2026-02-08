@@ -38,19 +38,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--use-meta",
         default=None,
         action=argparse.BooleanOptionalAction,
-        help="是否启用 meta 分支（出现任一 use_* 参数时，以命令行覆盖配置；未指定的 use_* 视为 False）。",
-    )
-    parser.add_argument(
-        "--use-image",
-        default=None,
-        action=argparse.BooleanOptionalAction,
-        help="是否启用 image 分支（出现任一 use_* 参数时，以命令行覆盖配置；未指定的 use_* 视为 False）。",
-    )
-    parser.add_argument(
-        "--use-text",
-        default=None,
-        action=argparse.BooleanOptionalAction,
-        help="是否启用 text 分支（出现任一 use_* 参数时，以命令行覆盖配置；未指定的 use_* 视为 False）。",
+        help="是否启用 meta 分支。",
     )
     parser.add_argument(
         "--image-embedding-type",
@@ -126,16 +114,8 @@ def _save_single_row_csv(save_path: Path, row: dict) -> None:
         writer.writerow(row)
 
 
-def _mode_name(use_meta: bool, use_image: bool, use_text: bool) -> str:
-    parts: list[str] = []
-    if use_meta:
-        parts.append("meta")
-    if use_image:
-        parts.append("image")
-    if use_text:
-        parts.append("text")
-    inner = "+".join(parts) if parts else "none"
-    return f"mdl_{inner}"
+def _mode_name(use_meta: bool) -> str:
+    return "mdl+meta" if use_meta else "mdl"
 
 
 def main() -> int:
@@ -161,13 +141,8 @@ def main() -> int:
 
     if args.run_name is not None:
         cfg = replace(cfg, run_name=str(args.run_name))
-    if args.use_meta is not None or args.use_image is not None or args.use_text is not None:
-        cfg = replace(
-            cfg,
-            use_meta=bool(args.use_meta),
-            use_image=bool(args.use_image),
-            use_text=bool(args.use_text),
-        )
+    if args.use_meta is not None:
+        cfg = replace(cfg, use_meta=bool(args.use_meta))
     if args.image_embedding_type is not None:
         cfg = replace(cfg, image_embedding_type=str(args.image_embedding_type))
     if args.text_embedding_type is not None:
@@ -180,25 +155,15 @@ def main() -> int:
 
     if args.seed is not None:
         cfg = replace(cfg, random_seed=int(args.seed))
-
     use_meta = bool(cfg.use_meta)
-    use_image = bool(cfg.use_image)
-    use_text = bool(cfg.use_text)
-
-    if not use_image and cfg.image_embedding_type is not None:
-        cfg = replace(cfg, image_embedding_type=None)
-    if not use_text and cfg.text_embedding_type is not None:
-        cfg = replace(cfg, text_embedding_type=None)
-
-    n_enabled = int(use_meta) + int(use_image) + int(use_text)
-    if n_enabled <= 0:
-        raise ValueError("至少需要开启一个分支：use_meta/use_image/use_text。")
+    use_image = True
+    use_text = True
 
     project_root = Path(__file__).resolve().parents[3]
     csv_path = project_root / cfg.data_csv
     projects_root = project_root / cfg.projects_root
 
-    mode = _mode_name(use_meta, use_image, use_text)
+    mode = _mode_name(use_meta)
     experiment_root = project_root / cfg.experiment_root / mode
     experiment_root.mkdir(parents=True, exist_ok=True)
 
@@ -214,8 +179,8 @@ def main() -> int:
     logger.info("random_seed=%d", int(getattr(cfg, "random_seed", 0)))
     logger.info(
         "embedding：image=%s text=%s | max_seq_len=%d trunc=%s | missing=%s",
-        (cfg.image_embedding_type if use_image else None),
-        (cfg.text_embedding_type if use_text else None),
+        cfg.image_embedding_type,
+        cfg.text_embedding_type,
         int(getattr(cfg, "max_seq_len", 0)),
         str(getattr(cfg, "truncation_strategy", "")),
         str(getattr(cfg, "missing_strategy", "")),
@@ -284,6 +249,7 @@ def main() -> int:
         {
             "run_id": run_id,
             "mode": mode,
+            "baseline_mode": "mdl",
             "use_meta": use_meta,
             "use_image": use_image,
             "use_text": use_text,
@@ -449,9 +415,7 @@ def main() -> int:
             run_dir / "result.csv",
             {
                 "mode": mode,
-                "use_meta": int(bool(use_meta)),
-                "use_image": int(bool(use_image)),
-                "use_text": int(bool(use_text)),
+                "baseline_mode": "mdl",
                 "image_embedding_type": cfg.image_embedding_type,
                 "text_embedding_type": cfg.text_embedding_type,
                 "threshold": float(best_threshold),
