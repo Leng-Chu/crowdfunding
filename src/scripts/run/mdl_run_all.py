@@ -35,55 +35,23 @@ def run_all_experiments():
             f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name clip --seed {seed} --image-embedding-type clip --text-embedding-type clip --use-meta --use-image --use-text --device cuda:0",
             f"MDL: clip image+text+meta (seed {seed})",
         ),
-        (
-            f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name siglip --seed {seed} --image-embedding-type siglip --text-embedding-type siglip --use-meta --use-image --use-text --device cuda:1",
-            f"MDL: siglip image+text+meta (seed {seed})",
-        ),
-        (
-            f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name bge-clip --seed {seed} --image-embedding-type clip --text-embedding-type bge --use-meta --use-image --use-text --device cuda:2",
-            f"MDL: clip image + bge text + meta (seed {seed})",
-        ),
-        (
-            f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name bge-siglip --seed {seed} --image-embedding-type siglip --text-embedding-type bge --use-meta --use-image --use-text --device cuda:3",
-            f"MDL: siglip image + bge text + meta (seed {seed})",
-        ),
         
         # image + text
         (
-            f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name clip --seed {seed} --image-embedding-type clip --text-embedding-type clip --use-image --use-text --device cuda:0",
+            f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name clip --seed {seed} --image-embedding-type clip --text-embedding-type clip --use-image --use-text --device cuda:1",
             f"MDL: clip image+text (seed {seed})",
-        ),
-        (
-            f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name siglip --seed {seed} --image-embedding-type siglip --text-embedding-type siglip --use-image --use-text --device cuda:1",
-            f"MDL: siglip image+text (seed {seed})",
-        ),
-        (
-            f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name bge-clip --seed {seed} --image-embedding-type clip --text-embedding-type bge --use-image --use-text --device cuda:2",
-            f"MDL: clip image + bge text (seed {seed})",
-        ),
-        (
-            f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name bge-siglip --seed {seed} --image-embedding-type siglip --text-embedding-type bge --use-image --use-text --device cuda:3",
-            f"MDL: siglip image + bge text (seed {seed})",
         ),
         
         # meta + image
         (
-            f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name clip --seed {seed} --image-embedding-type clip --use-meta --use-image --device cuda:0",
+            f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name clip --seed {seed} --image-embedding-type clip --use-meta --use-image --device cuda:2",
             f"MDL: clip meta+image (seed {seed})",
-        ),
-        (
-            f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name siglip --seed {seed} --image-embedding-type siglip --use-meta --use-image --device cuda:1",
-            f"MDL: siglip meta+image (seed {seed})",
         ),
         
         # image
         (
-            f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name clip --seed {seed} --image-embedding-type clip --use-image --device cuda:2",
+            f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name clip --seed {seed} --image-embedding-type clip --use-image --device cuda:3",
             f"MDL: clip image-only (seed {seed})",
-        ),
-        (
-            f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name siglip --seed {seed} --image-embedding-type siglip --use-image --device cuda:3",
-            f"MDL: siglip image-only (seed {seed})",
         ),
         
         # meta + text
@@ -91,27 +59,11 @@ def run_all_experiments():
             f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name clip --seed {seed} --text-embedding-type clip --use-meta --use-text --device cuda:0",
             f"MDL: clip meta+text (seed {seed})",
         ),
-        (
-            f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name siglip --seed {seed} --text-embedding-type siglip --use-meta --use-text --device cuda:1",
-            f"MDL: siglip meta+text (seed {seed})",
-        ),
-        (
-            f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name bge --seed {seed} --text-embedding-type bge --use-meta --use-text --device cuda:2",
-            f"MDL: bge meta+text (seed {seed})",
-        ),
          
         # text
         (
-            f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name clip --seed {seed} --text-embedding-type clip --use-text --device cuda:3",
+            f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name clip --seed {seed} --text-embedding-type clip --use-text --device cuda:1",
             f"MDL: clip text-only (seed {seed})",
-        ),
-        (
-            f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name siglip --seed {seed} --text-embedding-type siglip --use-text --device cuda:0",
-            f"MDL: siglip text-only (seed {seed})",
-        ),
-        (
-            f"conda run -n crowdfunding python src/dl/mdl/main.py --run-name bge --seed {seed} --text-embedding-type bge --use-text --device cuda:1",
-            f"MDL: bge text-only (seed {seed})",
         ),
          
         # meta
