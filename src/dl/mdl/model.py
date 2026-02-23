@@ -377,6 +377,7 @@ class MultiModalBinaryClassifier(nn.Module):
         self.fusion_hidden_dim = int(fusion_hidden_dim)
 
         self.fusion_fc = nn.Linear(int(fusion_in_dim), int(fusion_hidden_dim))
+        self.fusion_in_ln = nn.LayerNorm(int(fusion_in_dim))
         self.fusion_drop = nn.Dropout(p=float(fusion_dropout))
         self.head = nn.Linear(int(fusion_hidden_dim), 1)
         self._init_weights()
@@ -421,6 +422,7 @@ class MultiModalBinaryClassifier(nn.Module):
             feats.append(self.text(x_text, lengths=len_text, attr=attr_text if self.use_attr else None))
 
         fused = torch.cat(feats, dim=1)
+        fused = self.fusion_in_ln(fused)
         fused = torch.relu(self.fusion_fc(fused))
         fused = self.fusion_drop(fused)
         logits = self.head(fused).squeeze(-1)

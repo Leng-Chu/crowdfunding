@@ -270,6 +270,7 @@ class DCANBinaryClassifier(nn.Module):
         self.fusion_in_dim = int(fusion_in_dim)
         self.fusion_hidden_dim = int(fusion_hidden_dim)
         self.fusion_fc = nn.Linear(int(fusion_in_dim), int(fusion_hidden_dim))
+        self.fusion_in_ln = nn.LayerNorm(int(fusion_in_dim))
         self.fusion_drop = nn.Dropout(p=float(fusion_dropout))
         self.head = nn.Linear(int(fusion_hidden_dim), 1)
 
@@ -358,6 +359,7 @@ class DCANBinaryClassifier(nn.Module):
             meta_h = self.meta(meta_features)
             fuse = torch.cat([fuse, meta_h], dim=1)
 
+        fuse = self.fusion_in_ln(fuse)
         z = torch.relu(self.fusion_fc(fuse))
         z = self.fusion_drop(z)
         logits = self.head(z).squeeze(-1)
@@ -385,4 +387,3 @@ def build_dcan_model(
         fusion_hidden_dim=int(getattr(cfg, "fusion_hidden_dim", 512)),
         fusion_dropout=float(getattr(cfg, "fusion_dropout", 0.5)),
     )
-
