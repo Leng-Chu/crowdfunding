@@ -6,7 +6,10 @@ SEQ模型实验运行脚本
 # 1. 运行所有baseline模式，使用指定种子（默认为42）
 python src/scripts/run/seq_run_all.py all --seed 42 --use-meta --use-attr
 
-# 2. 运行特定baseline模式，使用不同种子范围
+# 2. 运行所有baseline模式，使用种子范围
+python src/scripts/run/seq_run_all.py all --start-seed 42 --end-seed 46 --use-meta --use-attr
+
+# 3. 运行特定baseline模式，使用不同种子范围
 python src/scripts/run/seq_run_all.py single --baseline-mode trm_pos --start-seed 42 --end-seed 46 --no-use-meta --use-attr
 """
 
@@ -79,12 +82,41 @@ def _build_command(seed: int, baseline_mode: str, device: str, use_meta: bool, u
     return cmd, exp_name
 
 
-def generate_all_commands(seed: int = 42, use_meta: bool = True, use_attr: bool = True) -> List[CommandItem]:
-    """生成单个seed下的全部baseline命令。"""
+def _resolve_all_mode_seed_range(args: argparse.Namespace) -> Tuple[int, int]:
+    """解析all模式种子区间；未指定区间时退化为单seed。"""
+    start_seed = getattr(args, "start_seed", None)
+    end_seed = getattr(args, "end_seed", None)
+
+    if (start_seed is None) != (end_seed is None):
+        raise ValueError("all 模式下 start-seed 和 end-seed 必须同时提供")
+
+    if start_seed is None:
+        single_seed = int(getattr(args, "seed", 42))
+        start_seed = single_seed
+        end_seed = single_seed
+
+    if start_seed > end_seed:
+        raise ValueError("start-seed 不能大于 end-seed")
+
+    return int(start_seed), int(end_seed)
+
+
+def _format_seed_range_label(start_seed: int, end_seed: int) -> str:
+    return f"seed {start_seed}" if start_seed == end_seed else f"seeds {start_seed}-{end_seed}"
+
+
+def generate_all_commands(
+    start_seed: int = 42,
+    end_seed: int = 42,
+    use_meta: bool = True,
+    use_attr: bool = True,
+) -> List[CommandItem]:
+    """生成指定seed区间下的全部baseline命令。"""
     commands: List[CommandItem] = []
-    for idx, baseline_mode in enumerate(BASELINE_MODES):
-        device = DEVICES[idx % len(DEVICES)]
-        commands.append(_build_command(seed, baseline_mode, device, use_meta, use_attr))
+    for seed in range(start_seed, end_seed + 1):
+        for idx, baseline_mode in enumerate(BASELINE_MODES):
+            device = DEVICES[idx % len(DEVICES)]
+            commands.append(_build_command(seed, baseline_mode, device, use_meta, use_attr))
     return commands
 
 
@@ -106,10 +138,19 @@ def generate_single_baseline_commands(
 def run_all_experiments(args: argparse.Namespace) -> None:
     """运行SEQ实验。"""
     if args.mode == "all":
-        all_commands = generate_all_commands(args.seed, use_meta=bool(args.use_meta), use_attr=bool(args.use_attr))
+        start_seed, end_seed = _resolve_all_mode_seed_range(args)
+        all_commands = generate_all_commands(
+            start_seed,
+            end_seed,
+            use_meta=bool(args.use_meta),
+            use_attr=bool(args.use_attr),
+        )
         _run_command_group(
             all_commands,
-            f"所有baseline (seed {args.seed}, {_meta_label(args.use_meta)}, {_attr_label(args.use_attr)})",
+            (
+                f"所有baseline ({_format_seed_range_label(start_seed, end_seed)}, "
+                f"{_meta_label(args.use_meta)}, {_attr_label(args.use_attr)})"
+            ),
         )
     elif args.mode == "single":
         if args.start_seed > args.end_seed:
@@ -137,8 +178,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="运行SEQ模型实验脚本")
     subparsers = parser.add_subparsers(dest="mode", help="运行模式")
 
-    all_parser = subparsers.add_parser("all", help="运行所有baseline模式")
-    all_parser.add_argument("--seed", type=int, default=42, help="随机数种子，默认42")
+    all_parser = subparsers.add_parser("all", help="运行所有baseline模式（支持seed区间）")
+    all_parser.add_argument("--seed", type=int, default=42, help="随机数种子，默认42；未指定区间时生效")
+    all_parser.add_argument("--start-seed", type=int, default=None, help="起始随机数种子（可选，需与--end-seed同时提供）")
+    all_parser.add_argument("--end-seed", type=int, default=None, help="结束随机数种子（可选，需与--start-seed同时提供）")
     all_parser.add_argument(
         "--use-meta",
         default=True,
@@ -179,6 +222,8 @@ def main() -> None:
     if not args.mode:
         args.mode = "all"
         args.seed = 42
+        args.start_seed = None
+        args.end_seed = None
         args.use_meta = True
         args.use_attr = True
 
