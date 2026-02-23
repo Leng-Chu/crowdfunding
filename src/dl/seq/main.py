@@ -6,7 +6,7 @@ seq 主程序入口（Chapter 1：图文内容块序列建模）：
 - 使用默认配置：
   `conda run -n crowdfunding python src/dl/seq/main.py`
 - 覆盖常用参数（只覆盖少量配置项，其余请改 config.py）：
-  `conda run -n crowdfunding python src/dl/seq/main.py --baseline-mode trm_pos --use-meta --use-seq-attr --image-embedding-type clip --text-embedding-type clip --device cuda:0`
+  `conda run -n crowdfunding python src/dl/seq/main.py --baseline-mode trm_pos --use-meta --use-attr --image-embedding-type clip --text-embedding-type clip --device cuda:0`
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="是否使用 title_blurb 和 cover_image 作为 prefix token（默认为 True）。",
     )
     parser.add_argument(
-        "--use-seq-attr",
+        "--use-attr",
         default=None,
         action=argparse.BooleanOptionalAction,
         help="是否启用文本长度/图片面积属性（seq_attr，默认为 True）。",
@@ -122,6 +122,15 @@ def _save_single_row_csv(save_path: Path, row: dict) -> None:
         writer.writerow(row)
 
 
+def _mode_name(baseline_mode: str, use_meta: bool, use_attr: bool) -> str:
+    mode = str(baseline_mode or "").strip().lower()
+    if bool(use_meta):
+        mode += "+meta"
+    if bool(use_attr):
+        mode += "+attr"
+    return mode
+
+
 def main() -> int:
     args = _parse_args()
     cfg = SeqConfig()
@@ -153,8 +162,8 @@ def main() -> int:
         cfg = replace(cfg, use_meta=bool(args.use_meta))
     if args.use_prefix is not None:
         cfg = replace(cfg, use_prefix=bool(args.use_prefix))
-    if args.use_seq_attr is not None:
-        cfg = replace(cfg, use_seq_attr=bool(args.use_seq_attr))
+    if args.use_attr is not None:
+        cfg = replace(cfg, use_attr=bool(args.use_attr))
     if args.image_embedding_type is not None:
         cfg = replace(cfg, image_embedding_type=str(args.image_embedding_type))
     if args.text_embedding_type is not None:
@@ -172,7 +181,9 @@ def main() -> int:
         cfg = replace(cfg, random_seed=int(args.seed))
 
     baseline_mode = str(getattr(cfg, "baseline_mode", "set_mean")).strip().lower()
-    mode = baseline_mode + ("+meta" if bool(getattr(cfg, "use_meta", False)) else "")
+    use_meta = bool(getattr(cfg, "use_meta", False))
+    use_attr = bool(getattr(cfg, "use_attr", True))
+    mode = _mode_name(baseline_mode, use_meta=use_meta, use_attr=use_attr)
 
     project_root = Path(__file__).resolve().parents[3]
     csv_path = project_root / cfg.data_csv
@@ -198,9 +209,9 @@ def main() -> int:
 
     logger.info("模式=%s | run_id=%s | baseline_mode=%s | use_meta=%s", mode, run_id, baseline_mode, bool(cfg.use_meta))
     logger.info(
-        "开关：use_prefix=%s | use_seq_attr=%s",
+        "开关：use_prefix=%s | use_attr=%s",
         bool(getattr(cfg, "use_prefix", True)),
-        bool(getattr(cfg, "use_seq_attr", True)),
+        bool(getattr(cfg, "use_attr", True)),
     )
     logger.info("python=%s | 平台=%s", sys.version.replace("\n", " "), platform.platform())
     logger.info("data_csv=%s", str(csv_path))
@@ -274,7 +285,7 @@ def main() -> int:
             "baseline_mode": baseline_mode,
             "use_meta": bool(cfg.use_meta),
             "use_prefix": bool(getattr(cfg, "use_prefix", True)),
-            "use_seq_attr": bool(getattr(cfg, "use_seq_attr", True)),
+            "use_attr": bool(getattr(cfg, "use_attr", True)),
             "meta_dim": int(prepared.meta_dim),
             "image_embedding_dim": int(prepared.image_embedding_dim),
             "text_embedding_dim": int(prepared.text_embedding_dim),
@@ -386,7 +397,7 @@ def main() -> int:
             "baseline_mode": baseline_mode,
             "use_meta": bool(cfg.use_meta),
             "use_prefix": bool(getattr(cfg, "use_prefix", True)),
-            "use_seq_attr": bool(getattr(cfg, "use_seq_attr", True)),
+            "use_attr": bool(getattr(cfg, "use_attr", True)),
             "meta_dim": int(prepared.meta_dim),
             "image_embedding_dim": int(prepared.image_embedding_dim),
             "text_embedding_dim": int(prepared.text_embedding_dim),
@@ -458,3 +469,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

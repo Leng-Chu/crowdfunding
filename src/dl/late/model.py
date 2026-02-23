@@ -399,6 +399,7 @@ class LateFusionBinaryClassifier(nn.Module):
     def __init__(
         self,
         use_meta: bool,
+        use_attr: bool,
         meta_input_dim: int,
         image_embedding_dim: int,
         text_embedding_dim: int,
@@ -429,6 +430,7 @@ class LateFusionBinaryClassifier(nn.Module):
             raise ValueError("fusion_dropout 需要在 [0, 1) 之间")
 
         self.use_meta = bool(use_meta)
+        self.use_attr = bool(use_attr)
         self.baseline_mode = _normalize_baseline_mode(baseline_mode)
         self.d_model = int(d_model)
         self.share_encoder = bool(share_encoder)
@@ -436,9 +438,13 @@ class LateFusionBinaryClassifier(nn.Module):
         # 3.1 Modality Projection
         self.img_proj = nn.Linear(int(image_embedding_dim), int(self.d_model))
         self.txt_proj = nn.Linear(int(text_embedding_dim), int(self.d_model))
-        # 每个 token 的数值属性（文本字数 / 图片面积）投影到 d_model
-        self.img_attr_proj = nn.Linear(1, int(self.d_model))
-        self.txt_attr_proj = nn.Linear(1, int(self.d_model))
+        # 每个 token 的数值属性（文本字数 / 图片面积）可选投影到 d_model
+        self.img_attr_proj: Optional[nn.Linear] = (
+            nn.Linear(1, int(self.d_model)) if self.use_attr else None
+        )
+        self.txt_attr_proj: Optional[nn.Linear] = (
+            nn.Linear(1, int(self.d_model)) if self.use_attr else None
+        )
         self.img_ln = nn.LayerNorm(int(self.d_model))
         self.txt_ln = nn.LayerNorm(int(self.d_model))
         # 在 token 级别对输入表示做 dropout（有效 token 由 mask/Pooling 约束）。
@@ -489,15 +495,17 @@ class LateFusionBinaryClassifier(nn.Module):
     def _init_weights(self) -> None:
         nn.init.xavier_uniform_(self.img_proj.weight)
         nn.init.xavier_uniform_(self.txt_proj.weight)
-        nn.init.xavier_uniform_(self.img_attr_proj.weight)
-        nn.init.xavier_uniform_(self.txt_attr_proj.weight)
+        if self.img_attr_proj is not None:
+            nn.init.xavier_uniform_(self.img_attr_proj.weight)
+        if self.txt_attr_proj is not None:
+            nn.init.xavier_uniform_(self.txt_attr_proj.weight)
         if self.img_proj.bias is not None:
             nn.init.zeros_(self.img_proj.bias)
         if self.txt_proj.bias is not None:
             nn.init.zeros_(self.txt_proj.bias)
-        if self.img_attr_proj.bias is not None:
+        if self.img_attr_proj is not None and self.img_attr_proj.bias is not None:
             nn.init.zeros_(self.img_attr_proj.bias)
-        if self.txt_attr_proj.bias is not None:
+        if self.txt_attr_proj is not None and self.txt_attr_proj.bias is not None:
             nn.init.zeros_(self.txt_attr_proj.bias)
 
         nn.init.xavier_uniform_(self.fusion_fc.weight)
@@ -521,29 +529,42 @@ class LateFusionBinaryClassifier(nn.Module):
             raise ValueError("x_image/x_text 不能为空。")
         if len_image is None or len_text is None:
             raise ValueError("len_image/len_text 不能为空。")
-        if attr_image is None or attr_text is None:
-            raise ValueError("attr_image/attr_text 不能为空。")
+        if self.use_attr and (attr_image is None or attr_text is None):
+            raise ValueError("use_attr=True 时，attr_image/attr_text 不能为空。")
 
         if x_image.ndim != 3:
             raise ValueError(f"x_image 需要为 3 维 (B, S, D)，但得到 {tuple(x_image.shape)}")
         if x_text.ndim != 3:
             raise ValueError(f"x_text 需要为 3 维 (B, S, D)，但得到 {tuple(x_text.shape)}")
-        if attr_image.ndim != 2:
-            raise ValueError(f"attr_image 需要为 2 维 (B, S)，但得到 {tuple(attr_image.shape)}")
-        if attr_text.ndim != 2:
-            raise ValueError(f"attr_text 需要为 2 维 (B, S)，但得到 {tuple(attr_text.shape)}")
+        if self.use_attr:
+            if attr_image is None or attr_text is None:
+                raise ValueError("use_attr=True 时，attr_image/attr_text 不能为空。")
+            if attr_image.ndim != 2:
+                raise ValueError(f"attr_image 需要为 2 维 (B, S)，但得到 {tuple(attr_image.shape)}")
+            if attr_text.ndim != 2:
+                raise ValueError(f"attr_text 需要为 2 维 (B, S)，但得到 {tuple(attr_text.shape)}")
 
         img_mask = _lengths_to_mask(len_image, max_len=int(x_image.shape[1]))
         txt_mask = _lengths_to_mask(len_text, max_len=int(x_text.shape[1]))
 
         img_base = torch.relu(self.img_proj(x_image))
-        img_attr = self.img_attr_proj(attr_image.to(dtype=img_base.dtype).unsqueeze(-1))
-        Img = self.img_ln(img_base + img_attr)
+        if self.use_attr:
+            if self.img_attr_proj is None or attr_image is None:
+                raise RuntimeError("use_attr=True 但 img_attr_proj 或 attr_image 不可用。")
+            img_attr = self.img_attr_proj(attr_image.to(dtype=img_base.dtype).unsqueeze(-1))
+            Img = self.img_ln(img_base + img_attr)
+        else:
+            Img = self.img_ln(img_base)
         Img = self.token_drop(Img)
 
         txt_base = torch.relu(self.txt_proj(x_text))
-        txt_attr = self.txt_attr_proj(attr_text.to(dtype=txt_base.dtype).unsqueeze(-1))
-        Txt = self.txt_ln(txt_base + txt_attr)
+        if self.use_attr:
+            if self.txt_attr_proj is None or attr_text is None:
+                raise RuntimeError("use_attr=True 但 txt_attr_proj 或 attr_text 不可用。")
+            txt_attr = self.txt_attr_proj(attr_text.to(dtype=txt_base.dtype).unsqueeze(-1))
+            Txt = self.txt_ln(txt_base + txt_attr)
+        else:
+            Txt = self.txt_ln(txt_base)
         Txt = self.token_drop(Txt)
 
         if self.shared_encoder is not None:
@@ -577,6 +598,7 @@ def build_late_model(
 ) -> LateFusionBinaryClassifier:
     return LateFusionBinaryClassifier(
         use_meta=bool(use_meta),
+        use_attr=bool(getattr(cfg, "use_attr", True)),
         meta_input_dim=int(meta_input_dim) if use_meta else 0,
         image_embedding_dim=int(image_embedding_dim),
         text_embedding_dim=int(text_embedding_dim),
@@ -593,3 +615,4 @@ def build_late_model(
         fusion_hidden_dim=getattr(cfg, "fusion_hidden_dim", None),
         fusion_dropout=float(getattr(cfg, "fusion_dropout", 0.9)),
     )
+

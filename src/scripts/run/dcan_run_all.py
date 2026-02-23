@@ -1,13 +1,13 @@
 """
-LATE模型实验运行脚本
+DCAN模型实验运行脚本
 
 使用样例:
 
-# 1. 运行所有baseline模式，使用指定种子（默认为42）
-python src/scripts/run/late_run_all.py all --seed 42 --use-meta --use-attr
+# 1. 运行单个seed实验
+python src/scripts/run/dcan_run_all.py all --seed 42 --use-meta --use-attr
 
-# 2. 运行特定baseline模式，使用不同种子范围
-python src/scripts/run/late_run_all.py single --baseline-mode trm_pos --start-seed 42 --end-seed 46 --no-use-meta --use-attr
+# 2. 运行seed区间实验
+python src/scripts/run/dcan_run_all.py single --start-seed 42 --end-seed 46 --no-use-meta --use-attr
 """
 
 import argparse
@@ -19,7 +19,6 @@ from typing import List, Tuple
 
 CommandItem = Tuple[str, str]
 DEVICES = ["cuda:0", "cuda:1", "cuda:2", "cuda:3"]
-BASELINE_MODES = ["mean_pool", "attn_pool", "trm_no_pos", "trm_pos"]
 
 
 def run_command(cmd: List[str], experiment_name: str) -> None:
@@ -69,54 +68,49 @@ def _attr_label(use_attr: bool) -> str:
     return "attr" if bool(use_attr) else "no_attr"
 
 
-def _build_command(seed: int, baseline_mode: str, device: str, use_meta: bool, use_attr: bool) -> CommandItem:
+def _build_command(seed: int, device: str, use_meta: bool, use_attr: bool) -> CommandItem:
     cmd = (
-        "conda run -n crowdfunding python src/dl/late/main.py "
-        f"--run-name {seed} --seed {seed} --baseline-mode {baseline_mode} "
+        "conda run -n crowdfunding python src/dl/dcan/main.py "
+        f"--run-name {seed} --seed {seed} "
+        "--image-embedding-type clip --text-embedding-type clip "
         f"{_meta_flag(use_meta)} {_attr_flag(use_attr)} --device {device}"
     )
-    exp_name = f"Late: {baseline_mode}+{_meta_label(use_meta)}+{_attr_label(use_attr)} (seed {seed})"
+    exp_name = f"DCAN: clip image+text+{_meta_label(use_meta)}+{_attr_label(use_attr)} (seed {seed})"
     return cmd, exp_name
 
 
 def generate_all_commands(seed: int = 42, use_meta: bool = True, use_attr: bool = True) -> List[CommandItem]:
-    """生成单个seed下的全部baseline命令。"""
-    commands: List[CommandItem] = []
-    for idx, baseline_mode in enumerate(BASELINE_MODES):
-        device = DEVICES[idx % len(DEVICES)]
-        commands.append(_build_command(seed, baseline_mode, device, use_meta, use_attr))
-    return commands
+    """生成单个seed命令。"""
+    return [_build_command(seed, DEVICES[0], use_meta, use_attr)]
 
 
-def generate_single_baseline_commands(
-    baseline_mode: str,
+def generate_single_seed_commands(
     start_seed: int,
     end_seed: int,
     use_meta: bool = True,
     use_attr: bool = True,
 ) -> List[CommandItem]:
-    """生成某个baseline在指定seed区间的命令。"""
+    """生成seed区间命令。"""
     commands: List[CommandItem] = []
     for seed in range(start_seed, end_seed + 1):
         device = DEVICES[len(commands) % len(DEVICES)]
-        commands.append(_build_command(seed, baseline_mode, device, use_meta, use_attr))
+        commands.append(_build_command(seed, device, use_meta, use_attr))
     return commands
 
 
 def run_all_experiments(args: argparse.Namespace) -> None:
-    """运行LATE实验。"""
+    """运行DCAN实验。"""
     if args.mode == "all":
         all_commands = generate_all_commands(args.seed, use_meta=bool(args.use_meta), use_attr=bool(args.use_attr))
         _run_command_group(
             all_commands,
-            f"所有baseline (seed {args.seed}, {_meta_label(args.use_meta)}, {_attr_label(args.use_attr)})",
+            f"DCAN单seed实验 (seed {args.seed}, {_meta_label(args.use_meta)}, {_attr_label(args.use_attr)})",
         )
     elif args.mode == "single":
         if args.start_seed > args.end_seed:
             raise ValueError("start-seed 不能大于 end-seed")
 
-        single_commands = generate_single_baseline_commands(
-            args.baseline_mode,
+        single_commands = generate_single_seed_commands(
             args.start_seed,
             args.end_seed,
             use_meta=bool(args.use_meta),
@@ -125,19 +119,19 @@ def run_all_experiments(args: argparse.Namespace) -> None:
         _run_command_group(
             single_commands,
             (
-                f"Baseline {args.baseline_mode}, seeds {args.start_seed}-{args.end_seed} "
+                f"DCAN seeds {args.start_seed}-{args.end_seed} "
                 f"({_meta_label(args.use_meta)}, {_attr_label(args.use_attr)})"
             ),
         )
 
-    print("所有实验已完成！")
+    print("所有实验已完成。")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="运行LATE模型实验脚本")
+    parser = argparse.ArgumentParser(description="运行DCAN模型实验脚本")
     subparsers = parser.add_subparsers(dest="mode", help="运行模式")
 
-    all_parser = subparsers.add_parser("all", help="运行所有baseline模式")
+    all_parser = subparsers.add_parser("all", help="运行单个seed实验")
     all_parser.add_argument("--seed", type=int, default=42, help="随机数种子，默认42")
     all_parser.add_argument(
         "--use-meta",
@@ -152,13 +146,7 @@ def main() -> None:
         help="是否启用属性注入，默认启用",
     )
 
-    single_parser = subparsers.add_parser("single", help="运行单一baseline模式")
-    single_parser.add_argument(
-        "--baseline-mode",
-        required=True,
-        choices=BASELINE_MODES,
-        help="选择baseline模式",
-    )
+    single_parser = subparsers.add_parser("single", help="运行seed区间实验")
     single_parser.add_argument("--start-seed", type=int, default=42, help="起始随机数种子，默认42")
     single_parser.add_argument("--end-seed", type=int, default=46, help="结束随机数种子，默认46")
     single_parser.add_argument(
@@ -175,14 +163,13 @@ def main() -> None:
     )
 
     args = parser.parse_args()
-
     if not args.mode:
         args.mode = "all"
         args.seed = 42
         args.use_meta = True
         args.use_attr = True
 
-    print(f"一键运行LATE实验脚本 (模式: {args.mode})")
+    print(f"一键运行DCAN实验脚本 (模式: {args.mode})")
     print("=" * 50)
     run_all_experiments(args)
 

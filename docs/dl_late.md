@@ -6,9 +6,9 @@
 - **标签**：来自表格数据 `state` 字段（0/1；正类为 1）。
 - **输入**：
   - `image`：项目图片向量集合（embedding set，不建模顺序），其中 **封面图向量** 会拼接在集合最前面。
-  - `attr_image`：与 `image` 中每个 token 一一对应的数值属性（1 个标量），默认取 `log(max(1, area))`；padding 为 0。
+  - `attr_image`：与 `image` 中每个 token 一一对应的数值属性（1 个标量），`use_seq_attr=True` 时取 `log(max(1, area))`，否则全 0；padding 为 0。
   - `text`：项目文本向量集合（embedding set，不建模顺序），其中 **title/blurb 向量** 会拼接在集合最前面。
-  - `attr_text`：与 `text` 中每个 token 一一对应的数值属性（1 个标量），默认取 `log(max(1, length))`；padding 为 0。
+  - `attr_text`：与 `text` 中每个 token 一一对应的数值属性（1 个标量），`use_seq_attr=True` 时取 `log(max(1, length))`，否则全 0；padding 为 0。
   - `meta`（可选）：表格元数据特征（类别 + 数值），开关为 `use_meta`。
 - **输出**：二分类 **logits**（训练使用 `BCEWithLogitsLoss`），推理时对 logits 施加 `sigmoid` 得到正类概率。
 
@@ -89,44 +89,37 @@ data/projects/<dataset>/<project_id>/
 
 ### 4.1 统一序列截断
 
-先读取 `content.json` 的 `content_sequence`，按 `max_seq_len` 对其截断得到前 `L` 个内容块：
+先构建“含 prefix 的统一序列”，再做整体截断。统一序列定义为：
 
-- `truncation_strategy=first`：取前 `L` 个内容块
-- `truncation_strategy=random`：从所有长度为 `L` 的窗口中随机选一个（对每个项目基于 `random_seed + sha256(project_id)` 的稳定映射固定，保证可复现）
+1. `title_blurb` 的每一行文本 token（按 `[title, blurb]` 顺序）
+2. `cover_image` token
+3. `content_sequence` 中的正文 token（保持原始出现顺序）
 
-注意：该截断仅用于控制每个样本使用的内容块数量，不用于顺序建模。
+然后在该统一序列上应用窗口截断（`max_seq_len`）：
 
-### 4.2 从截断后的序列映射回图像集合与文本集合
+- `truncation_strategy=first`：取前 `max_seq_len` 个 token
+- `truncation_strategy=random`：从所有长度为 `max_seq_len` 的窗口中随机选一个（对每个项目基于 `random_seed + sha256(project_id)` 的稳定映射固定，保证可复现）
 
-对截断后的 `L` 个内容块，维护两个计数器 `img_idx=0, txt_idx=0`，逐块扫描：
+注意：prefix 也参与统一截断，不再“永远保留”。因此当 `max_seq_len` 较小或使用 `random` 时，prefix 与正文 token 会共同竞争窗口。
 
-- 若当前块为 `image`：将当前 `img_idx` 追加到 `keep_img_indices`，然后 `img_idx += 1`
-- 若当前块为 `text`：将当前 `txt_idx` 追加到 `keep_txt_indices`，然后 `txt_idx += 1`
+### 4.2 从统一截断序列映射回图像集合与文本集合
 
-随后根据索引从 embedding 中取子集：
+对截断后的统一序列，按 token 类型拆分回两个模态集合：
 
-- `img_keep = image_emb[keep_img_indices]`
-- `txt_keep = text_emb[keep_txt_indices]`
+- image 类型 token（含 `cover_image` 与正文 image）映射到 `img_keep`
+- text 类型 token（含 `title_blurb` 与正文 text）映射到 `txt_keep`
 
-最后将前缀向量拼接到集合最前面：
+同时按同一 token 顺序构造并拆分属性：
 
-- `img_keep = concat([cover_image, img_keep])`
-- `txt_keep = concat([title_blurb, txt_keep])`
+- `attr_image` 与 `img_keep` 一一对应（`use_seq_attr=True` 时为 `log(max(1, area))`，否则为 0）
+- `attr_text` 与 `txt_keep` 一一对应（`use_seq_attr=True` 时为 `log(max(1, length))`，否则为 0）
 
-注意：`cover_image/title_blurb` **不参与** `content_sequence` 的统一序列截断，它们总是被保留。
+最后对 batch 做 padding：
 
-同时构造并拼接 token 属性（attr），并保持与 token 一一对应：
-
-- `attr_image = concat([attr_cover_image, attr_image_story_keep])`
-- `attr_text = concat([attr_title_blurb, attr_text_story_keep])`
-
-对 batch 做 padding：
-
-- `img_emb ∈ [B, N_img_keep_max, D_img]`，并保存 `len_image`（或等价 mask）
+- `img_emb ∈ [B, N_img_keep_max, D_img]`，并保存 `len_image`
 - `attr_image ∈ [B, N_img_keep_max]`，padding 为 0
-- `txt_emb ∈ [B, N_txt_keep_max, D_txt]`，并保存 `len_text`（或等价 mask）
+- `txt_emb ∈ [B, N_txt_keep_max, D_txt]`，并保存 `len_text`
 - `attr_text ∈ [B, N_txt_keep_max]`，padding 为 0
-
 ## 5. 模型结构：分别集合编码 + 晚期融合
 
 模型实现位于 `src/dl/late/model.py`，结构为：模态投影 + 模态内集合编码 + concat 融合 + 分类头。
@@ -135,13 +128,17 @@ data/projects/<dataset>/<project_id>/
 
 - `img_proj: Linear(D_img → d_model) + ReLU`
 - `txt_proj: Linear(D_txt → d_model) + ReLU`
-- `img_attr_proj: Linear(1 → d_model)`
-- `txt_attr_proj: Linear(1 → d_model)`
+- `img_attr_proj: Linear(1 → d_model)`（仅 `use_seq_attr=True` 时启用）
+- `txt_attr_proj: Linear(1 → d_model)`（仅 `use_seq_attr=True` 时启用）
 - `img_ln/txt_ln: LayerNorm(d_model)`
 
 得到：
-- `Img = LayerNorm(ReLU(img_proj(x_image)) + img_attr_proj(attr_image.unsqueeze(-1))) ∈ [B, N_img, d_model]`
-- `Txt = LayerNorm(ReLU(txt_proj(x_text)) + txt_attr_proj(attr_text.unsqueeze(-1))) ∈ [B, N_txt, d_model]`
+- `use_seq_attr=True` 时：
+  - `Img = LayerNorm(ReLU(img_proj(x_image)) + img_attr_proj(attr_image.unsqueeze(-1))) ∈ [B, N_img, d_model]`
+  - `Txt = LayerNorm(ReLU(txt_proj(x_text)) + txt_attr_proj(attr_text.unsqueeze(-1))) ∈ [B, N_txt, d_model]`
+- `use_seq_attr=False` 时：
+  - `Img = LayerNorm(ReLU(img_proj(x_image))) ∈ [B, N_img, d_model]`
+  - `Txt = LayerNorm(ReLU(txt_proj(x_text))) ∈ [B, N_txt, d_model]`
 
 ### 5.2 模态内集合编码（不使用顺序）
 
@@ -202,6 +199,7 @@ data/projects/<dataset>/<project_id>/
 
 - `--run-name`
 - `--use-meta / --no-use-meta`
+- `--use-seq-attr / --no-use-seq-attr`
 - `--image-embedding-type`
 - `--text-embedding-type`
 - `--baseline-mode`
@@ -234,3 +232,4 @@ data/projects/<dataset>/<project_id>/
 其中：
 - `mode` 取 `late_mean_pool / late_attn_pool / late_trm_no_pos / late_trm_pos`，并按需追加 `+meta`
 - `baseline_mode`（配置项）取 `mean_pool / attn_pool / trm_no_pos / trm_pos`
+

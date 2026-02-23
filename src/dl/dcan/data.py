@@ -2,14 +2,16 @@
 """
 数据加载与特征构建（dcan）：
 
-- 参考 `src/dl/mlp` 的数据构建约定，但本模块固定使用 image + text，
-  仅保留 use_meta 开关。
+- 固定使用 image + text，两路输入（可选 meta）
+- 与 late 对齐：prefix 先并入统一序列，再整体截断（first/random），
+  最后映射回 image/text 两个模态序列
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 import hashlib
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -67,19 +69,24 @@ def _normalize_project_id(value: Any) -> str:
 
 
 def _encode_binary_target(series: pd.Series) -> np.ndarray:
-    """将标签编码为 0/1（兼容数值/字符串）。"""
-    if pd.api.types.is_numeric_dtype(series):
-        s = series.fillna(0)
-        try:
-            uniq = pd.unique(s)
-            uniq_set = {int(v) for v in uniq if pd.notna(v)}
-        except Exception:
-            uniq_set = set()
-        if uniq_set.issubset({0, 1}):
-            return s.astype(int).to_numpy(dtype=np.int64)
-        return (s.astype(float) > 0).astype(int).to_numpy(dtype=np.int64)
-    s = series.fillna("").astype(str).str.strip().str.lower()
-    return (s == "successful").astype(int).to_numpy(dtype=np.int64)
+    """
+    将标签编码为 0/1。
+    约定：target_col 为数值标签，取值只允许 0/1。
+    """
+    if not pd.api.types.is_numeric_dtype(series):
+        raise ValueError("target_col 需要为 0/1 的数值标签。")
+
+    s = series.fillna(0)
+    uniq = pd.unique(s)
+    try:
+        uniq_set = {int(v) for v in uniq if pd.notna(v)}
+    except Exception as e:
+        raise ValueError(f"target_col 无法解析为整数标签：{e}") from e
+
+    if not uniq_set.issubset({0, 1}):
+        raise ValueError(f"target_col 取值必须为 0/1，但得到：{sorted(uniq_set)}")
+
+    return s.astype(int).to_numpy(dtype=np.int64)
 
 
 def _as_2d_embedding(arr: np.ndarray, name: str) -> np.ndarray:
@@ -93,9 +100,10 @@ def _as_2d_embedding(arr: np.ndarray, name: str) -> np.ndarray:
 
 
 def _stable_hash_int(text: str) -> int:
-    """把字符串稳定地映射为 int（用于可复现的抽样）。"""
-    digest = hashlib.md5(text.encode("utf-8")).hexdigest()[:8]
-    return int(digest, 16)
+    """把字符串稳定映射为 int（用于可复现的随机截断）。"""
+    digest = hashlib.sha256(text.encode("utf-8")).digest()
+    v = int.from_bytes(digest[:8], byteorder="big", signed=False)
+    return int(v & 0x7FFFFFFFFFFFFFFF)
 
 
 @dataclass
@@ -216,25 +224,34 @@ class PreparedDcanData:
     preprocessor: Optional[TabularPreprocessor]
     feature_names: List[str]
 
-    # image（必需）
+    # image
     X_image_train: np.ndarray
     len_image_train: np.ndarray
+    attr_image_train: np.ndarray
     X_image_val: np.ndarray
     len_image_val: np.ndarray
+    attr_image_val: np.ndarray
     X_image_test: np.ndarray
     len_image_test: np.ndarray
+    attr_image_test: np.ndarray
     image_embedding_dim: int
     max_image_seq_len: int
 
-    # text（必需）
+    # text
     X_text_train: np.ndarray
     len_text_train: np.ndarray
+    attr_text_train: np.ndarray
     X_text_val: np.ndarray
     len_text_val: np.ndarray
+    attr_text_val: np.ndarray
     X_text_test: np.ndarray
     len_text_test: np.ndarray
+    attr_text_test: np.ndarray
     text_embedding_dim: int
     max_text_seq_len: int
+
+    # 统一截断配置（用于复现）
+    max_seq_len: int
 
     stats: Dict[str, int]
 
@@ -243,109 +260,394 @@ def _load_dataframe(csv_path: Path) -> pd.DataFrame:
     return pd.read_csv(csv_path)
 
 
-# -----------------------------
-# multimodal（固定 image+text，可选 meta）
-# -----------------------------
+def _read_content_json(content_json_path: Path) -> Dict[str, Any]:
+    try:
+        obj = json.loads(content_json_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise ValueError(f"读取 content.json 失败：{content_json_path} | {type(e).__name__}: {e}") from e
+    if not isinstance(obj, dict):
+        raise ValueError(f"content.json 顶层不是 dict：{content_json_path}")
+    return dict(obj)
 
 
-def _load_image_embedding_stack(project_dir: Path, cfg: DcanConfig) -> Tuple[Optional[np.ndarray], int, int]:
-    emb_type = (cfg.image_embedding_type or "").strip().lower()
-    if emb_type not in {"clip", "siglip", "resnet"}:
-        raise ValueError(f"不支持的 image_embedding_type={cfg.image_embedding_type!r}，可选：clip/siglip/resnet")
+def _extract_text_content(value: Any) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, dict):
+        raise ValueError(f"期望文本字段为 dict（包含 content/content_length），但得到 {type(value).__name__}")
+    return str(value.get("content", "") or "")
 
-    cover_path = project_dir / f"cover_image_{emb_type}.npy"
-    image_path = project_dir / f"image_{emb_type}.npy"
 
-    missing_strategy = (cfg.missing_strategy or "").strip().lower()
+def _extract_text_length(value: Any) -> int:
+    """
+    从 content.json 中提取文本长度：优先使用 content_length，其次使用 content 的字符串长度。
+    """
+    if value is None:
+        return 0
+    if not isinstance(value, dict):
+        raise ValueError(f"期望文本字段为 dict（包含 content/content_length），但得到 {type(value).__name__}")
+    if "content_length" in value:
+        try:
+            return int(value.get("content_length") or 0)
+        except Exception:
+            pass
+    return int(len(_extract_text_content(value)))
+
+
+def _extract_cover_area(content_obj: Dict[str, Any]) -> int:
+    cover = content_obj.get("cover_image", None)
+    if not isinstance(cover, dict):
+        return 0
+    try:
+        w = int(cover.get("width", 0) or 0)
+        h = int(cover.get("height", 0) or 0)
+    except Exception:
+        return 0
+    if int(w) <= 0 or int(h) <= 0:
+        return 0
+    return int(w) * int(h)
+
+
+def _build_title_blurb_attr(content_obj: Dict[str, Any], n_rows: int) -> np.ndarray:
+    """
+    构造 title_blurb token 的 attr：行数必须与 title_blurb_{emb}.npy 相同。
+    说明：title/blurb 来自 content.json 的 `title`/`blurb` 字段，字段形式为 dict（包含 content/content_length）。
+    """
+    n = int(n_rows)
+    if n <= 0:
+        return np.zeros((0,), dtype=np.float32)
+
+    title_val = content_obj.get("title", None)
+    blurb_val = content_obj.get("blurb", None)
+    title_text = _extract_text_content(title_val).strip()
+    blurb_text = _extract_text_content(blurb_val).strip()
+
+    title_len = _extract_text_length(title_val) if title_text else 0
+    blurb_len = _extract_text_length(blurb_val) if blurb_text else 0
+
+    raw_lengths: List[int] = []
+    if n == 1:
+        if title_text and not blurb_text:
+            raw_lengths = [int(title_len)]
+        elif blurb_text and not title_text:
+            raw_lengths = [int(blurb_len)]
+        elif title_text and blurb_text:
+            raw_lengths = [int(title_len)]  # 两者都存在但只有一行时，默认取 title
+        else:
+            raw_lengths = [0]
+    else:
+        # n>=2：按 [title, blurb] 顺序（缺失则填 0），其余行填 0
+        raw_lengths = [int(title_len), int(blurb_len)]
+        if n > 2:
+            raw_lengths.extend([0] * (n - 2))
+        raw_lengths = raw_lengths[:n]
+
+    attrs = [float(np.log(max(1.0, float(v)))) for v in raw_lengths]
+    return np.asarray(attrs, dtype=np.float32)
+
+
+def _truncate_window(seq_len: int, max_seq_len: int, strategy: str, seed: int) -> Tuple[int, int]:
+    """
+    在统一序列上做整体截断。
+    - first：取 [0, max_seq_len)
+    - random：在所有长度为 max_seq_len 的窗口中随机选一个（可复现）
+    """
+    L = int(seq_len)
+    m = int(max_seq_len)
+    if m <= 0:
+        raise ValueError("max_seq_len 需要 > 0。")
+    if L <= 0:
+        return 0, 0
+    if L <= m:
+        return 0, L
+
+    strategy = str(strategy or "first").strip().lower()
+    if strategy == "first":
+        return 0, m
+    if strategy == "random":
+        rng = np.random.default_rng(int(seed))
+        start = int(rng.integers(0, L - m + 1))
+        return start, start + m
+    raise ValueError(f"不支持的 truncation_strategy={strategy!r}，可选：first/random")
+
+
+def _load_project_keep_sets(
+    project_dir: Path,
+    project_id: str,
+    cfg: DcanConfig,
+) -> Tuple[
+    Optional[np.ndarray],
+    Optional[np.ndarray],
+    Optional[np.ndarray],
+    Optional[np.ndarray],
+    int,
+    int,
+    int,
+    int,
+    int,
+]:
+    """
+    返回：img_keep, attr_img, txt_keep, attr_txt, img_dim, txt_dim, len_img, len_txt, skipped(0/1)
+    - 当必需文件缺失且 missing_strategy=skip 时，skipped=1
+    """
+    missing_strategy = str(getattr(cfg, "missing_strategy", "error") or "error").strip().lower()
     if missing_strategy not in {"skip", "error"}:
         raise ValueError(f"不支持的 missing_strategy={cfg.missing_strategy!r}，可选：skip/error")
 
-    if not cover_path.exists():
+    content_json_path = project_dir / "content.json"
+    if not content_json_path.exists():
         if missing_strategy == "skip":
-            return None, 0, 1
-        raise FileNotFoundError(f"缺少 cover_image 嵌入文件：{cover_path}")
+            return None, None, None, None, 0, 0, 0, 0, 1
+        raise FileNotFoundError(f"缺少 content.json：{content_json_path}")
 
-    cover = _as_2d_embedding(np.load(cover_path), cover_path.name)
+    content_obj = _read_content_json(content_json_path)
+    seq = content_obj.get("content_sequence", None)
+    if not isinstance(seq, list):
+        raise ValueError(f"content_sequence 不存在或不是 list：{content_json_path}")
+    seq = list(seq)
+    if not seq:
+        if missing_strategy == "skip":
+            return None, None, None, None, 0, 0, 0, 0, 1
+        raise ValueError(f"项目 {project_id} content_sequence 为空，无法训练。")
 
-    missing_image = 0
-    if image_path.exists():
-        image = _as_2d_embedding(np.load(image_path), image_path.name)
-        max_vec = int(getattr(cfg, "max_image_vectors", 0))
-        if max_vec > 0 and int(image.shape[0]) > max_vec:
-            strategy = str(getattr(cfg, "image_select_strategy", "first")).strip().lower()
-            if strategy == "first":
-                image = image[:max_vec]
-            elif strategy == "random":
-                seed = int(getattr(cfg, "random_seed", 42)) + _stable_hash_int(str(project_dir.name))
-                rng = np.random.default_rng(seed)
-                idx = rng.choice(int(image.shape[0]), size=max_vec, replace=False)
-                idx = np.sort(idx)
-                image = image[idx]
-            else:
-                raise ValueError(f"不支持的 image_select_strategy={strategy!r}，可选：first/random")
-        if int(image.shape[0]) > 0:
-            if int(image.shape[1]) != int(cover.shape[1]):
-                raise ValueError(f"项目 {project_dir.name} 的 cover/image 维度不一致：{cover.shape} vs {image.shape}")
-            seq = np.concatenate([cover, image], axis=0).astype(np.float32, copy=False)
+    n_img_expected = 0
+    n_txt_expected = 0
+    for pos, item in enumerate(seq):
+        t = str(item.get("type", "") or "").strip().lower()
+        if t == "image":
+            n_img_expected += 1
+        elif t == "text":
+            n_txt_expected += 1
         else:
-            seq = cover
-            missing_image = 1
-    else:
-        seq = cover
-        missing_image = 1
+            raise ValueError(f"项目 {project_id} content_sequence type 不支持：{t!r}（pos={pos}）")
 
-    return seq, int(missing_image), 0
-
-
-def _load_text_embedding_stack(project_dir: Path, cfg: DcanConfig) -> Tuple[Optional[np.ndarray], int, int]:
-    emb_type = (cfg.text_embedding_type or "").strip().lower()
-    if emb_type not in {"bge", "clip", "siglip"}:
+    img_type = str(getattr(cfg, "image_embedding_type", "") or "").strip().lower()
+    if img_type not in {"clip", "siglip", "resnet"}:
+        raise ValueError(f"不支持的 image_embedding_type={cfg.image_embedding_type!r}，可选：clip/siglip/resnet")
+    txt_type = str(getattr(cfg, "text_embedding_type", "") or "").strip().lower()
+    if txt_type not in {"bge", "clip", "siglip"}:
         raise ValueError(f"不支持的 text_embedding_type={cfg.text_embedding_type!r}，可选：bge/clip/siglip")
 
-    title_blurb_path = project_dir / f"title_blurb_{emb_type}.npy"
-    text_path = project_dir / f"text_{emb_type}.npy"
+    cover_emb_path = project_dir / f"cover_image_{img_type}.npy"
+    title_blurb_emb_path = project_dir / f"title_blurb_{txt_type}.npy"
 
-    missing_strategy = (cfg.missing_strategy or "").strip().lower()
+    if not cover_emb_path.exists():
+        if missing_strategy == "skip":
+            return None, None, None, None, 0, 0, 0, 0, 1
+        raise FileNotFoundError(f"缺少 cover_image 嵌入文件：{cover_emb_path}")
+
+    if not title_blurb_emb_path.exists():
+        if missing_strategy == "skip":
+            return None, None, None, None, 0, 0, 0, 0, 1
+        raise FileNotFoundError(f"缺少 title_blurb 嵌入文件：{title_blurb_emb_path}")
+
+    cover_emb = _as_2d_embedding(np.load(cover_emb_path), cover_emb_path.name)
+    if int(cover_emb.shape[0]) != 1:
+        raise ValueError(f"项目 {project_id} cover_image 行数不合法：期望 1，但得到 {cover_emb.shape}")
+    img_dim_cover = int(cover_emb.shape[1])
+
+    title_blurb_emb = _as_2d_embedding(np.load(title_blurb_emb_path), title_blurb_emb_path.name)
+    if int(title_blurb_emb.shape[0]) <= 0:
+        raise ValueError(f"项目 {project_id} title_blurb 为空：{title_blurb_emb_path}")
+    txt_dim_tb = int(title_blurb_emb.shape[1])
+
+    image_emb_path = project_dir / f"image_{img_type}.npy"
+    text_emb_path = project_dir / f"text_{txt_type}.npy"
+
+    img_emb = None
+    img_dim = int(img_dim_cover)
+    if image_emb_path.exists():
+        img_emb = _as_2d_embedding(np.load(image_emb_path), image_emb_path.name)
+        if int(img_emb.shape[1]) != int(img_dim_cover):
+            raise ValueError(f"项目 {project_id} image dim 不一致：cover={img_dim_cover} vs story={img_emb.shape[1]}")
+        if int(img_emb.shape[0]) != int(n_img_expected):
+            raise ValueError(
+                f"项目 {project_id} image 数量不一致：content_sequence={n_img_expected} vs {image_emb_path.name}={img_emb.shape}"
+            )
+    else:
+        # 当 content_sequence 里 image 数量为 0 时，允许缺少 image_*.npy
+        if int(n_img_expected) != 0:
+            if missing_strategy == "skip":
+                return None, None, None, None, 0, 0, 0, 0, 1
+            raise FileNotFoundError(f"缺少 image 嵌入文件：{image_emb_path}")
+
+    txt_emb = None
+    txt_dim = int(txt_dim_tb)
+    if text_emb_path.exists():
+        txt_emb = _as_2d_embedding(np.load(text_emb_path), text_emb_path.name)
+        if int(txt_emb.shape[1]) != int(txt_dim_tb):
+            raise ValueError(
+                f"项目 {project_id} text dim 不一致：title_blurb={txt_dim_tb} vs story={txt_emb.shape[1]}"
+            )
+        if int(txt_emb.shape[0]) != int(n_txt_expected):
+            raise ValueError(
+                f"项目 {project_id} text 数量不一致：content_sequence={n_txt_expected} vs {text_emb_path.name}={txt_emb.shape}"
+            )
+    else:
+        # 当 content_sequence 里 text 数量为 0 时，允许缺少 text_*.npy
+        if int(n_txt_expected) != 0:
+            if missing_strategy == "skip":
+                return None, None, None, None, 0, 0, 0, 0, 1
+            raise FileNotFoundError(f"缺少 text 嵌入文件：{text_emb_path}")
+
+    attr_tb = _build_title_blurb_attr(content_obj, n_rows=int(title_blurb_emb.shape[0]))
+    if int(attr_tb.shape[0]) != int(title_blurb_emb.shape[0]):
+        raise ValueError(
+            f"项目 {project_id} title_blurb attr 行数不一致：attr={attr_tb.shape[0]} vs emb={title_blurb_emb.shape[0]}"
+        )
+    cover_area = _extract_cover_area(content_obj)
+    attr_cover = float(np.log(max(1.0, float(cover_area))))
+
+    # 构建统一序列：[title_blurb 前缀, cover 前缀, content_sequence 正文]
+    # token 描述：(token_type, embedding_index, attr_value)
+    unified_tokens: List[Tuple[str, int, float]] = []
+    for i in range(int(title_blurb_emb.shape[0])):
+        unified_tokens.append(("text_prefix", int(i), float(attr_tb[i])))
+    unified_tokens.append(("image_prefix", 0, float(attr_cover)))
+
+    img_idx = 0
+    txt_idx = 0
+    for pos, item in enumerate(seq):
+        t = str(item.get("type", "") or "").strip().lower()
+        if t == "image":
+            try:
+                w = int(item.get("width", 0) or 0)
+                h = int(item.get("height", 0) or 0)
+                area = int(w) * int(h) if (int(w) > 0 and int(h) > 0) else 0
+            except Exception:
+                area = 0
+            unified_tokens.append(("image_story", int(img_idx), float(np.log(max(1.0, float(area))))))
+            img_idx += 1
+        elif t == "text":
+            try:
+                length = int(item.get("content_length", 0) or 0)
+            except Exception:
+                length = int(len(str(item.get("content", "") or "")))
+            unified_tokens.append(("text_story", int(txt_idx), float(np.log(max(1.0, float(length))))))
+            txt_idx += 1
+        else:
+            raise ValueError(f"项目 {project_id} content_sequence type 不支持：{t!r}（pos={pos}）")
+
+    if int(img_idx) != int(n_img_expected):
+        raise ValueError(f"项目 {project_id} image 计数器不一致：{img_idx} vs expected {n_img_expected}")
+    if int(txt_idx) != int(n_txt_expected):
+        raise ValueError(f"项目 {project_id} text 计数器不一致：{txt_idx} vs expected {n_txt_expected}")
+
+    max_seq_len = int(getattr(cfg, "max_seq_len", 0))
+    if max_seq_len <= 0:
+        raise ValueError("max_seq_len 需要 > 0。")
+    truncation_strategy = str(getattr(cfg, "truncation_strategy", "first"))
+    seed = (int(getattr(cfg, "random_seed", 42)) + _stable_hash_int(str(project_id))) & 0x7FFFFFFFFFFFFFFF
+
+    start, end = _truncate_window(
+        len(unified_tokens),
+        max_seq_len=max_seq_len,
+        strategy=truncation_strategy,
+        seed=seed,
+    )
+
+    img_rows: List[np.ndarray] = []
+    txt_rows: List[np.ndarray] = []
+    keep_img_attrs: List[float] = []
+    keep_txt_attrs: List[float] = []
+    for token_type, emb_idx, attr_val in unified_tokens[int(start):int(end)]:
+        if token_type == "image_prefix":
+            img_rows.append(np.asarray(cover_emb[int(emb_idx)], dtype=np.float32))
+            keep_img_attrs.append(float(attr_val))
+            continue
+        if token_type == "text_prefix":
+            txt_rows.append(np.asarray(title_blurb_emb[int(emb_idx)], dtype=np.float32))
+            keep_txt_attrs.append(float(attr_val))
+            continue
+        if token_type == "image_story":
+            if img_emb is None:
+                raise ValueError(f"项目 {project_id} 保留了 image_story，但 image embedding 不存在。")
+            img_rows.append(np.asarray(img_emb[int(emb_idx)], dtype=np.float32))
+            keep_img_attrs.append(float(attr_val))
+            continue
+        if token_type == "text_story":
+            if txt_emb is None:
+                raise ValueError(f"项目 {project_id} 保留了 text_story，但 text embedding 不存在。")
+            txt_rows.append(np.asarray(txt_emb[int(emb_idx)], dtype=np.float32))
+            keep_txt_attrs.append(float(attr_val))
+            continue
+        raise ValueError(f"项目 {project_id} token_type 不支持：{token_type!r}")
+
+    if img_rows:
+        img_keep = np.stack(img_rows, axis=0).astype(np.float32, copy=False)
+    else:
+        img_keep = np.zeros((0, int(img_dim)), dtype=np.float32)
+    len_img = int(img_keep.shape[0])
+    attr_img = np.asarray(keep_img_attrs, dtype=np.float32)
+
+    if txt_rows:
+        txt_keep = np.stack(txt_rows, axis=0).astype(np.float32, copy=False)
+    else:
+        txt_keep = np.zeros((0, int(txt_dim)), dtype=np.float32)
+    len_txt = int(txt_keep.shape[0])
+    attr_txt = np.asarray(keep_txt_attrs, dtype=np.float32)
+
+    if int(attr_img.shape[0]) != int(len_img):
+        raise ValueError(f"attr_image 与 image 序列长度不一致：{attr_img.shape[0]} vs {len_img}（{project_id}）")
+    if int(attr_txt.shape[0]) != int(len_txt):
+        raise ValueError(f"attr_text 与 text 序列长度不一致：{attr_txt.shape[0]} vs {len_txt}（{project_id}）")
+
+    return img_keep, attr_img, txt_keep, attr_txt, int(img_dim), int(txt_dim), int(len_img), int(len_txt), 0
+
+
+def _infer_embedding_dims(projects_root: Path, project_ids: List[str], cfg: DcanConfig) -> Tuple[int, int]:
+    """
+    从项目目录推断 image/text embedding 的维度。
+    约定：
+    - image 维度来自 `cover_image_{image_embedding_type}.npy`
+    - text 维度来自 `title_blurb_{text_embedding_type}.npy`
+    """
+    img_type = str(getattr(cfg, "image_embedding_type", "") or "").strip().lower()
+    txt_type = str(getattr(cfg, "text_embedding_type", "") or "").strip().lower()
+
+    missing_strategy = str(getattr(cfg, "missing_strategy", "error") or "error").strip().lower()
     if missing_strategy not in {"skip", "error"}:
         raise ValueError(f"不支持的 missing_strategy={cfg.missing_strategy!r}，可选：skip/error")
 
-    if not title_blurb_path.exists():
-        if missing_strategy == "skip":
-            return None, 1, 1
-        raise FileNotFoundError(f"缺少 title_blurb 嵌入文件：{title_blurb_path}")
+    for pid in project_ids:
+        pid = _normalize_project_id(pid)
+        if not pid:
+            continue
+        project_dir = projects_root / pid
+        if not project_dir.exists():
+            if missing_strategy == "skip":
+                continue
+            raise FileNotFoundError(f"找不到项目目录：{project_dir}")
 
-    title_blurb = _as_2d_embedding(np.load(title_blurb_path), title_blurb_path.name)
+        cover_path = project_dir / f"cover_image_{img_type}.npy"
+        title_blurb_path = project_dir / f"title_blurb_{txt_type}.npy"
+        if not cover_path.exists() or not title_blurb_path.exists():
+            if missing_strategy == "skip":
+                continue
+            if not cover_path.exists():
+                raise FileNotFoundError(f"缺少 cover_image 嵌入文件：{cover_path}")
+            raise FileNotFoundError(f"缺少 title_blurb 嵌入文件：{title_blurb_path}")
 
-    missing_text = 0
-    if text_path.exists():
-        text = _as_2d_embedding(np.load(text_path), text_path.name)
-        max_vec = int(getattr(cfg, "max_text_vectors", 0))
-        if max_vec > 0 and int(text.shape[0]) > max_vec:
-            strategy = str(getattr(cfg, "text_select_strategy", "first")).strip().lower()
-            if strategy == "first":
-                text = text[:max_vec]
-            elif strategy == "random":
-                seed = int(getattr(cfg, "random_seed", 42)) + _stable_hash_int(str(project_dir.name))
-                rng = np.random.default_rng(seed)
-                idx = rng.choice(int(text.shape[0]), size=max_vec, replace=False)
-                idx = np.sort(idx)
-                text = text[idx]
-            else:
-                raise ValueError(f"不支持的 text_select_strategy={strategy!r}，可选：first/random")
-        if int(text.shape[0]) > 0:
-            if int(text.shape[1]) != int(title_blurb.shape[1]):
-                raise ValueError(
-                    f"项目 {project_dir.name} 的 title_blurb/text 维度不一致：{title_blurb.shape} vs {text.shape}"
-                )
-            seq = np.concatenate([title_blurb, text], axis=0).astype(np.float32, copy=False)
-        else:
-            seq = title_blurb
-            missing_text = 1
-    else:
-        seq = title_blurb
-        missing_text = 1
+        try:
+            cover = _as_2d_embedding(np.load(cover_path), cover_path.name)
+            title_blurb = _as_2d_embedding(np.load(title_blurb_path), title_blurb_path.name)
+        except Exception:
+            if missing_strategy == "skip":
+                continue
+            raise
 
-    return seq, int(missing_text), 0
+        if int(cover.shape[0]) != 1:
+            if missing_strategy == "skip":
+                continue
+            raise ValueError(f"项目 {pid} cover_image 行数不合法：期望 1，但得到 {cover.shape}")
+        if int(title_blurb.shape[0]) <= 0:
+            if missing_strategy == "skip":
+                continue
+            raise ValueError(f"项目 {pid} title_blurb 为空：{title_blurb_path}")
+
+        return int(cover.shape[1]), int(title_blurb.shape[1])
+
+    raise RuntimeError("无法推断 embedding dim：未找到任何包含必需 embedding 文件的项目。")
 
 
 def _build_features_for_split(
@@ -354,8 +656,12 @@ def _build_features_for_split(
     projects_root: Path,
     cfg: DcanConfig,
     use_meta: bool,
+    expected_image_dim: int,
+    expected_text_dim: int,
 ) -> Tuple[
     Optional[np.ndarray],
+    np.ndarray,
+    np.ndarray,
     np.ndarray,
     np.ndarray,
     np.ndarray,
@@ -381,16 +687,21 @@ def _build_features_for_split(
     kept_ids: List[str] = []
     kept_indices: List[int] = []
 
-    img_seqs: List[np.ndarray] = []
+    img_seqs: List[Optional[np.ndarray]] = []
     img_lens: List[int] = []
-    txt_seqs: List[np.ndarray] = []
+    img_attrs: List[Optional[np.ndarray]] = []
+    txt_seqs: List[Optional[np.ndarray]] = []
     txt_lens: List[int] = []
+    txt_attrs: List[Optional[np.ndarray]] = []
 
-    missing_image_total = 0
-    missing_text_total = 0
     skipped_total = 0
-    image_dim = 0
-    text_dim = 0
+    missing_project_dir = 0
+    image_dim = int(expected_image_dim)
+    text_dim = int(expected_text_dim)
+
+    missing_strategy = str(getattr(cfg, "missing_strategy", "error") or "error").strip().lower()
+    if missing_strategy not in {"skip", "error"}:
+        raise ValueError(f"不支持的 missing_strategy={cfg.missing_strategy!r}，可选：skip/error")
 
     for i, pid in enumerate(project_ids):
         if not pid:
@@ -399,71 +710,109 @@ def _build_features_for_split(
 
         project_dir = projects_root / pid
         if not project_dir.exists():
-            if (cfg.missing_strategy or "").strip().lower() == "skip":
+            missing_project_dir += 1
+            if missing_strategy == "skip":
                 skipped_total += 1
                 continue
             raise FileNotFoundError(f"找不到项目目录：{project_dir}")
 
-        img_seq, miss_img, skip_img = _load_image_embedding_stack(project_dir, cfg)
-        txt_seq, miss_txt, skip_txt = _load_text_embedding_stack(project_dir, cfg)
-
-        if skip_img or skip_txt or img_seq is None or txt_seq is None:
+        (
+            img_keep,
+            attr_img_keep,
+            txt_keep,
+            attr_txt_keep,
+            img_dim_i,
+            txt_dim_i,
+            len_img,
+            len_txt,
+            skipped,
+        ) = _load_project_keep_sets(project_dir, project_id=pid, cfg=cfg)
+        if skipped:
             skipped_total += 1
             continue
 
-        if image_dim <= 0:
-            image_dim = int(img_seq.shape[1])
-        if int(img_seq.shape[1]) != int(image_dim):
-            raise ValueError(f"image_embedding_dim 不一致：期望 {image_dim}，但 {pid} 为 {img_seq.shape[1]}")
-        img_seqs.append(img_seq)
-        img_lens.append(int(img_seq.shape[0]))
-        missing_image_total += int(miss_img)
+        if int(img_dim_i) > 0:
+            if int(image_dim) <= 0:
+                image_dim = int(img_dim_i)
+            if int(img_dim_i) != int(image_dim):
+                raise ValueError(f"image_embedding_dim 不一致：期望 {image_dim}，但 {pid} 中为 {img_dim_i}")
 
-        if text_dim <= 0:
-            text_dim = int(txt_seq.shape[1])
-        if int(txt_seq.shape[1]) != int(text_dim):
-            raise ValueError(f"text_embedding_dim 不一致：期望 {text_dim}，但 {pid} 为 {txt_seq.shape[1]}")
-        txt_seqs.append(txt_seq)
-        txt_lens.append(int(txt_seq.shape[0]))
-        missing_text_total += int(miss_txt)
+        if int(txt_dim_i) > 0:
+            if int(text_dim) <= 0:
+                text_dim = int(txt_dim_i)
+            if int(txt_dim_i) != int(text_dim):
+                raise ValueError(f"text_embedding_dim 不一致：期望 {text_dim}，但 {pid} 中为 {txt_dim_i}")
+
+        img_seqs.append(img_keep)
+        img_lens.append(int(len_img))
+        img_attrs.append(attr_img_keep)
+        txt_seqs.append(txt_keep)
+        txt_lens.append(int(len_txt))
+        txt_attrs.append(attr_txt_keep)
 
         kept_ids.append(pid)
         kept_indices.append(i)
 
     if not kept_indices:
-        raise RuntimeError("该数据切分中没有可用样本（可能都被 skip 了或缺少嵌入文件）。")
+        raise RuntimeError("该数据切分中没有可用样本（可能都被 skip 了或缺少必需文件）。")
 
-    y_arr = np.asarray(y_all[kept_indices], dtype=np.int64)
+    if int(image_dim) <= 0:
+        raise RuntimeError("无法确定 image_embedding_dim：可能所有样本都没有 image 向量。")
+    if int(text_dim) <= 0:
+        raise RuntimeError("无法确定 text_embedding_dim：可能所有样本都没有 text 向量。")
 
-    X_meta = None
-    if use_meta:
-        X_meta = np.asarray(X_meta_all[kept_indices], dtype=np.float32)
+    idx_arr = np.asarray(kept_indices, dtype=np.int64)
+    y_arr = np.asarray(y_all[idx_arr], dtype=np.int64)
 
-    def _pad_sequences(
-        sequences: List[np.ndarray], lengths: List[int], embedding_dim: int
-    ) -> Tuple[np.ndarray, np.ndarray, int]:
-        max_seq_len = int(max(lengths))
-        X = np.zeros((len(sequences), max_seq_len, int(embedding_dim)), dtype=np.float32)
-        for j, seq in enumerate(sequences):
-            L = int(seq.shape[0])
-            X[j, :L, :] = seq
-        len_arr = np.asarray(lengths, dtype=np.int64)
-        return X, len_arr, int(max_seq_len)
+    X_meta = np.asarray(X_meta_all[idx_arr], dtype=np.float32) if use_meta else None
 
-    X_img, len_img, max_img_len = _pad_sequences(img_seqs, img_lens, embedding_dim=image_dim)
-    X_txt, len_txt, max_txt_len = _pad_sequences(txt_seqs, txt_lens, embedding_dim=text_dim)
+    max_img_len = int(max(img_lens)) if img_lens else 0
+    X_image = np.zeros((len(img_seqs), max_img_len, int(image_dim)), dtype=np.float32)
+    attr_image = np.zeros((len(img_seqs), max_img_len), dtype=np.float32)
+    for j, seq in enumerate(img_seqs):
+        if seq is None or int(seq.shape[0]) <= 0:
+            continue
+        if int(seq.shape[1]) != int(image_dim):
+            raise ValueError(f"image_embedding_dim 不一致：期望 {image_dim}，但样本 {kept_ids[j]} 中为 {seq.shape[1]}")
+        L = int(seq.shape[0])
+        X_image[j, :L, :] = seq
+        a = img_attrs[j]
+        if a is not None and int(a.shape[0]) > 0:
+            if int(a.shape[0]) != int(L):
+                raise ValueError(f"attr_image 长度不一致：期望 {L}，但样本 {kept_ids[j]} 中为 {a.shape[0]}")
+            attr_image[j, :L] = np.asarray(a, dtype=np.float32)
+    len_image = np.asarray(img_lens, dtype=np.int64)
 
-    stats = {
+    max_txt_len = int(max(txt_lens)) if txt_lens else 0
+    X_text = np.zeros((len(txt_seqs), max_txt_len, int(text_dim)), dtype=np.float32)
+    attr_text = np.zeros((len(txt_seqs), max_txt_len), dtype=np.float32)
+    for j, seq in enumerate(txt_seqs):
+        if seq is None or int(seq.shape[0]) <= 0:
+            continue
+        if int(seq.shape[1]) != int(text_dim):
+            raise ValueError(f"text_embedding_dim 不一致：期望 {text_dim}，但样本 {kept_ids[j]} 中为 {seq.shape[1]}")
+        L = int(seq.shape[0])
+        X_text[j, :L, :] = seq
+        a = txt_attrs[j]
+        if a is not None and int(a.shape[0]) > 0:
+            if int(a.shape[0]) != int(L):
+                raise ValueError(f"attr_text 长度不一致：期望 {L}，但样本 {kept_ids[j]} 中为 {a.shape[0]}")
+            attr_text[j, :L] = np.asarray(a, dtype=np.float32)
+    len_text = np.asarray(txt_lens, dtype=np.int64)
+
+    stats: Dict[str, int] = {
         "skipped_samples": int(skipped_total),
-        "missing_image_files": int(missing_image_total),
-        "missing_text_files": int(missing_text_total),
+        "missing_project_dir": int(missing_project_dir),
     }
+
     return (
         X_meta,
-        X_img,
-        len_img,
-        X_txt,
-        len_txt,
+        X_image,
+        len_image,
+        attr_image,
+        X_text,
+        len_text,
+        attr_text,
         y_arr,
         kept_ids,
         stats,
@@ -500,12 +849,21 @@ def _prepare_from_splits(
         feature_names = preprocessor.get_feature_names()
         meta_dim = int(X_meta_train_all.shape[1])
 
+    all_project_ids: List[str] = [_normalize_project_id(v) for v in pd.concat([train_df, val_df, test_df])[cfg.id_col].tolist()]
+    expected_image_dim, expected_text_dim = _infer_embedding_dims(projects_root, all_project_ids, cfg)
+    if int(expected_image_dim) <= 0:
+        raise RuntimeError("无法推断 image_embedding_dim。")
+    if int(expected_text_dim) <= 0:
+        raise RuntimeError("无法推断 text_embedding_dim。")
+
     (
         X_meta_train,
         X_img_train,
         len_img_train,
+        attr_img_train,
         X_txt_train,
         len_txt_train,
+        attr_txt_train,
         y_train,
         train_ids,
         train_stats,
@@ -513,13 +871,23 @@ def _prepare_from_splits(
         txt_dim,
         max_img_train,
         max_txt_train,
-    ) = _build_features_for_split(train_df, X_meta_train_all, projects_root, cfg, use_meta)
+    ) = _build_features_for_split(
+        train_df,
+        X_meta_train_all,
+        projects_root,
+        cfg,
+        use_meta,
+        expected_image_dim=expected_image_dim,
+        expected_text_dim=expected_text_dim,
+    )
     (
         X_meta_val,
         X_img_val,
         len_img_val,
+        attr_img_val,
         X_txt_val,
         len_txt_val,
+        attr_txt_val,
         y_val,
         val_ids,
         val_stats,
@@ -527,13 +895,23 @@ def _prepare_from_splits(
         txt_dim_val,
         max_img_val,
         max_txt_val,
-    ) = _build_features_for_split(val_df, X_meta_val_all, projects_root, cfg, use_meta)
+    ) = _build_features_for_split(
+        val_df,
+        X_meta_val_all,
+        projects_root,
+        cfg,
+        use_meta,
+        expected_image_dim=expected_image_dim,
+        expected_text_dim=expected_text_dim,
+    )
     (
         X_meta_test,
         X_img_test,
         len_img_test,
+        attr_img_test,
         X_txt_test,
         len_txt_test,
+        attr_txt_test,
         y_test,
         test_ids,
         test_stats,
@@ -541,7 +919,15 @@ def _prepare_from_splits(
         txt_dim_test,
         max_img_test,
         max_txt_test,
-    ) = _build_features_for_split(test_df, X_meta_test_all, projects_root, cfg, use_meta)
+    ) = _build_features_for_split(
+        test_df,
+        X_meta_test_all,
+        projects_root,
+        cfg,
+        use_meta,
+        expected_image_dim=expected_image_dim,
+        expected_text_dim=expected_text_dim,
+    )
 
     if int(img_dim_val) != int(img_dim) or int(img_dim_test) != int(img_dim):
         raise ValueError(f"image_embedding_dim 不一致：train={img_dim} val={img_dim_val} test={img_dim_test}")
@@ -568,20 +954,27 @@ def _prepare_from_splits(
         feature_names=feature_names,
         X_image_train=X_img_train,
         len_image_train=len_img_train,
+        attr_image_train=attr_img_train,
         X_image_val=X_img_val,
         len_image_val=len_img_val,
+        attr_image_val=attr_img_val,
         X_image_test=X_img_test,
         len_image_test=len_img_test,
+        attr_image_test=attr_img_test,
         image_embedding_dim=int(img_dim),
         max_image_seq_len=int(max(max_img_train, max_img_val, max_img_test)),
         X_text_train=X_txt_train,
         len_text_train=len_txt_train,
+        attr_text_train=attr_txt_train,
         X_text_val=X_txt_val,
         len_text_val=len_txt_val,
+        attr_text_val=attr_txt_val,
         X_text_test=X_txt_test,
         len_text_test=len_txt_test,
+        attr_text_test=attr_txt_test,
         text_embedding_dim=int(txt_dim),
         max_text_seq_len=int(max(max_txt_train, max_txt_val, max_txt_test)),
+        max_seq_len=int(getattr(cfg, "max_seq_len", 0)),
         stats=stats,
     )
 
@@ -594,7 +987,6 @@ def prepare_dcan_data(
     logger=None,
 ) -> PreparedDcanData:
     """读 CSV -> 切分 -> 构建特征 -> 返回 numpy。"""
-
     raw_df = _load_dataframe(csv_path)
     if cfg.id_col not in raw_df.columns:
         raise ValueError(f"CSV 缺少 id_col={cfg.id_col!r}")
@@ -624,5 +1016,4 @@ def prepare_dcan_data(
         cfg=cfg,
         use_meta=use_meta,
     )
-
     return prepared

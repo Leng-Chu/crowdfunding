@@ -2,9 +2,9 @@
 """
 数据加载与特征构建（mdl）：
 
-- 读取项目目录下的 content.json，并根据 content_sequence 做“统一序列截断”
-- 根据截断后的内容块，映射回 image_{emb}.npy / text_{emb}.npy 的子集
-- 并将 cover_image_{emb}.npy / title_blurb_{emb}.npy 分别拼接到 image/text 序列最前面
+- 读取项目目录下的 content.json，先把 prefix（title_blurb / cover_image）并入统一序列
+- 在统一序列上做整体截断，再映射回 image_{emb}.npy / text_{emb}.npy 子序列
+- 同步构造每个 token 的数值属性：attr_image（log 图片面积）/ attr_text（log 文本长度）
 """
 
 from __future__ import annotations
@@ -232,20 +232,26 @@ class PreparedMultiModalData:
     # image（可选）
     X_image_train: Optional[np.ndarray]
     len_image_train: Optional[np.ndarray]
+    attr_image_train: Optional[np.ndarray]
     X_image_val: Optional[np.ndarray]
     len_image_val: Optional[np.ndarray]
+    attr_image_val: Optional[np.ndarray]
     X_image_test: Optional[np.ndarray]
     len_image_test: Optional[np.ndarray]
+    attr_image_test: Optional[np.ndarray]
     image_embedding_dim: int
     max_image_seq_len: int
 
     # text（可选）
     X_text_train: Optional[np.ndarray]
     len_text_train: Optional[np.ndarray]
+    attr_text_train: Optional[np.ndarray]
     X_text_val: Optional[np.ndarray]
     len_text_val: Optional[np.ndarray]
+    attr_text_val: Optional[np.ndarray]
     X_text_test: Optional[np.ndarray]
     len_text_test: Optional[np.ndarray]
+    attr_text_test: Optional[np.ndarray]
     text_embedding_dim: int
     max_text_seq_len: int
 
@@ -268,6 +274,82 @@ def _read_content_json(content_json_path: Path) -> Dict[str, Any]:
         raise ValueError(f"content.json 顶层不是 dict：{content_json_path}")
     return dict(obj)
 
+def _extract_text_content(value: Any) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, dict):
+        raise ValueError(f"期望文本字段为 dict（包含 content/content_length），但得到 {type(value).__name__}")
+    return str(value.get("content", "") or "")
+
+
+def _extract_text_length(value: Any) -> int:
+    """
+    从 content.json 中提取文本长度：优先使用 content_length，其次使用 content 的字符串长度。
+    """
+    if value is None:
+        return 0
+    if not isinstance(value, dict):
+        raise ValueError(f"期望文本字段为 dict（包含 content/content_length），但得到 {type(value).__name__}")
+    if "content_length" in value:
+        try:
+            return int(value.get("content_length") or 0)
+        except Exception:
+            pass
+    return int(len(_extract_text_content(value)))
+
+
+def _extract_cover_area(content_obj: Dict[str, Any]) -> int:
+    cover = content_obj.get("cover_image", None)
+    if not isinstance(cover, dict):
+        return 0
+    try:
+        w = int(cover.get("width", 0) or 0)
+        h = int(cover.get("height", 0) or 0)
+    except Exception:
+        return 0
+    if int(w) <= 0 or int(h) <= 0:
+        return 0
+    return int(w) * int(h)
+
+
+def _build_title_blurb_attr(content_obj: Dict[str, Any], n_rows: int) -> np.ndarray:
+    """
+    构造 title_blurb token 的 attr：行数必须与 title_blurb_{emb}.npy 相同。
+
+    说明：title/blurb 来自 content.json 的 `title`/`blurb` 字段，字段形式为 dict（包含 content/content_length）。
+    """
+    n = int(n_rows)
+    if n <= 0:
+        return np.zeros((0,), dtype=np.float32)
+
+    title_val = content_obj.get("title", None)
+    blurb_val = content_obj.get("blurb", None)
+    title_text = _extract_text_content(title_val).strip()
+    blurb_text = _extract_text_content(blurb_val).strip()
+
+    title_len = _extract_text_length(title_val) if title_text else 0
+    blurb_len = _extract_text_length(blurb_val) if blurb_text else 0
+
+    raw_lengths: List[int] = []
+    if n == 1:
+        if title_text and not blurb_text:
+            raw_lengths = [int(title_len)]
+        elif blurb_text and not title_text:
+            raw_lengths = [int(blurb_len)]
+        elif title_text and blurb_text:
+            # 两者都存在但只有一行时，默认取 title
+            raw_lengths = [int(title_len)]
+        else:
+            raw_lengths = [0]
+    else:
+        # n>=2：按 [title, blurb] 顺序（缺失则填 0），其余行填 0
+        raw_lengths = [int(title_len), int(blurb_len)]
+        if n > 2:
+            raw_lengths.extend([0] * (n - 2))
+        raw_lengths = raw_lengths[:n]
+
+    attrs = [float(np.log(max(1.0, float(v)))) for v in raw_lengths]
+    return np.asarray(attrs, dtype=np.float32)
 
 def _truncate_window(seq_len: int, max_seq_len: int, strategy: str, seed: int) -> Tuple[int, int]:
     """
@@ -303,6 +385,8 @@ def _mdl_load_project_keep_seqs(
 ) -> Tuple[
     Optional[np.ndarray],
     Optional[np.ndarray],
+    Optional[np.ndarray],
+    Optional[np.ndarray],
     int,
     int,
     int,
@@ -310,23 +394,25 @@ def _mdl_load_project_keep_seqs(
     int,
 ]:
     """
-    返回：img_keep, txt_keep, img_dim, txt_dim, len_img, len_txt, skipped(0/1)
+    返回：img_keep, attr_img, txt_keep, attr_txt, img_dim, txt_dim, len_img, len_txt, skipped(0/1)
 
     说明：
-    - img_keep/txt_keep 可能为“仅包含 cover/title_blurb”的序列；
-    - 当必须文件缺失且 missing_strategy=skip 时，skipped=1。
+    - prefix（title_blurb / cover_image）先并入统一序列，再整体做截断。
+    - 截断后 image/text 可能为空序列（len=0），属于合法情况。
+    - attr_img 表示每个 image token 的 log(面积)；
+    - attr_txt 表示每个 text token 的 log(文本长度)。
     """
     missing_strategy = str(getattr(cfg, "missing_strategy", "error") or "error").strip().lower()
     if missing_strategy not in {"skip", "error"}:
         raise ValueError(f"不支持的 missing_strategy={cfg.missing_strategy!r}，可选：skip/error")
 
     if not (bool(use_image) or bool(use_text)):
-        return None, None, 0, 0, 0, 0, 0
+        return None, None, None, None, 0, 0, 0, 0, 0
 
     content_json_path = project_dir / "content.json"
     if not content_json_path.exists():
         if missing_strategy == "skip":
-            return None, None, 0, 0, 0, 0, 1
+            return None, None, None, None, 0, 0, 0, 0, 1
         raise FileNotFoundError(f"缺少 content.json：{content_json_path}")
 
     content_obj = _read_content_json(content_json_path)
@@ -336,7 +422,7 @@ def _mdl_load_project_keep_seqs(
     seq = list(seq)
     if not seq:
         if missing_strategy == "skip":
-            return None, None, 0, 0, 0, 0, 1
+            return None, None, None, None, 0, 0, 0, 0, 1
         raise ValueError(f"项目 {project_id} content_sequence 为空，无法训练。")
 
     n_img_expected = 0
@@ -352,6 +438,8 @@ def _mdl_load_project_keep_seqs(
 
     img_keep = None
     txt_keep = None
+    attr_img = None
+    attr_txt = None
     img_dim = 0
     txt_dim = 0
     len_img = 0
@@ -359,6 +447,8 @@ def _mdl_load_project_keep_seqs(
 
     img_emb = None
     txt_emb = None
+    cover_emb: Optional[np.ndarray] = None
+    title_blurb_emb: Optional[np.ndarray] = None
 
     if bool(use_image):
         img_type = str(getattr(cfg, "image_embedding_type", "") or "").strip().lower()
@@ -368,7 +458,7 @@ def _mdl_load_project_keep_seqs(
         cover_emb_path = project_dir / f"cover_image_{img_type}.npy"
         if not cover_emb_path.exists():
             if missing_strategy == "skip":
-                return None, None, 0, 0, 0, 0, 1
+                return None, None, None, None, 0, 0, 0, 0, 1
             raise FileNotFoundError(f"缺少 cover_image 嵌入文件：{cover_emb_path}")
 
         cover_emb = _as_2d_embedding(np.load(cover_emb_path), cover_emb_path.name)
@@ -388,7 +478,7 @@ def _mdl_load_project_keep_seqs(
         else:
             if int(n_img_expected) != 0:
                 if missing_strategy == "skip":
-                    return None, None, 0, 0, 0, 0, 1
+                    return None, None, None, None, 0, 0, 0, 0, 1
                 raise FileNotFoundError(f"缺少 image 嵌入文件：{image_emb_path}")
 
     if bool(use_text):
@@ -399,7 +489,7 @@ def _mdl_load_project_keep_seqs(
         title_blurb_emb_path = project_dir / f"title_blurb_{txt_type}.npy"
         if not title_blurb_emb_path.exists():
             if missing_strategy == "skip":
-                return None, None, 0, 0, 0, 0, 1
+                return None, None, None, None, 0, 0, 0, 0, 1
             raise FileNotFoundError(f"缺少 title_blurb 嵌入文件：{title_blurb_emb_path}")
 
         title_blurb_emb = _as_2d_embedding(np.load(title_blurb_emb_path), title_blurb_emb_path.name)
@@ -419,31 +509,71 @@ def _mdl_load_project_keep_seqs(
         else:
             if int(n_txt_expected) != 0:
                 if missing_strategy == "skip":
-                    return None, None, 0, 0, 0, 0, 1
+                    return None, None, None, None, 0, 0, 0, 0, 1
                 raise FileNotFoundError(f"缺少 text 嵌入文件：{text_emb_path}")
 
-    # 统一序列截断：决定窗口 [start, end)
     max_seq_len = int(getattr(cfg, "max_seq_len", 0))
     if max_seq_len <= 0:
         raise ValueError("max_seq_len 需要 > 0。")
     truncation_strategy = str(getattr(cfg, "truncation_strategy", "first"))
     seed = (int(getattr(cfg, "random_seed", 42)) + _stable_hash_int(str(project_id))) & 0x7FFFFFFFFFFFFFFF
-    start, end = _truncate_window(len(seq), max_seq_len=max_seq_len, strategy=truncation_strategy, seed=seed)
+    use_attr = bool(getattr(cfg, "use_attr", True))
 
-    keep_img_indices: List[int] = []
-    keep_txt_indices: List[int] = []
+    # token 描述：(token_type, embedding_index, attr_value)
+    unified_tokens: List[Tuple[str, int, float]] = []
+    if bool(use_text):
+        if title_blurb_emb is None:
+            raise RuntimeError(f"项目 {project_id} 启用了 text 分支，但 title_blurb_emb 不存在。")
+        if use_attr:
+            attr_tb = _build_title_blurb_attr(content_obj, n_rows=int(title_blurb_emb.shape[0]))
+            if int(attr_tb.shape[0]) != int(title_blurb_emb.shape[0]):
+                raise ValueError(
+                    f"项目 {project_id} title_blurb attr 行数不一致：attr={attr_tb.shape[0]} vs emb={title_blurb_emb.shape[0]}"
+                )
+        else:
+            attr_tb = np.zeros((int(title_blurb_emb.shape[0]),), dtype=np.float32)
+        for i in range(int(title_blurb_emb.shape[0])):
+            unified_tokens.append(("text_prefix", int(i), float(attr_tb[i])))
+
+    if bool(use_image):
+        if cover_emb is None:
+            raise RuntimeError(f"项目 {project_id} 启用了 image 分支，但 cover_emb 不存在。")
+        if use_attr:
+            cover_area = _extract_cover_area(content_obj)
+            attr_cover = float(np.log(max(1.0, float(cover_area))))
+        else:
+            attr_cover = 0.0
+        unified_tokens.append(("image_prefix", 0, attr_cover))
+
     img_idx = 0
     txt_idx = 0
     for pos, item in enumerate(seq):
         t = (item.get("type", None) or "").strip().lower()
-        in_window = int(start) <= int(pos) < int(end)
         if t == "image":
-            if in_window:
-                keep_img_indices.append(int(img_idx))
+            if bool(use_image):
+                if use_attr:
+                    try:
+                        w = int(item.get("width", 0) or 0)
+                        h = int(item.get("height", 0) or 0)
+                        area = int(w) * int(h) if (int(w) > 0 and int(h) > 0) else 0
+                    except Exception:
+                        area = 0
+                    attr_val = float(np.log(max(1.0, float(area))))
+                else:
+                    attr_val = 0.0
+                unified_tokens.append(("image_story", int(img_idx), float(attr_val)))
             img_idx += 1
         elif t == "text":
-            if in_window:
-                keep_txt_indices.append(int(txt_idx))
+            if bool(use_text):
+                if use_attr:
+                    try:
+                        length = int(item.get("content_length", 0) or 0)
+                    except Exception:
+                        length = int(len(str(item.get("content", "") or "")))
+                    attr_val = float(np.log(max(1.0, float(length))))
+                else:
+                    attr_val = 0.0
+                unified_tokens.append(("text_story", int(txt_idx), float(attr_val)))
             txt_idx += 1
         else:
             raise ValueError(f"项目 {project_id} content_sequence type 不支持：{t!r}（pos={pos}）")
@@ -452,30 +582,78 @@ def _mdl_load_project_keep_seqs(
         raise ValueError(f"项目 {project_id} image 计数器不一致：{img_idx} vs expected {n_img_expected}")
     if int(txt_idx) != int(n_txt_expected):
         raise ValueError(f"项目 {project_id} text 计数器不一致：{txt_idx} vs expected {n_txt_expected}")
+    if not unified_tokens:
+        raise RuntimeError(f"项目 {project_id} 没有可用于截断的 token。")
+
+    start, end = _truncate_window(
+        len(unified_tokens),
+        max_seq_len=max_seq_len,
+        strategy=truncation_strategy,
+        seed=seed,
+    )
+
+    img_rows: List[np.ndarray] = []
+    txt_rows: List[np.ndarray] = []
+    keep_img_attrs: List[float] = []
+    keep_txt_attrs: List[float] = []
+    for token_type, emb_idx, attr_value in unified_tokens[int(start):int(end)]:
+        if token_type == "image_prefix":
+            if cover_emb is None:
+                raise RuntimeError(f"项目 {project_id} 保留了 image_prefix，但 cover_emb 不存在。")
+            img_rows.append(np.asarray(cover_emb[int(emb_idx)], dtype=np.float32))
+            keep_img_attrs.append(float(attr_value))
+            continue
+        if token_type == "text_prefix":
+            if title_blurb_emb is None:
+                raise RuntimeError(f"项目 {project_id} 保留了 text_prefix，但 title_blurb_emb 不存在。")
+            txt_rows.append(np.asarray(title_blurb_emb[int(emb_idx)], dtype=np.float32))
+            keep_txt_attrs.append(float(attr_value))
+            continue
+        if token_type == "image_story":
+            if img_emb is None:
+                raise RuntimeError(f"项目 {project_id} 保留了 image_story，但 image embedding 不存在。")
+            img_rows.append(np.asarray(img_emb[int(emb_idx)], dtype=np.float32))
+            keep_img_attrs.append(float(attr_value))
+            continue
+        if token_type == "text_story":
+            if txt_emb is None:
+                raise RuntimeError(f"项目 {project_id} 保留了 text_story，但 text embedding 不存在。")
+            txt_rows.append(np.asarray(txt_emb[int(emb_idx)], dtype=np.float32))
+            keep_txt_attrs.append(float(attr_value))
+            continue
+        raise ValueError(f"项目 {project_id} token_type 不支持：{token_type!r}")
 
     if bool(use_image):
-        if img_emb is not None:
-            if keep_img_indices:
-                img_keep_story = img_emb[np.asarray(keep_img_indices, dtype=np.int64)]
-            else:
-                img_keep_story = img_emb[:0]
+        if img_rows:
+            img_keep = np.stack(img_rows, axis=0).astype(np.float32, copy=False)
         else:
-            img_keep_story = cover_emb[:0]
-        img_keep = np.concatenate([cover_emb, img_keep_story], axis=0).astype(np.float32, copy=False)
+            img_keep = np.zeros((0, int(img_dim)), dtype=np.float32)
+        attr_img = np.asarray(keep_img_attrs, dtype=np.float32)
         len_img = int(img_keep.shape[0])
+        if int(attr_img.shape[0]) != int(len_img):
+            raise ValueError(f"attr_image 与 image 序列长度不一致：{attr_img.shape[0]} vs {len_img}（{project_id}）")
 
     if bool(use_text):
-        if txt_emb is not None:
-            if keep_txt_indices:
-                txt_keep_story = txt_emb[np.asarray(keep_txt_indices, dtype=np.int64)]
-            else:
-                txt_keep_story = txt_emb[:0]
+        if txt_rows:
+            txt_keep = np.stack(txt_rows, axis=0).astype(np.float32, copy=False)
         else:
-            txt_keep_story = title_blurb_emb[:0]
-        txt_keep = np.concatenate([title_blurb_emb, txt_keep_story], axis=0).astype(np.float32, copy=False)
+            txt_keep = np.zeros((0, int(txt_dim)), dtype=np.float32)
+        attr_txt = np.asarray(keep_txt_attrs, dtype=np.float32)
         len_txt = int(txt_keep.shape[0])
+        if int(attr_txt.shape[0]) != int(len_txt):
+            raise ValueError(f"attr_text 与 text 序列长度不一致：{attr_txt.shape[0]} vs {len_txt}（{project_id}）")
 
-    return img_keep, txt_keep, int(img_dim), int(txt_dim), int(len_img), int(len_txt), 0
+    return (
+        img_keep,
+        attr_img,
+        txt_keep,
+        attr_txt,
+        int(img_dim),
+        int(txt_dim),
+        int(len_img),
+        int(len_txt),
+        0,
+    )
 
 
 def _mm_build_features_for_split(
@@ -492,6 +670,8 @@ def _mm_build_features_for_split(
     Optional[np.ndarray],
     Optional[np.ndarray],
     Optional[np.ndarray],
+    Optional[np.ndarray],
+    Optional[np.ndarray],
     np.ndarray,
     List[str],
     Dict[str, int],
@@ -500,7 +680,7 @@ def _mm_build_features_for_split(
     int,
     int,
 ]:
-    """为一个 split 构建所选分支的 X/len/y。"""
+    """为一个 split 构建 X/len/attr/y。"""
     if use_meta:
         if X_meta_all is None:
             raise ValueError("use_meta=True 时，X_meta_all 不能为空。")
@@ -515,8 +695,10 @@ def _mm_build_features_for_split(
 
     img_seqs: List[np.ndarray] = []
     img_lens: List[int] = []
+    img_attrs: List[np.ndarray] = []
     txt_seqs: List[np.ndarray] = []
     txt_lens: List[int] = []
+    txt_attrs: List[np.ndarray] = []
 
     skipped_total = 0
     missing_project_dir = 0
@@ -542,14 +724,26 @@ def _mm_build_features_for_split(
             raise FileNotFoundError(f"找不到项目目录：{project_dir}")
 
         img_seq = None
+        attr_img = None
         txt_seq = None
+        attr_txt = None
         img_dim_one = 0
         txt_dim_one = 0
         len_img = 0
         len_txt = 0
         skipped = 0
         if need_project_dir and project_dir is not None:
-            img_seq, txt_seq, img_dim_one, txt_dim_one, len_img, len_txt, skipped = _mdl_load_project_keep_seqs(
+            (
+                img_seq,
+                attr_img,
+                txt_seq,
+                attr_txt,
+                img_dim_one,
+                txt_dim_one,
+                len_img,
+                len_txt,
+                skipped,
+            ) = _mdl_load_project_keep_seqs(
                 project_dir,
                 project_id=str(pid),
                 cfg=cfg,
@@ -561,30 +755,36 @@ def _mm_build_features_for_split(
             continue
 
         if bool(use_image):
-            if img_seq is None or int(len_img) <= 0:
-                raise RuntimeError(f"加载 image 失败但未被 skip：{pid}")
+            if img_seq is None or attr_img is None:
+                raise RuntimeError(f"项目 {pid} image 特征为空，但未被 skip。")
             if int(image_dim) <= 0:
                 image_dim = int(img_dim_one)
             if int(img_dim_one) != int(image_dim):
                 raise ValueError(f"image_embedding_dim 不一致：期望 {image_dim}，但 {pid} 为 {img_dim_one}")
+            if int(attr_img.shape[0]) != int(len_img):
+                raise ValueError(f"attr_image 与 image 序列长度不一致：{attr_img.shape[0]} vs {len_img}（{pid}）")
             img_seqs.append(img_seq)
             img_lens.append(int(len_img))
+            img_attrs.append(np.asarray(attr_img, dtype=np.float32))
 
         if bool(use_text):
-            if txt_seq is None or int(len_txt) <= 0:
-                raise RuntimeError(f"加载 text 失败但未被 skip：{pid}")
+            if txt_seq is None or attr_txt is None:
+                raise RuntimeError(f"项目 {pid} text 特征为空，但未被 skip。")
             if int(text_dim) <= 0:
                 text_dim = int(txt_dim_one)
             if int(txt_dim_one) != int(text_dim):
                 raise ValueError(f"text_embedding_dim 不一致：期望 {text_dim}，但 {pid} 为 {txt_dim_one}")
+            if int(attr_txt.shape[0]) != int(len_txt):
+                raise ValueError(f"attr_text 与 text 序列长度不一致：{attr_txt.shape[0]} vs {len_txt}（{pid}）")
             txt_seqs.append(txt_seq)
             txt_lens.append(int(len_txt))
+            txt_attrs.append(np.asarray(attr_txt, dtype=np.float32))
 
         kept_ids.append(pid)
         kept_indices.append(i)
 
     if not kept_indices:
-        raise RuntimeError("该数据切分中没有可用样本（可能都被 skip 了或缺少嵌入文件）。")
+        raise RuntimeError("该数据切分中没有可用样本（可能都被 skip 了或缺少必须文件）。")
 
     idx_arr = np.asarray(kept_indices, dtype=np.int64)
     y_arr = np.asarray(y_all[idx_arr], dtype=np.int64)
@@ -593,24 +793,40 @@ def _mm_build_features_for_split(
 
     X_image = None
     len_image = None
+    attr_image = None
     max_img_len = 0
     if use_image:
         max_img_len = int(max(img_lens)) if img_lens else 0
         X_image = np.zeros((len(img_seqs), max_img_len, int(image_dim)), dtype=np.float32)
+        attr_image = np.zeros((len(img_seqs), max_img_len), dtype=np.float32)
         for j, seq in enumerate(img_seqs):
             L = int(seq.shape[0])
+            if L <= 0:
+                continue
             X_image[j, :L, :] = seq
+            a = np.asarray(img_attrs[j], dtype=np.float32).reshape(-1)
+            if int(a.shape[0]) != int(L):
+                raise ValueError(f"attr_image 长度不一致：期望 {L}，但样本 {kept_ids[j]} 为 {a.shape[0]}")
+            attr_image[j, :L] = a
         len_image = np.asarray(img_lens, dtype=np.int64)
 
     X_text = None
     len_text = None
+    attr_text = None
     max_txt_len = 0
     if use_text:
         max_txt_len = int(max(txt_lens)) if txt_lens else 0
         X_text = np.zeros((len(txt_seqs), max_txt_len, int(text_dim)), dtype=np.float32)
+        attr_text = np.zeros((len(txt_seqs), max_txt_len), dtype=np.float32)
         for j, seq in enumerate(txt_seqs):
             L = int(seq.shape[0])
+            if L <= 0:
+                continue
             X_text[j, :L, :] = seq
+            a = np.asarray(txt_attrs[j], dtype=np.float32).reshape(-1)
+            if int(a.shape[0]) != int(L):
+                raise ValueError(f"attr_text 长度不一致：期望 {L}，但样本 {kept_ids[j]} 为 {a.shape[0]}")
+            attr_text[j, :L] = a
         len_text = np.asarray(txt_lens, dtype=np.int64)
 
     stats: Dict[str, int] = {
@@ -622,8 +838,10 @@ def _mm_build_features_for_split(
         X_meta,
         X_image,
         len_image,
+        attr_image,
         X_text,
         len_text,
+        attr_text,
         y_arr,
         kept_ids,
         stats,
@@ -688,8 +906,10 @@ def prepare_multimodal_data(
         X_meta_train,
         X_img_train,
         len_img_train,
+        attr_img_train,
         X_txt_train,
         len_txt_train,
+        attr_txt_train,
         y_train,
         train_ids,
         train_stats,
@@ -702,8 +922,10 @@ def prepare_multimodal_data(
         X_meta_val,
         X_img_val,
         len_img_val,
+        attr_img_val,
         X_txt_val,
         len_txt_val,
+        attr_txt_val,
         y_val,
         val_ids,
         val_stats,
@@ -716,8 +938,10 @@ def prepare_multimodal_data(
         X_meta_test,
         X_img_test,
         len_img_test,
+        attr_img_test,
         X_txt_test,
         len_txt_test,
+        attr_txt_test,
         y_test,
         test_ids,
         test_stats,
@@ -752,18 +976,24 @@ def prepare_multimodal_data(
         feature_names=feature_names,
         X_image_train=X_img_train,
         len_image_train=len_img_train,
+        attr_image_train=attr_img_train,
         X_image_val=X_img_val,
         len_image_val=len_img_val,
+        attr_image_val=attr_img_val,
         X_image_test=X_img_test,
         len_image_test=len_img_test,
+        attr_image_test=attr_img_test,
         image_embedding_dim=int(img_dim) if use_image else 0,
         max_image_seq_len=int(max(max_img_train, max_img_val, max_img_test)) if use_image else 0,
         X_text_train=X_txt_train,
         len_text_train=len_txt_train,
+        attr_text_train=attr_txt_train,
         X_text_val=X_txt_val,
         len_text_val=len_txt_val,
+        attr_text_val=attr_txt_val,
         X_text_test=X_txt_test,
         len_text_test=len_txt_test,
+        attr_text_test=attr_txt_test,
         text_embedding_dim=int(txt_dim) if use_text else 0,
         max_text_seq_len=int(max(max_txt_train, max_txt_val, max_txt_test)) if use_text else 0,
         max_seq_len=int(getattr(cfg, "max_seq_len", 0)),
@@ -771,3 +1001,4 @@ def prepare_multimodal_data(
     )
 
     return prepared
+

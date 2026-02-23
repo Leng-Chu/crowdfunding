@@ -28,7 +28,7 @@ from config import MdlConfig
 from utils import compute_threshold_free_metrics
 
 _LABEL_SMOOTHING_EPS = 0.05
-_EMA_DECAY = 0.99
+_EMA_DECAY = 0.999
 _WARMUP_RATIO = 0.1
 _DEFAULT_MAX_GRAD_NORM = 1.0
 
@@ -190,13 +190,16 @@ def _positive_proba_multimodal(
     X_meta: np.ndarray | None,
     X_image: np.ndarray | None,
     len_image: np.ndarray | None,
+    attr_image: np.ndarray | None,
     X_text: np.ndarray | None,
     len_text: np.ndarray | None,
+    attr_text: np.ndarray | None,
     device: torch.device,
     batch_size: int,
 ) -> np.ndarray:
     """返回正类概率（shape: [N]）。"""
     model.eval()
+    use_amp = device.type == "cuda"
 
     tensors: List[torch.Tensor] = []
     if bool(use_meta):
@@ -205,16 +208,18 @@ def _positive_proba_multimodal(
         tensors.append(torch.from_numpy(np.asarray(X_meta, dtype=np.float32)))
 
     if bool(use_image):
-        if X_image is None or len_image is None:
-            raise ValueError("use_image=True 时，X_image/len_image 不能为空。")
+        if X_image is None or len_image is None or attr_image is None:
+            raise ValueError("use_image=True 时，X_image/len_image/attr_image 不能为空。")
         tensors.append(torch.from_numpy(np.asarray(X_image, dtype=np.float32)))
         tensors.append(torch.from_numpy(np.asarray(len_image, dtype=np.int64)))
+        tensors.append(torch.from_numpy(np.asarray(attr_image, dtype=np.float32)))
 
     if bool(use_text):
-        if X_text is None or len_text is None:
-            raise ValueError("use_text=True 时，X_text/len_text 不能为空。")
+        if X_text is None or len_text is None or attr_text is None:
+            raise ValueError("use_text=True 时，X_text/len_text/attr_text 不能为空。")
         tensors.append(torch.from_numpy(np.asarray(X_text, dtype=np.float32)))
         tensors.append(torch.from_numpy(np.asarray(len_text, dtype=np.int64)))
+        tensors.append(torch.from_numpy(np.asarray(attr_text, dtype=np.float32)))
 
     loader = DataLoader(TensorDataset(*tensors), batch_size=max(1, int(batch_size)), shuffle=False)
 
@@ -224,8 +229,10 @@ def _positive_proba_multimodal(
         xb_meta = None
         xb_img = None
         lb_img = None
+        ab_img = None
         xb_txt = None
         lb_txt = None
+        ab_txt = None
 
         if bool(use_meta):
             xb_meta = batch[idx].to(device)
@@ -233,19 +240,25 @@ def _positive_proba_multimodal(
         if bool(use_image):
             xb_img = batch[idx].to(device)
             lb_img = batch[idx + 1].to(device)
-            idx += 2
+            ab_img = batch[idx + 2].to(device)
+            idx += 3
         if bool(use_text):
             xb_txt = batch[idx].to(device)
             lb_txt = batch[idx + 1].to(device)
+            ab_txt = batch[idx + 2].to(device)
+            idx += 3
 
-        logits = model(
-            x_meta=xb_meta,
-            x_image=xb_img,
-            len_image=lb_img,
-            x_text=xb_txt,
-            len_text=lb_txt,
-        )
-        prob = torch.sigmoid(logits).detach().cpu().numpy()
+        with _amp_autocast(device, enabled=bool(use_amp)):
+            logits = model(
+                x_meta=xb_meta,
+                x_image=xb_img,
+                len_image=lb_img,
+                attr_image=ab_img,
+                x_text=xb_txt,
+                len_text=lb_txt,
+                attr_text=ab_txt,
+            )
+        prob = torch.sigmoid(logits.float()).detach().cpu().numpy()
         probs.append(prob.astype(np.float64, copy=False))
 
     if not probs:
@@ -261,14 +274,18 @@ def train_multimodal_with_early_stopping(
     X_meta_train: np.ndarray | None,
     X_image_train: np.ndarray | None,
     len_image_train: np.ndarray | None,
+    attr_image_train: np.ndarray | None,
     X_text_train: np.ndarray | None,
     len_text_train: np.ndarray | None,
+    attr_text_train: np.ndarray | None,
     y_train: np.ndarray,
     X_meta_val: np.ndarray | None,
     X_image_val: np.ndarray | None,
     len_image_val: np.ndarray | None,
+    attr_image_val: np.ndarray | None,
     X_text_val: np.ndarray | None,
     len_text_val: np.ndarray | None,
+    attr_text_val: np.ndarray | None,
     y_val: np.ndarray,
     cfg: MdlConfig,
     logger,
@@ -286,15 +303,17 @@ def train_multimodal_with_early_stopping(
             raise ValueError("use_meta=True 时，X_meta_train 不能为空。")
         train_tensors.append(torch.from_numpy(np.asarray(X_meta_train, dtype=np.float32)))
     if bool(use_image):
-        if X_image_train is None or len_image_train is None:
-            raise ValueError("use_image=True 时，X_image_train/len_image_train 不能为空。")
+        if X_image_train is None or len_image_train is None or attr_image_train is None:
+            raise ValueError("use_image=True 时，X_image_train/len_image_train/attr_image_train 不能为空。")
         train_tensors.append(torch.from_numpy(np.asarray(X_image_train, dtype=np.float32)))
         train_tensors.append(torch.from_numpy(np.asarray(len_image_train, dtype=np.int64)))
+        train_tensors.append(torch.from_numpy(np.asarray(attr_image_train, dtype=np.float32)))
     if bool(use_text):
-        if X_text_train is None or len_text_train is None:
-            raise ValueError("use_text=True 时，X_text_train/len_text_train 不能为空。")
+        if X_text_train is None or len_text_train is None or attr_text_train is None:
+            raise ValueError("use_text=True 时，X_text_train/len_text_train/attr_text_train 不能为空。")
         train_tensors.append(torch.from_numpy(np.asarray(X_text_train, dtype=np.float32)))
         train_tensors.append(torch.from_numpy(np.asarray(len_text_train, dtype=np.int64)))
+        train_tensors.append(torch.from_numpy(np.asarray(attr_text_train, dtype=np.float32)))
     train_tensors.append(y_train_t)
 
     train_loader = DataLoader(
@@ -349,8 +368,10 @@ def train_multimodal_with_early_stopping(
             xb_meta = None
             xb_img = None
             lb_img = None
+            ab_img = None
             xb_txt = None
             lb_txt = None
+            ab_txt = None
 
             if bool(use_meta):
                 xb_meta = batch[idx].to(device)
@@ -358,11 +379,13 @@ def train_multimodal_with_early_stopping(
             if bool(use_image):
                 xb_img = batch[idx].to(device)
                 lb_img = batch[idx + 1].to(device)
-                idx += 2
+                ab_img = batch[idx + 2].to(device)
+                idx += 3
             if bool(use_text):
                 xb_txt = batch[idx].to(device)
                 lb_txt = batch[idx + 1].to(device)
-                idx += 2
+                ab_txt = batch[idx + 2].to(device)
+                idx += 3
 
             yb = batch[idx].to(device)
 
@@ -373,8 +396,10 @@ def train_multimodal_with_early_stopping(
                     x_meta=xb_meta,
                     x_image=xb_img,
                     len_image=lb_img,
+                    attr_image=ab_img,
                     x_text=xb_txt,
                     len_text=lb_txt,
+                    attr_text=ab_txt,
                 )
                 loss = criterion(logits, yb)
 
@@ -412,8 +437,10 @@ def train_multimodal_with_early_stopping(
                 X_meta=X_meta_train,
                 X_image=X_image_train,
                 len_image=len_image_train,
+                attr_image=attr_image_train,
                 X_text=X_text_train,
                 len_text=len_text_train,
+                attr_text=attr_text_train,
                 device=device,
                 batch_size=cfg.batch_size,
             )
@@ -425,8 +452,10 @@ def train_multimodal_with_early_stopping(
                 X_meta=X_meta_val,
                 X_image=X_image_val,
                 len_image=len_image_val,
+                attr_image=attr_image_val,
                 X_text=X_text_val,
                 len_text=len_text_val,
+                attr_text=attr_text_val,
                 device=device,
                 batch_size=cfg.batch_size,
             )
@@ -523,8 +552,10 @@ def evaluate_multimodal_split(
     X_meta: np.ndarray | None,
     X_image: np.ndarray | None,
     len_image: np.ndarray | None,
+    attr_image: np.ndarray | None,
     X_text: np.ndarray | None,
     len_text: np.ndarray | None,
+    attr_text: np.ndarray | None,
     y: np.ndarray,
     cfg: MdlConfig,
 ) -> Dict[str, Any]:
@@ -538,8 +569,10 @@ def evaluate_multimodal_split(
         X_meta=X_meta,
         X_image=X_image,
         len_image=len_image,
+        attr_image=attr_image,
         X_text=X_text,
         len_text=len_text,
+        attr_text=attr_text,
         device=device,
         batch_size=cfg.batch_size,
     )

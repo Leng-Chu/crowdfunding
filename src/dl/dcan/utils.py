@@ -38,7 +38,7 @@ def set_global_seed(seed: int) -> None:
 
 
 def _sanitize_name(name: str) -> str:
-    """把 run_name 处理成适合当文件夹名的形式。"""
+    """把 run_name 处理成适合作为文件夹名的形式。"""
     name = name.strip()
     name = re.sub(r"[^\w\-\.]+", "_", name, flags=re.UNICODE)
     return name[:80] if name else "run"
@@ -48,7 +48,7 @@ def make_run_dirs(experiment_root: Path, run_name: Optional[str] = None) -> Tupl
     """
     在 experiment_root 下创建本次实验的：
     - <run_id>/artifacts：模型权重、预处理器等可复现产物
-    - <run_id>/reports：日志/指标/配置等报告产物
+    - <run_id>/reports：日志、指标/配置等报告产物
     - <run_id>/plots：训练曲线、ROC 等图片
     """
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -86,7 +86,6 @@ def setup_logger(log_file: Path, level: int = logging.INFO) -> logging.Logger:
     file_handler.setLevel(level)
     file_handler.setFormatter(formatter)
 
-    # 统一写到 stdout，保证训练过程中可以实时看到日志输出。
     stream_handler = logging.StreamHandler(stream=sys.stdout)
     stream_handler.setLevel(level)
     stream_handler.setFormatter(formatter)
@@ -142,42 +141,37 @@ def _roc_curve(y_true: np.ndarray, y_score: np.ndarray) -> Tuple[np.ndarray, np.
     y_score_sorted = y_score[order]
 
     distinct = np.where(np.diff(y_score_sorted))[0]
-    thresholds_idx = np.r_[distinct, y_true_sorted.size - 1]
+    thr_idx = np.r_[distinct, y_true_sorted.size - 1]
 
-    tps = np.cumsum(y_true_sorted)[thresholds_idx]
-    fps = 1 + thresholds_idx - tps
+    tps = np.cumsum(y_true_sorted == 1)[thr_idx]
+    fps = 1 + thr_idx - tps
 
     tps = np.r_[0, tps]
     fps = np.r_[0, fps]
+    thresholds = np.r_[np.inf, y_score_sorted[thr_idx]]
 
-    fpr = fps / float(n_neg)
-    tpr = tps / float(n_pos)
-    thresholds = np.r_[y_score_sorted[thresholds_idx], 0]
+    fpr = fps / max(1, n_neg)
+    tpr = tps / max(1, n_pos)
     return fpr.astype(np.float64), tpr.astype(np.float64), thresholds.astype(np.float64)
 
 
 def _auc_trapz(x: np.ndarray, y: np.ndarray) -> float:
     """梯形法则计算 AUC。"""
-    x = np.asarray(x, dtype=np.float64)
-    y = np.asarray(y, dtype=np.float64)
-    if x.size <= 1:
+    x = np.asarray(x, dtype=np.float64).reshape(-1)
+    y = np.asarray(y, dtype=np.float64).reshape(-1)
+    if x.size < 2:
         return 0.0
     return float(np.trapz(y, x))
 
 
 def _roc_auc_rank(y_true: np.ndarray, y_score: np.ndarray) -> float:
-    """
-    通过秩统计计算 AUC（不需要构造 ROC 曲线，适用于数值稳定）。
-    """
+    """秩统计方式计算 AUC（需要同时包含正负样本）。"""
     y_true = np.asarray(y_true).astype(int).reshape(-1)
     y_score = np.asarray(y_score).astype(float).reshape(-1)
-    if y_true.shape != y_score.shape:
-        raise ValueError(f"y_true/y_score 形状不一致：{y_true.shape} vs {y_score.shape}")
-
     n_pos = int(np.sum(y_true == 1))
     n_neg = int(np.sum(y_true == 0))
     if n_pos == 0 or n_neg == 0:
-        raise ValueError("ROC 需要同时包含正负样本。")
+        raise ValueError("AUC 需要同时包含正负样本。")
 
     order = np.argsort(y_score, kind="mergesort")
     ranks = np.empty_like(order, dtype=np.float64)
@@ -249,14 +243,63 @@ def compute_binary_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: fl
     return out
 
 
-def find_best_f1_threshold(y_true: np.ndarray, y_prob: np.ndarray) -> float:
+def compute_threshold_free_metrics(y_true: np.ndarray, y_prob: np.ndarray) -> Dict[str, Any]:
+    """
+    计算阈值无关指标（log_loss / roc_auc）。
+
+    说明：
+    - 不计算 accuracy/precision/recall/f1/confusion 等阈值相关指标；
+    - 若某个 split 只包含单一类别，roc_auc 返回 None，并在 out 中给出 roc_auc_error。
+    """
+    y_true = np.asarray(y_true).astype(int)
+    y_prob = np.asarray(y_prob).astype(float)
+    y_prob = np.clip(y_prob, 1e-7, 1 - 1e-7)
+
+    y_true_1d = y_true.reshape(-1)
+    y_prob_1d = y_prob.reshape(-1)
+    if y_true_1d.shape != y_prob_1d.shape:
+        raise ValueError(f"y_true/y_prob 形状不一致：{y_true_1d.shape} vs {y_prob_1d.shape}")
+
+    n = int(y_true_1d.size)
+    logloss = float(
+        -np.mean(y_true_1d * np.log(y_prob_1d) + (1 - y_true_1d) * np.log(1 - y_prob_1d))
+    ) if n > 0 else 0.0
+
+    try:
+        fpr, tpr, _ = _roc_curve(y_true_1d, y_prob_1d)
+        roc_auc = _auc_trapz(fpr, tpr)
+        roc_auc_error: Optional[str] = None
+    except Exception as e:
+        roc_auc = None
+        roc_auc_error = f"{type(e).__name__}: {e}"
+        try:
+            mask = np.isfinite(y_prob_1d)
+            if int(np.sum(mask)) < int(y_prob_1d.size):
+                roc_auc = _roc_auc_rank(y_true_1d[mask], y_prob_1d[mask])
+            else:
+                roc_auc = _roc_auc_rank(y_true_1d, y_prob_1d)
+            roc_auc_error = None
+        except Exception as e2:
+            roc_auc = None
+            roc_auc_error = f"{type(e2).__name__}: {e2}"
+
+    out: Dict[str, Any] = {
+        "log_loss": float(logloss),
+        "roc_auc": None if roc_auc is None else float(roc_auc),
+    }
+    if roc_auc is None and roc_auc_error:
+        out["roc_auc_error"] = str(roc_auc_error)
+    return out
+
+
+def find_best_f1_threshold(y_true: np.ndarray, y_prob: np.ndarray) -> Tuple[float, float]:
     """
     在验证集上选择阈值：最大化 F1（预测规则：y_pred = y_prob >= threshold）。
 
     说明：
-    - 为保证可复现与效率，使用排序 + 累积统计的方式遍历所有“分数变化点”的阈值候选。
-    - 若出现多个阈值 F1 相同，选择“阈值更大”的那个（更保守，减少误报），保证确定性。
-    - 若验证集中没有正样本或没有负样本，返回 0.5（避免异常）。
+    - 为保证可复现与效率，使用排序 + 累计统计的方式遍历所有“分数变化点”的阈值候选。
+    - 若出现多个阈值 F1 相同，选择“阈值更小”的那个，保证确定性。
+    - 返回 (best_threshold, best_f1)。
     """
     y_true = np.asarray(y_true).astype(int).reshape(-1)
     y_prob = np.asarray(y_prob).astype(float).reshape(-1)
@@ -265,12 +308,7 @@ def find_best_f1_threshold(y_true: np.ndarray, y_prob: np.ndarray) -> float:
 
     n = int(y_true.size)
     if n == 0:
-        return 0.5
-
-    n_pos = int(np.sum(y_true == 1))
-    n_neg = int(np.sum(y_true == 0))
-    if n_pos == 0 or n_neg == 0:
-        return 0.5
+        return 0.0, 0.0
 
     mask = np.isfinite(y_prob)
     if int(np.sum(mask)) != n:
@@ -278,11 +316,9 @@ def find_best_f1_threshold(y_true: np.ndarray, y_prob: np.ndarray) -> float:
         y_prob = y_prob[mask]
         n = int(y_true.size)
         if n == 0:
-            return 0.5
-        n_pos = int(np.sum(y_true == 1))
-        n_neg = int(np.sum(y_true == 0))
-        if n_pos == 0 or n_neg == 0:
-            return 0.5
+            return 0.0, 0.0
+
+    n_pos = int(np.sum(y_true == 1))
 
     order = np.argsort(-y_prob, kind="mergesort")
     y_true_sorted = y_true[order]
@@ -295,7 +331,7 @@ def find_best_f1_threshold(y_true: np.ndarray, y_prob: np.ndarray) -> float:
     cum_fp = (1 + thr_idx) - cum_tp
 
     best_f1 = -1.0
-    best_thr = 0.5
+    best_thr = float("inf")
     for tp, fp, idx in zip(cum_tp, cum_fp, thr_idx):
         tp = int(tp)
         fp = int(fp)
@@ -303,13 +339,13 @@ def find_best_f1_threshold(y_true: np.ndarray, y_prob: np.ndarray) -> float:
         denom = 2 * tp + fp + fn
         f1 = (2.0 * tp / denom) if denom > 0 else 0.0
         thr = float(y_prob_sorted[int(idx)])
-        if f1 > best_f1 or (abs(f1 - best_f1) <= 1e-15 and thr > best_thr):
+        if f1 > best_f1 or (abs(f1 - best_f1) <= 1e-15 and thr < best_thr):
             best_f1 = float(f1)
             best_thr = float(thr)
 
     if not np.isfinite(best_thr):
-        return 0.5
-    return float(np.clip(best_thr, 0.0, 1.0))
+        return 0.0, float(max(0.0, best_f1))
+    return float(best_thr), float(max(0.0, best_f1))
 
 
 def plot_history(history: List[Dict[str, Any]], save_path: Path) -> None:
@@ -388,3 +424,4 @@ def plot_roc(y_true: np.ndarray, y_prob: np.ndarray, save_path: Path) -> None:
     fig.tight_layout()
     fig.savefig(save_path, dpi=160)
     plt.close(fig)
+

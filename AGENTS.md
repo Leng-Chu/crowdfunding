@@ -14,6 +14,7 @@
   - `docs/dl_guidelines.md`: 深度学习模块通用工程规范（seq/late/mdl）
   - `docs/dl_mdl.md`: `src/dl/mdl` 模型与复现说明
   - `docs/dl_late.md`: `src/dl/late` 图文晚期融合 baseline 说明
+  - `docs/dl_dcan.md`: `src/dl/dcan` 图文 Cross-Attention baseline 说明
   - `docs/dl_seq.md`: `src/dl/seq` 图文内容块序列建模说明
   - `docs/preprocess_table.md`: `src/preprocess/table` 表格预处理说明
   - `docs/preprocess_embedding.md`: `src/preprocess/embedding` 向量化方案说明（忽略 qwen）
@@ -26,6 +27,7 @@
 - 转换 JSON → 表格: `python src/crawlers/json_to_table.py`
 - 生成嵌入: `python src/preprocess/embedding/vectorize_content.py` 或 `python src/preprocess/embedding/vectorize_csv_data.py`
 - 训练 MDL 多模态模型: `python src/dl/mdl/main.py` (在 `src/dl/mdl/config.py` 中编辑参数)
+- 训练 DCAN 图文 Cross-Attention 模型: `python src/dl/dcan/main.py` (在 `src/dl/dcan/config.py` 中编辑参数)
 
 注意: 某些嵌入后端会下载大型预训练模型; 请优先使用本地缓存并记录任何需要的权重。
 
@@ -45,7 +47,7 @@
 - 回答时均需要使用中文，代码中的注释和输出均需要使用中文。
 - 作图时图里不要有中文。
 - 请注意使用UTF-8编码以支持中文字符的正确显示。
-- 工程规范（seq/late/gate）：二分类任务训练阶段的 best checkpoint 选择以 `val_auc` 为准（若验证集为单类导致 AUC 不可用则回退为 `val_log_loss`）；best epoch 确定后，在该 checkpoint 的 `val_prob` 上选择阈值（最大化 F1，并列取较小阈值），并用该阈值计算最终测试集指标；详见 `docs/dl_guidelines.md`。
+- 工程规范（seq/late/mdl/dcan）：二分类任务训练阶段的 best checkpoint 选择以 `val_auc` 为准（若验证集为单类导致 AUC 不可用则回退为 `val_log_loss`）；best epoch 确定后，在该 checkpoint 的 `val_prob` 上选择阈值（最大化 F1，并列取较小阈值），并用该阈值计算最终测试集指标；详见 `docs/dl_guidelines.md`。
 - 每次修改代码后需要检查 `AGENTS.md` 是否需要更新。
 - 只参考当前要求参考的内容，其余没有提到的项目中的内容默认与当前任务无关。
 - 操作终端默认为Windows Powershell，代码可能会在Windows Powershell和Linux终端上运行。

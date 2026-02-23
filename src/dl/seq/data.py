@@ -5,7 +5,7 @@
 - 读取 metadata CSV（样本 ID、标签、可选 meta 特征列）
 - 读取项目目录下的 content.json，并根据 title/blurb/cover_image + content_sequence 构造“图文交替统一序列”
 - 读取预计算 embedding：cover_image_{emb_type}.npy / title_blurb_{emb_type}.npy / image_{emb_type}.npy / text_{emb_type}.npy
-- 可选计算每个内容块的属性：文本长度 / 图片面积（`use_seq_attr=True` 时读取 content_length/width/height）
+- 可选计算每个内容块的属性：文本长度 / 图片面积（`use_attr=True` 时读取 content_length/width/height）
 - 支持按 max_seq_len 截断（first/random）并输出 seq_mask
 """
 
@@ -379,18 +379,18 @@ def _build_one_project_sequence(
     truncation_strategy: str,
     random_seed: int,
     use_prefix: bool = True,
-    use_seq_attr: bool = True,
+    use_attr: bool = True,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     构造单项目的统一序列特征（已截断 + padding 到 max_seq_len）：
     - X_img: [max_seq_len, D_img]（非 image token 为 0）
     - X_txt: [max_seq_len, D_txt]（非 text token 为 0）
     - seq_type: [max_seq_len]（0=text，1=image）
-    - seq_attr: [max_seq_len]（use_seq_attr=True 时为 log(length/area)，否则全 0）
+    - seq_attr: [max_seq_len]（use_attr=True 时为 log(length/area)，否则全 0）
     - seq_mask: [max_seq_len]（True=有效）
     """
     use_prefix = bool(use_prefix)
-    use_seq_attr = bool(use_seq_attr)
+    use_attr = bool(use_attr)
 
     content_sequence = content_obj.get("content_sequence", None)
     if not isinstance(content_sequence, list):
@@ -482,7 +482,7 @@ def _build_one_project_sequence(
         for i in range(int(title_blurb_emb.shape[0])):
             txt_seq[prefix_pos] = title_blurb_emb[i]
             types.append(0)
-            if use_seq_attr:
+            if use_attr:
                 attrs.append(float(np.log(max(1.0, float(title_blurb_lengths[i])))))
             else:
                 attrs.append(0.0)
@@ -490,7 +490,7 @@ def _build_one_project_sequence(
 
         img_seq[prefix_pos] = cover_emb[0]
         types.append(1)
-        if use_seq_attr:
+        if use_attr:
             cover_area = _extract_cover_area(content_obj, project_id=project_id)
             attrs.append(float(np.log(max(1.0, float(cover_area)))))
         else:
@@ -510,7 +510,7 @@ def _build_one_project_sequence(
             img_idx += 1
 
             types.append(1)
-            if use_seq_attr:
+            if use_attr:
                 # 图片尺寸已在 content.json 中预处理好：width/height
                 # 不读取本地图片文件（仅使用预计算 embedding）。
                 w = _require_int_field(item, "width", project_id=project_id, pos=pos)
@@ -528,7 +528,7 @@ def _build_one_project_sequence(
             txt_idx += 1
 
             types.append(0)
-            if use_seq_attr:
+            if use_attr:
                 # 文本长度已在 content.json 中预处理好：content_length
                 length = _require_int_field(item, "content_length", project_id=project_id, pos=pos)
                 if int(length) < 0:
@@ -607,7 +607,7 @@ def _build_features_for_split(
 
     # 获取开关配置
     use_prefix = getattr(cfg, "use_prefix", True)
-    use_seq_attr = getattr(cfg, "use_seq_attr", True)
+    use_attr = getattr(cfg, "use_attr", True)
 
     y_arr = _encode_binary_target(df_split[cfg.target_col])
     ids = [_normalize_project_id(x) for x in df_split[cfg.id_col].tolist()]
@@ -720,7 +720,7 @@ def _build_features_for_split(
                 truncation_strategy=str(getattr(cfg, "truncation_strategy", "first")),
                 random_seed=int(getattr(cfg, "random_seed", 42)),
                 use_prefix=use_prefix,
-                use_seq_attr=use_seq_attr,
+                use_attr=use_attr,
             )
         except Exception as e:
             stats["bad_sequence"] += 1
@@ -937,3 +937,4 @@ def prepare_seq_data(
     )
 
     return prepared
+

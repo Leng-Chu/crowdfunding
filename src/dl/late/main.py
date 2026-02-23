@@ -39,6 +39,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="是否启用 meta 分支（默认读取 config.py）。",
     )
     parser.add_argument(
+        "--use-attr",
+        default=None,
+        action=argparse.BooleanOptionalAction,
+        help="是否启用文本长度/图片面积属性注入（默认读取 config.py）。",
+    )
+    parser.add_argument(
         "--image-embedding-type",
         default=None,
         choices=["clip", "siglip", "resnet"],
@@ -121,6 +127,15 @@ def _normalize_baseline_mode(baseline_mode: str) -> str:
     return mode
 
 
+def _mode_name(baseline_mode: str, use_meta: bool, use_attr: bool) -> str:
+    mode = str(baseline_mode or "").strip().lower()
+    if bool(use_meta):
+        mode += "+meta"
+    if bool(use_attr):
+        mode += "+attr"
+    return mode
+
+
 def main() -> int:
     args = _parse_args()
     cfg = LateConfig()
@@ -146,6 +161,8 @@ def main() -> int:
         cfg = replace(cfg, run_name=str(args.run_name))
     if args.use_meta is not None:
         cfg = replace(cfg, use_meta=bool(args.use_meta))
+    if args.use_attr is not None:
+        cfg = replace(cfg, use_attr=bool(args.use_attr))
     if args.image_embedding_type is not None:
         cfg = replace(cfg, image_embedding_type=str(args.image_embedding_type))
     if args.text_embedding_type is not None:
@@ -170,7 +187,8 @@ def main() -> int:
     baseline_mode_inner = _normalize_baseline_mode(str(getattr(cfg, "baseline_mode", "attn_pool")))
     cfg = replace(cfg, baseline_mode=baseline_mode_inner)
     baseline_mode = f"late_{baseline_mode_inner}"
-    mode = baseline_mode + ("+meta" if use_meta else "")
+    use_attr = bool(getattr(cfg, "use_attr", True))
+    mode = _mode_name(baseline_mode, use_meta=use_meta, use_attr=use_attr)
     experiment_root = project_root / cfg.experiment_root / mode
     experiment_root.mkdir(parents=True, exist_ok=True)
 
@@ -191,6 +209,7 @@ def main() -> int:
     logger.info("projects_root=%s", str(projects_root))
     logger.info("device=%s", str(getattr(cfg, "device", "auto")))
     logger.info("random_seed=%d", int(getattr(cfg, "random_seed", 0)))
+    logger.info("开关：use_attr=%s", bool(getattr(cfg, "use_attr", True)))
     logger.info(
         "embedding：image=%s text=%s | max_seq_len=%d trunc=%s",
         cfg.image_embedding_type,
@@ -260,6 +279,7 @@ def main() -> int:
             "mode": mode,
             "baseline_mode": baseline_mode_inner,
             "use_meta": use_meta,
+            "use_attr": bool(getattr(cfg, "use_attr", True)),
             "meta_dim": int(prepared.meta_dim),
             "image_embedding_dim": int(prepared.image_embedding_dim),
             "text_embedding_dim": int(prepared.text_embedding_dim),
@@ -370,6 +390,7 @@ def main() -> int:
             "best_threshold": float(best_threshold),
             "baseline_mode": baseline_mode_inner,
             "use_meta": bool(use_meta),
+            "use_attr": bool(getattr(cfg, "use_attr", True)),
             "meta_dim": int(prepared.meta_dim),
             "image_embedding_dim": int(prepared.image_embedding_dim),
             "text_embedding_dim": int(prepared.text_embedding_dim),
@@ -441,3 +462,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

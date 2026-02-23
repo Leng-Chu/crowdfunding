@@ -20,7 +20,7 @@
 
 - 表格清洗：`docs/preprocess_table.md`
 - embedding：`docs/preprocess_embedding.md`
-- 深度学习评估口径：`docs/dl_guidelines.md`（并参考 `docs/dl_seq.md` / `docs/dl_late.md` / `docs/dl_mdl.md`）
+- 深度学习评估口径：`docs/dl_guidelines.md`（并参考 `docs/dl_seq.md` / `docs/dl_late.md` / `docs/dl_mdl.md` / `docs/dl_dcan.md`）
 
 ---
 
@@ -138,7 +138,7 @@ data/projects/<dataset>/<project_id>/
 
 ## 4. 训练侧需要的 `content.json` 字段（与爬虫对齐）
 
-为保证 `src/dl/seq` / `src/dl/late` / `src/dl/mdl` 的读取口径一致，训练阶段默认依赖 `content.json` 中的以下字段：
+为保证 `src/dl/seq` / `src/dl/late` / `src/dl/mdl` / `src/dl/dcan` 的读取口径一致，训练阶段默认依赖 `content.json` 中的以下字段：
 
 - `title/blurb`：dict（包含 `content/content_length`），用于构造 `title_blurb_{emb}.npy` 的 token attr
 - `cover_image`：dict（包含 `url/filename/width/height`），用于构造封面 token 的 attr（面积）
@@ -203,12 +203,13 @@ data/projects/now/<project_id>/
 - `seq`：图文内容块序列建模（见 `docs/dl_seq.md`）
 - `late`：图文晚期融合 baseline（见 `docs/dl_late.md`）
 - `mdl`：多分支（meta/image/text）baseline（见 `docs/dl_mdl.md`）
+- `dcan`：图文 Cross-Attention baseline（见 `docs/dl_dcan.md`）
 
 统一工程规范（best checkpoint / 阈值选择 / 产物结构）见：
 
 - `docs/dl_guidelines.md`
 
-最终每次运行都会在 `experiments/newtest/<mode>/<run_id>/reports/result.csv` 产出单行汇总，便于批量合并对比。
+最终每次运行都会在 `<experiment_root>/<mode>/<run_id>/reports/result.csv` 产出单行汇总（例如 `experiments/newtest` 或 `experiments/dcan`），便于批量合并对比。
 
 ---
 

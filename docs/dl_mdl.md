@@ -1,171 +1,146 @@
-# MDL 多模态二分类模型（代码目录：`src/dl/mdl`）说明
+# MDL 多模态二分类说明（`src/dl/mdl`）
 
-> 说明：本 baseline 的工程命名（日志/产物/mode）统一使用 `mdl`；代码中真正的 MLP 组件（例如 `MetaMLPEncoder`）保留原名。
+## 1. 任务与输入输出
 
-## 1. 任务定义与输入输出
+- 任务：Kickstarter 项目二分类（`state`，0/1）。
+- 输入：
+  - `meta`（可选）：表格特征（类别 one-hot + 数值标准化）。
+  - `image`：图像 embedding 序列。
+  - `text`：文本 embedding 序列。
+- 输出：单个 logit（训练用 `BCEWithLogitsLoss`，推理用 `sigmoid` 转概率）。
 
-- **任务**：Kickstarter 项目二分类（成功/失败）。
-- **标签**：来自表格数据 `state` 字段（**数值 0/1**；正类为 1）。
-- **输入模态**（可按开关自由组合）：
-  - `meta`：表格元数据特征（类别 + 数值）。
-  - `image`：项目封面与正文图片的向量序列（embedding sequence；不做顺序建模，仅作为序列输入 CNN）。
-  - `text`：项目标题/简介与正文文本的向量序列（embedding sequence；不做顺序建模，仅作为序列输入 CNN）。
-- **输出**：二分类 **logits**（训练使用 `BCEWithLogitsLoss`），推理时对 logits 施加 `sigmoid` 得到正类概率。
+说明：当前 `main.py` 固定启用 `image+text`，`meta` 通过 `use_meta` 开关控制。
 
-代码层面通过 `use_meta / use_image / use_text` 三个布尔开关控制启用哪些分支，并自动根据启用分支计算融合层输入维度与隐藏层大小。
+## 2. 数据口径与统一截断（已与 late 对齐）
 
-## 2. 数据组织与文件约定（关键）
+数据文件约定（默认）：
 
-### 2.1 表格数据（metadata CSV）
+- 元数据：`data/metadata/now_processed.csv`
+- 项目目录：`data/projects/now/<project_id>/`
+- 必要文件：
+  - `content.json`
+  - `cover_image_{image_embedding_type}.npy`
+  - `title_blurb_{text_embedding_type}.npy`
+- 条件必要文件：
+  - `image_{image_embedding_type}.npy`（当正文有 image 块时）
+  - `text_{text_embedding_type}.npy`（当正文有 text 块时）
 
-默认配置见 `src/dl/mdl/config.py:MdlConfig`：
+统一截断语义：
 
-- `data_csv`：默认 `data/metadata/now_processed.csv`
-- 关键列名：
-  - `id_col`：`project_id`
-  - `target_col`：`state`（必须为 0/1 数值）
-  - `categorical_cols`：`category, country, currency`
-  - `numeric_cols`：`duration_days, log_usd_goal`
-  - `drop_cols`：默认丢弃 `project_id, time`
+1. 先构建统一序列（按 token 顺序）：
+   - `title_blurb` 的每一行（text prefix）
+   - `cover_image`（image prefix）
+   - `content_sequence` 中正文块（保持原顺序）
+2. 再在统一序列上做整体窗口截断（`max_seq_len` + `truncation_strategy`）。
+3. 最后将截断后的 token 映射回 image/text 两个序列。
 
-表格预处理由 `src/dl/mdl/data.py:TabularPreprocessor` 完成（one-hot + 数值标准化），并在产物中保存，便于复现。
+同时生成 token 级属性（与 `late` 对齐）：
 
-### 2.2 项目目录（projects_root）
+- `attr_image`：每个 image token 对应 `log(max(1, area))`。
+  - `cover_image` 的面积来自 `content.json.cover_image.width/height`。
+  - 正文 image 的面积来自 `content_sequence` 中该块的 `width/height`。
+- `attr_text`：每个 text token 对应 `log(max(1, length))`。
+  - `title/blurb` 长度优先取 `content_length`，缺失时回退 `content` 字符串长度。
+  - 正文 text 长度同样优先取 `content_length`。
 
-`projects_root` 默认 `data/projects/now`，每个项目一个文件夹：
+属性开关（`use_seq_attr`）：
 
-```
-data/projects/<dataset>/<project_id>/
-  content.json
-  cover_image_{emb_type}.npy
-  title_blurb_{emb_type}.npy
-  image_{emb_type}.npy          (可选：当 content_sequence 中 image 数量为 0 时可缺失)
-  text_{emb_type}.npy           (可选：当 content_sequence 中 text 数量为 0 时可缺失)
-```
+- `use_seq_attr=True`（默认）：按上面的规则构造并使用属性。
+- `use_seq_attr=False`：仍保留 `attr_image/attr_text` 张量，但全部置 0，模型前向不注入属性。
 
-其中 `content.json` 必须包含字段 `content_sequence`，它是按页面呈现顺序排列的列表；每个元素包含 `type ∈ {"text", "image"}`。
+`truncation_strategy`：
 
-### 2.3 向量文件命名（与 `src/preprocess/embedding` 对齐）
+- `first`：取前 `max_seq_len`。
+- `random`：从所有长度为 `max_seq_len` 的窗口随机取一个，seed 为 `random_seed + sha256(project_id)`，保证可复现。
 
-`src/dl/mdl/data.py` 约定如下文件名（`{emb_type}` 来自配置项 `image_embedding_type/text_embedding_type`）：
+注意：prefix 会参与统一截断，不再“永远保留”。因此某个样本在截断后可能出现单模态空序列（`len=0`），模型侧已做兼容。
 
-- **图片侧**（`image_embedding_type ∈ {clip, siglip, resnet}`）
-  - 必须：`cover_image_{emb_type}.npy`（封面图，形状通常为 `[1, D]`）
-  - 可选：`image_{emb_type}.npy`（正文图片序列，形状通常为 `[K, D]`）
-- **文本侧**（`text_embedding_type ∈ {bge, clip, siglip}`）
-  - 必须：`title_blurb_{emb_type}.npy`（标题+简介，形状可能为 `[1, D]` 或 `[2, D]`）
-  - 可选：`text_{emb_type}.npy`（正文文本分段序列，形状通常为 `[T, D]`）
+## 3. 模型结构
 
-向量生成细节请参见 `docs/preprocess_embedding.md`。
+代码位置：`src/dl/mdl/model.py`
 
-### 2.4 统一序列截断（与工程规范对齐）
+- `MetaMLPEncoder`：处理表格特征。
+- `ImageCNNEncoder`：处理图像 embedding 序列。
+- `TextCNNEncoder`：处理文本 embedding 序列。
+- `MultiModalBinaryClassifier`：拼接分支特征后，经过融合 head 输出二分类 logit。
 
-为保证与 `src/dl/late` / `src/dl/seq` 的样本口径一致，本 baseline 使用 `content.json` 的 `content_sequence` 做**统一序列截断**：
+实现细节：
 
-- `max_seq_len`：内容块窗口长度上限（控制计算量）
-- `truncation_strategy`：
-  - `first`：取最前窗口
-  - `random`：在所有长度为 `max_seq_len` 的窗口中随机取一个；随机性与样本绑定（`sha256(project_id)` 与 `random_seed` 混合），保证可复现
+- image/text 分支会显式接收 `attr_image/attr_text`，并通过线性投影后加到 token embedding 上，再进入 CNN。
+- image/text 分支均支持 `length=0` 样本（返回零向量，避免数值异常）。
+- 融合层 `fusion_hidden_dim` 自动按输入维度计算。
 
-截断窗口确定后：
+## 4. 训练与 best checkpoint 规则（已与 late 对齐）
 
-- 对 `content_sequence` 中落在窗口内的 `image/text` 内容块，分别映射回 `image_*.npy / text_*.npy` 的子集；
-- 再把 `cover_image_*.npy / title_blurb_*.npy` 分别拼到 image/text 序列最前面，得到最终输入序列。
+代码位置：`src/dl/mdl/train_eval.py`
 
-### 2.5 缺失策略
+训练技巧：
 
-当项目目录、`content.json` 或“必须的 embedding 文件”缺失时，由 `missing_strategy` 控制：
+- Label Smoothing：启用（`_LABEL_SMOOTHING_EPS = 0.05`）。
+- EMA：启用（`_EMA_DECAY = 0.999`）。
+- AMP：CUDA 下启用（训练和概率推理均使用 autocast/GradScaler）。
+- 学习率调度：warmup + cosine，按 step 更新（与 `late` 一致）。
 
-- `error`：直接抛错（默认，更利于保证论文实验的数据一致性）。
-- `skip`：跳过该样本（会减少可用数据量；统计信息会记录跳过数量；若某个 split 最终无可用样本则报错）。
+best checkpoint 规则：
 
-## 3. 数据划分
+- 固定优先 `val_auc`（越大越好）。
+- 若验证集单类导致 AUC 不可用，回退到 `val_log_loss`（越小越好）。
+- 并列规则：
+  - 当 metric 为 `val_auc`：`val_auc` 降序 -> `val_log_loss` 升序 -> `epoch` 升序。
+  - 当 metric 为 `val_log_loss`：`val_log_loss` 升序 -> `epoch` 升序。
 
-按比例切分 train/val/test（可选是否在切分前打乱），对应 `src/dl/mdl/config.py:MdlConfig`：
+## 5. 阈值规则（并列取更小阈值）
 
-- `train_ratio / val_ratio / test_ratio`：默认 `0.6/0.2/0.2`
-- `shuffle_before_split`：默认 `True`
+代码位置：`src/dl/mdl/utils.py`
 
-每次运行会在 `reports/splits.csv` 写出每个 `project_id` 的 split 归属与标签，便于复核。
+- 在 best epoch 对应 checkpoint 的 `val_prob` 上搜索 `best_threshold`（最大化 F1）。
+- 若多个阈值 F1 并列，取更小阈值。
+- 最终 train/val/test 的阈值相关指标统一使用该阈值计算。
 
-## 4. 模型结构（实现描述）
+## 6. 默认超参（与 late 对齐）
 
-模型实现位于 `src/dl/mdl/model.py`，包含多分支融合网络；单/双分支通过关闭部分分支做消融，结构为：分支编码器 + 特征拼接 + 融合头。
+配置位置：`src/dl/mdl/config.py`
 
-### 4.1 meta 分支（表格特征）
+- `batch_size = 256`
+- `max_epochs = 80`
+- `alpha = 4e-4`（AdamW 的 `weight_decay`）
 
-- 输入：预处理后的表格特征向量 `x_meta ∈ R^{B×F}`。
-- 结构：全连接 MLP（`MetaMLPEncoder`）
-  - 典型默认：`Linear(F→256) + ReLU + Dropout(0.3)`
+其余超参以 `MdlConfig` 为准。
 
-### 4.2 image 分支（图片向量序列）
+## 7. 运行方式
 
-- 输入：图片向量序列 `x_image ∈ R^{B×L×D}`。
-- 结构：两层 1D CNN + 池化 + padding mask + 全局最大池化（`ImageCNNEncoder`）。
+从仓库根目录运行：
 
-### 4.3 text 分支（文本向量序列）
-
-- 输入：文本向量序列 `x_text ∈ R^{B×L×D}`。
-- 结构：TextCNN（`TextCNNEncoder`），与 image 分支类似，但层数/配置以 `model.py` 实现为准。
-
-### 4.4 多模态融合
-
-- 对启用的分支分别得到定长向量表示后拼接；
-- 融合头：`Linear → ReLU → Dropout → Linear(→1)`，其中 `fusion_hidden_dim` 在构建模型时按启用分支自动计算（默认 `2 * fusion_in_dim`）。
-
-## 5. 训练与评估（工程规范对齐）
-
-训练入口：`src/dl/mdl/main.py`，训练与评估逻辑：`src/dl/mdl/train_eval.py`。
-
-- 损失：`BCEWithLogitsLoss` + 轻量 label smoothing
-- 优化器：AdamW（`learning_rate_init`，`alpha` 作为 `weight_decay`）
-- 学习率调度：warmup + cosine（每 step 更新；最小学习率由 `lr_scheduler_min_lr` 控制）
-- 梯度裁剪：按 `max_grad_norm` 做全局 norm clip，并记录 `grad_norm`
-- AMP：CUDA 时启用 autocast + GradScaler
-- EMA：评估/early stopping 使用 EMA 权重，减少指标抖动并提升稳定性
-- best checkpoint 口径：逐 epoch 仅计算阈值无关指标 `val_auc` / `val_log_loss`；优先使用 `val_auc`（验证集为单类导致 AUC 不可用则回退为 `val_log_loss`）；history/log 中不记录逐 epoch 阈值相关字段
-- 阈值选择：best epoch 确定后，用该 checkpoint 的 `val_prob` 搜索一次 `best_threshold`（最大化 F1，并列取较小阈值），并用该阈值计算最终 train/val/test 指标；详见 `docs/dl_guidelines.md`
-
-## 6. 配置文件与命令行参数
-
-配置为单 dataclass：`src/dl/mdl/config.py:MdlConfig`。
-
-命令行参数仅覆盖少量常用项：
-
-- `--run-name`
-- `--seed`（覆盖 `random_seed`）
-- `--use-meta / --no-use-meta`
-- `--use-image / --no-use-image`
-- `--use-text / --no-use-text`
-- `--image-embedding-type`
-- `--text-embedding-type`
-- `--device`
-- `--gpu`（等价于 `--device cuda:N`，与 `--device` 互斥）
-
-说明：只要命令行出现任一 `--use-meta/--use-image/--use-text`（或 `--no-use-*`），就以命令行为准，未显式指定的分支默认关闭。
-
-## 7. 运行方法与产物位置
-
-### 7.1 运行命令（从仓库根目录）
-
-- 默认配置运行：
+- 默认：
   - `conda run -n crowdfunding python src/dl/mdl/main.py`
-- 指定嵌入类型与设备：
-  - `conda run -n crowdfunding python src/dl/mdl/main.py --run-name clip --seed 42 --image-embedding-type clip --text-embedding-type clip --device cuda:0`
-- 只使用 meta（关闭 image/text）：
-  - `conda run -n crowdfunding python src/dl/mdl/main.py --run-name meta --seed 42 --use-meta --device cuda:0`
-- 仅指定 GPU 序号（等价于 `--device cuda:N`）：
-  - `conda run -n crowdfunding python src/dl/mdl/main.py --gpu 1`
+- 指定 run_name、seed、设备：
+  - `conda run -n crowdfunding python src/dl/mdl/main.py --run-name clip --seed 42 --device cuda:0`
+- 指定 embedding 类型：
+  - `conda run -n crowdfunding python src/dl/mdl/main.py --image-embedding-type clip --text-embedding-type clip --device cuda:0`
+- 关闭 meta：
+  - `conda run -n crowdfunding python src/dl/mdl/main.py --no-use-meta --device cuda:0`
+- 关闭属性注入：
+  - `conda run -n crowdfunding python src/dl/mdl/main.py --no-use-seq-attr --device cuda:0`
 
-### 7.2 输出目录结构
+## 8. 批量脚本
 
-默认写入 `experiments/newtest/<mode>/<run_id>/`：
+仓库已提供批量运行脚本：
 
-- `mode`：`mdl_meta+image+text` / `mdl_image+text` / `mdl_meta+text` ...（由分支开关组合得到）
-- `run_id`：时间戳（可附带 `run_name` 后缀）
+- `src/scripts/run/mdl_run_all.py`
 
-目录结构：
+示例：
 
-- `artifacts/`：`model.pt`（best 权重 + best_info + best_threshold 等）、`preprocessor.pkl` / `feature_names.txt`（仅 `use_meta=True`）
-- `reports/`：`train.log`、`config.json`、`history.csv`、`metrics.json`、`splits.csv`、`predictions_val.csv` / `predictions_test.csv`、`result.csv`
-- `plots/`：`history.png`、`roc_val.png`、`roc_test.png`（若 `save_plots=True`；图内无中文）
+- 单个 seed 运行预设组合：
+  - `python src/scripts/run/mdl_run_all.py all --seed 42`
+- seed 区间运行：
+  - `python src/scripts/run/mdl_run_all.py single --start-seed 42 --end-seed 46`
+- 批量运行时关闭属性注入：
+  - `python src/scripts/run/mdl_run_all.py all --seed 42 --no-use-seq-attr`
+
+## 9. 产物目录
+
+输出目录：`experiments/newtest/<mode>/<run_id>/`
+
+- `artifacts/`：`model.pt`、`preprocessor.pkl`（启用 meta 时）等。
+- `reports/`：`config.json`、`history.csv`、`metrics.json`、`predictions_*.csv`、`splits.csv`、`result.csv`。
+- `plots/`：`history.png`、`roc_val.png`、`roc_test.png`（图中不使用中文）。

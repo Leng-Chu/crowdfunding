@@ -39,6 +39,7 @@ class MdlConfig:
     # 分支开关
     # -----------------------------
     use_meta: bool = True
+    use_attr: bool = True  # 是否注入文本长度/图片面积属性（attr）
 
     # -----------------------------
     # 列配置（CSV）
@@ -104,11 +105,11 @@ class MdlConfig:
     # -----------------------------
     # 训练超参
     # -----------------------------
-    alpha: float = 5e-4  # weight_decay（L2）
+    alpha: float = 4e-4  # weight_decay（与 late 对齐）
     learning_rate_init: float = 5e-4
     batch_size: int = 256
 
-    max_epochs: int = 100
+    max_epochs: int = 80
     early_stop_patience: int = 10
     early_stop_min_epochs: int = 5
     lr_scheduler_min_lr: float = 1e-5
@@ -119,3 +120,4 @@ class MdlConfig:
 
     def to_dict(self) -> dict:
         return asdict(self)
+

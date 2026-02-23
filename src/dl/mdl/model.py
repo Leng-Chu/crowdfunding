@@ -68,6 +68,7 @@ class ImageCNNEncoder(nn.Module):
         pad = int(conv_kernel_size // 2)
 
         self.input_drop = nn.Dropout(p=float(input_dropout))
+        self.attr_proj = nn.Linear(1, int(embedding_dim))
 
         self.conv1 = nn.Conv1d(
             in_channels=int(embedding_dim),
@@ -97,15 +98,35 @@ class ImageCNNEncoder(nn.Module):
     def _init_weights(self) -> None:
         nn.init.kaiming_uniform_(self.conv1.weight, nonlinearity="relu")
         nn.init.kaiming_uniform_(self.conv2.weight, nonlinearity="relu")
+        nn.init.xavier_uniform_(self.attr_proj.weight)
+        if self.attr_proj.bias is not None:
+            nn.init.zeros_(self.attr_proj.bias)
 
     @staticmethod
     def _pool_len(lengths: torch.Tensor) -> torch.Tensor:
         lengths = lengths.to(torch.int64)
         return (lengths + 1) // 2
 
-    def forward(self, x: torch.Tensor, lengths: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        lengths: torch.Tensor | None = None,
+        attr: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         if x.ndim != 3:
             raise ValueError(f"输入 x 需要为 3 维张量 (B, L, D)，但得到 {tuple(x.shape)}")
+        if attr is not None:
+            if attr.ndim != 2:
+                raise ValueError(f"attr 需要为 2 维张量 (B, L)，但得到 {tuple(attr.shape)}")
+            if int(attr.shape[0]) != int(x.shape[0]) or int(attr.shape[1]) != int(x.shape[1]):
+                raise ValueError(f"attr/x 形状不匹配：attr={tuple(attr.shape)} x={tuple(x.shape)}")
+
+        if int(x.shape[1]) == 0:
+            return x.new_zeros((int(x.shape[0]), int(self.output_dim)))
+
+        if attr is not None:
+            attr_token = self.attr_proj(attr.to(dtype=x.dtype).unsqueeze(-1))
+            x = x + attr_token
 
         z = x.transpose(1, 2).contiguous()
         z = self.input_drop(z)
@@ -124,6 +145,7 @@ class ImageCNNEncoder(nn.Module):
         z = self.pool2(z)
         z = self.drop2(z)
 
+        valid_after_pool = None
         if lengths is not None:
             l2 = self._pool_len(self._pool_len(lengths.to(z.device)))
             max_len = int(z.shape[-1])
@@ -131,8 +153,11 @@ class ImageCNNEncoder(nn.Module):
             mask = idx < l2.unsqueeze(1)
             mask_fill_value = torch.finfo(z.dtype).min
             z = z.masked_fill(~mask.unsqueeze(1), mask_fill_value)
+            valid_after_pool = l2 > 0
 
         feat = torch.amax(z, dim=-1)
+        if valid_after_pool is not None:
+            feat = torch.where(valid_after_pool.unsqueeze(1), feat, torch.zeros_like(feat))
         return feat
 
 
@@ -162,6 +187,7 @@ class TextCNNEncoder(nn.Module):
         channels = (96, 128, 256)
 
         self.input_drop = nn.Dropout(p=float(input_dropout))
+        self.attr_proj = nn.Linear(1, int(embedding_dim))
 
         self.conv1 = nn.Conv1d(
             in_channels=int(embedding_dim),
@@ -203,15 +229,35 @@ class TextCNNEncoder(nn.Module):
         nn.init.kaiming_uniform_(self.conv1.weight, nonlinearity="relu")
         nn.init.kaiming_uniform_(self.conv2.weight, nonlinearity="relu")
         nn.init.kaiming_uniform_(self.conv3.weight, nonlinearity="relu")
+        nn.init.xavier_uniform_(self.attr_proj.weight)
+        if self.attr_proj.bias is not None:
+            nn.init.zeros_(self.attr_proj.bias)
 
     @staticmethod
     def _pool_len(lengths: torch.Tensor) -> torch.Tensor:
         lengths = lengths.to(torch.int64)
         return (lengths + 1) // 2
 
-    def forward(self, x: torch.Tensor, lengths: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        lengths: torch.Tensor | None = None,
+        attr: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         if x.ndim != 3:
             raise ValueError(f"输入 x 需要为 3 维张量 (B, L, D)，但得到 {tuple(x.shape)}")
+        if attr is not None:
+            if attr.ndim != 2:
+                raise ValueError(f"attr 需要为 2 维张量 (B, L)，但得到 {tuple(attr.shape)}")
+            if int(attr.shape[0]) != int(x.shape[0]) or int(attr.shape[1]) != int(x.shape[1]):
+                raise ValueError(f"attr/x 形状不匹配：attr={tuple(attr.shape)} x={tuple(x.shape)}")
+
+        if int(x.shape[1]) == 0:
+            return x.new_zeros((int(x.shape[0]), int(self.output_dim)))
+
+        if attr is not None:
+            attr_token = self.attr_proj(attr.to(dtype=x.dtype).unsqueeze(-1))
+            x = x + attr_token
 
         z = x.transpose(1, 2).contiguous()
         z = self.input_drop(z)
@@ -237,6 +283,7 @@ class TextCNNEncoder(nn.Module):
         z = self.pool3(z)
         z = self.drop3(z)
 
+        valid_after_pool = None
         if lengths is not None:
             l3 = self._pool_len(self._pool_len(self._pool_len(lengths.to(z.device))))
             max_len = int(z.shape[-1])
@@ -244,8 +291,11 @@ class TextCNNEncoder(nn.Module):
             mask = idx < l3.unsqueeze(1)
             mask_fill_value = torch.finfo(z.dtype).min
             z = z.masked_fill(~mask.unsqueeze(1), mask_fill_value)
+            valid_after_pool = l3 > 0
 
         feat = torch.amax(z, dim=-1)
+        if valid_after_pool is not None:
+            feat = torch.where(valid_after_pool.unsqueeze(1), feat, torch.zeros_like(feat))
         return feat
 
 
@@ -257,6 +307,7 @@ class MultiModalBinaryClassifier(nn.Module):
         use_meta: bool,
         use_image: bool,
         use_text: bool,
+        use_attr: bool = True,
         meta_input_dim: int = 0,
         image_embedding_dim: int = 0,
         text_embedding_dim: int = 0,
@@ -279,6 +330,7 @@ class MultiModalBinaryClassifier(nn.Module):
         self.use_meta = bool(use_meta)
         self.use_image = bool(use_image)
         self.use_text = bool(use_text)
+        self.use_attr = bool(use_attr)
         if not (self.use_meta or self.use_image or self.use_text):
             raise ValueError("至少需要开启一个分支。")
 
@@ -344,8 +396,10 @@ class MultiModalBinaryClassifier(nn.Module):
         x_meta: torch.Tensor | None = None,
         x_image: torch.Tensor | None = None,
         len_image: torch.Tensor | None = None,
+        attr_image: torch.Tensor | None = None,
         x_text: torch.Tensor | None = None,
         len_text: torch.Tensor | None = None,
+        attr_text: torch.Tensor | None = None,
     ) -> torch.Tensor:
         feats: List[torch.Tensor] = []
 
@@ -357,12 +411,16 @@ class MultiModalBinaryClassifier(nn.Module):
         if self.use_image:
             if self.image is None or x_image is None:
                 raise ValueError("image 分支已开启，但 x_image 为空。")
-            feats.append(self.image(x_image, lengths=len_image))
+            if self.use_attr and attr_image is None:
+                raise ValueError("use_attr=True 时，image 分支要求 attr_image 非空。")
+            feats.append(self.image(x_image, lengths=len_image, attr=attr_image if self.use_attr else None))
 
         if self.use_text:
             if self.text is None or x_text is None:
                 raise ValueError("text 分支已开启，但 x_text 为空。")
-            feats.append(self.text(x_text, lengths=len_text))
+            if self.use_attr and attr_text is None:
+                raise ValueError("use_attr=True 时，text 分支要求 attr_text 非空。")
+            feats.append(self.text(x_text, lengths=len_text, attr=attr_text if self.use_attr else None))
 
         fused = torch.cat(feats, dim=1)
         fused = torch.relu(self.fusion_fc(fused))
@@ -384,6 +442,7 @@ def build_multimodal_model(
         use_meta=use_meta,
         use_image=use_image,
         use_text=use_text,
+        use_attr=bool(getattr(cfg, "use_attr", True)),
         meta_input_dim=int(meta_input_dim) if use_meta else 0,
         image_embedding_dim=int(image_embedding_dim) if use_image else 0,
         text_embedding_dim=int(text_embedding_dim) if use_text else 0,
@@ -400,3 +459,4 @@ def build_multimodal_model(
         text_use_batch_norm=bool(getattr(cfg, "text_use_batch_norm", False)),
         fusion_dropout=float(getattr(cfg, "fusion_dropout", 0.9)),
     )
+

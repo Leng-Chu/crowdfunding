@@ -41,6 +41,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="是否启用 meta 分支。",
     )
     parser.add_argument(
+        "--use-attr",
+        default=None,
+        action=argparse.BooleanOptionalAction,
+        help="是否启用文本长度/图片面积属性注入（默认读取 config.py）。",
+    )
+    parser.add_argument(
         "--image-embedding-type",
         default=None,
         choices=["clip", "siglip", "resnet"],
@@ -114,8 +120,13 @@ def _save_single_row_csv(save_path: Path, row: dict) -> None:
         writer.writerow(row)
 
 
-def _mode_name(use_meta: bool) -> str:
-    return "mdl+meta" if use_meta else "mdl"
+def _mode_name(use_meta: bool, use_attr: bool) -> str:
+    mode = "mdl"
+    if bool(use_meta):
+        mode += "+meta"
+    if bool(use_attr):
+        mode += "+attr"
+    return mode
 
 
 def main() -> int:
@@ -143,6 +154,8 @@ def main() -> int:
         cfg = replace(cfg, run_name=str(args.run_name))
     if args.use_meta is not None:
         cfg = replace(cfg, use_meta=bool(args.use_meta))
+    if args.use_attr is not None:
+        cfg = replace(cfg, use_attr=bool(args.use_attr))
     if args.image_embedding_type is not None:
         cfg = replace(cfg, image_embedding_type=str(args.image_embedding_type))
     if args.text_embedding_type is not None:
@@ -156,6 +169,7 @@ def main() -> int:
     if args.seed is not None:
         cfg = replace(cfg, random_seed=int(args.seed))
     use_meta = bool(cfg.use_meta)
+    use_attr = bool(getattr(cfg, "use_attr", True))
     use_image = True
     use_text = True
 
@@ -163,7 +177,7 @@ def main() -> int:
     csv_path = project_root / cfg.data_csv
     projects_root = project_root / cfg.projects_root
 
-    mode = _mode_name(use_meta)
+    mode = _mode_name(use_meta, use_attr)
     experiment_root = project_root / cfg.experiment_root / mode
     experiment_root.mkdir(parents=True, exist_ok=True)
 
@@ -177,6 +191,7 @@ def main() -> int:
     logger.info("projects_root=%s", str(projects_root))
     logger.info("device=%s", str(getattr(cfg, "device", "auto")))
     logger.info("random_seed=%d", int(getattr(cfg, "random_seed", 0)))
+    logger.info("开关：use_attr=%s", bool(getattr(cfg, "use_attr", True)))
     logger.info(
         "embedding：image=%s text=%s | max_seq_len=%d trunc=%s | missing=%s",
         cfg.image_embedding_type,
@@ -271,14 +286,18 @@ def main() -> int:
         X_meta_train=prepared.X_meta_train,
         X_image_train=prepared.X_image_train,
         len_image_train=prepared.len_image_train,
+        attr_image_train=prepared.attr_image_train,
         X_text_train=prepared.X_text_train,
         len_text_train=prepared.len_text_train,
+        attr_text_train=prepared.attr_text_train,
         y_train=prepared.y_train,
         X_meta_val=prepared.X_meta_val,
         X_image_val=prepared.X_image_val,
         len_image_val=prepared.len_image_val,
+        attr_image_val=prepared.attr_image_val,
         X_text_val=prepared.X_text_val,
         len_text_val=prepared.len_text_val,
+        attr_text_val=prepared.attr_text_val,
         y_val=prepared.y_val,
         cfg=cfg,
         logger=logger,
@@ -301,8 +320,10 @@ def main() -> int:
         X_meta=prepared.X_meta_train,
         X_image=prepared.X_image_train,
         len_image=prepared.len_image_train,
+        attr_image=prepared.attr_image_train,
         X_text=prepared.X_text_train,
         len_text=prepared.len_text_train,
+        attr_text=prepared.attr_text_train,
         y=prepared.y_train,
         cfg=cfg,
     )
@@ -314,8 +335,10 @@ def main() -> int:
         X_meta=prepared.X_meta_val,
         X_image=prepared.X_image_val,
         len_image=prepared.len_image_val,
+        attr_image=prepared.attr_image_val,
         X_text=prepared.X_text_val,
         len_text=prepared.len_text_val,
+        attr_text=prepared.attr_text_val,
         y=prepared.y_val,
         cfg=cfg,
     )
@@ -327,8 +350,10 @@ def main() -> int:
         X_meta=prepared.X_meta_test,
         X_image=prepared.X_image_test,
         len_image=prepared.len_image_test,
+        attr_image=prepared.attr_image_test,
         X_text=prepared.X_text_test,
         len_text=prepared.len_text_test,
+        attr_text=prepared.attr_text_test,
         y=prepared.y_test,
         cfg=cfg,
     )
@@ -362,6 +387,7 @@ def main() -> int:
             "use_meta": bool(use_meta),
             "use_image": bool(use_image),
             "use_text": bool(use_text),
+            "use_attr": bool(getattr(cfg, "use_attr", True)),
             "meta_dim": int(prepared.meta_dim),
             "image_embedding_dim": int(prepared.image_embedding_dim),
             "text_embedding_dim": int(prepared.text_embedding_dim),
@@ -436,3 +462,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

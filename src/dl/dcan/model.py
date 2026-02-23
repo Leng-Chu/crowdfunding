@@ -6,7 +6,7 @@
 - 仅保留 use_meta：meta 分支与 mlp baseline 完全一致，仅在融合阶段 concat，不参与 DCAN 注意力交互
 
 DCAN 结构（baseline）：
-1) Modality Projection：Linear -> ReLU
+1) Modality Projection：Linear -> ReLU，并融合 token 属性（图像面积/文本长度）
 2) Query Generator：K/V 生成 + masked mean pooling 得 raw_q + 单头 scaled dot attention 得 refined_q
 3) Cross-Attention Blocks：堆叠 L 层，对称更新 img_q / txt_q
 4) 融合分类：concat(img_q, txt_q, [meta_h]) -> MLP head 输出 logits
@@ -203,6 +203,7 @@ class DCANBinaryClassifier(nn.Module):
     def __init__(
         self,
         use_meta: bool,
+        use_attr: bool,
         meta_input_dim: int,
         image_embedding_dim: int,
         text_embedding_dim: int,
@@ -229,12 +230,17 @@ class DCANBinaryClassifier(nn.Module):
             raise ValueError("fusion_dropout 需要在 [0, 1) 之间")
 
         self.use_meta = bool(use_meta)
+        self.use_attr = bool(use_attr)
         self.d_model = int(d_model)
         self.num_cross_layers = int(num_cross_layers)
 
         # 模块 1：Modality Projection
         self.img_proj = nn.Sequential(nn.Linear(int(image_embedding_dim), int(d_model)), nn.ReLU())
         self.txt_proj = nn.Sequential(nn.Linear(int(text_embedding_dim), int(d_model)), nn.ReLU())
+        self.img_attr_proj = nn.Linear(1, int(d_model))
+        self.txt_attr_proj = nn.Linear(1, int(d_model))
+        self.img_ln = nn.LayerNorm(int(d_model))
+        self.txt_ln = nn.LayerNorm(int(d_model))
 
         # 模块 2：Query Generator（每个模态一个）
         self.img_query_gen = QueryGenerator(d_model=int(d_model))
@@ -275,14 +281,18 @@ class DCANBinaryClassifier(nn.Module):
     def forward(
         self,
         img_emb: torch.Tensor,
+        img_attr: torch.Tensor | None,
         txt_emb: torch.Tensor,
+        txt_attr: torch.Tensor | None,
         img_mask: torch.Tensor,
         txt_mask: torch.Tensor,
         meta_features: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         img_emb: [B, N, D_img]
+        img_attr: [B, N]（log(max(1, area))）
         txt_emb: [B, M, D_txt]
+        txt_attr: [B, M]（log(max(1, length))）
         img_mask/txt_mask: [B, N]/[B, M]，True 表示有效位置
         meta_features: [B, F]（可选）
         返回 logits: [B]
@@ -298,13 +308,27 @@ class DCANBinaryClassifier(nn.Module):
             raise ValueError(f"img_emb/img_mask 形状不匹配：img={tuple(img_emb.shape)} mask={tuple(img_mask.shape)}")
         if txt_emb.shape[0] != txt_mask.shape[0] or txt_emb.shape[1] != txt_mask.shape[1]:
             raise ValueError(f"txt_emb/txt_mask 形状不匹配：txt={tuple(txt_emb.shape)} mask={tuple(txt_mask.shape)}")
+        if self.use_attr:
+            if img_attr is None or txt_attr is None:
+                raise ValueError("use_attr=True 时，img_attr/txt_attr 不能为空。")
+            if img_attr.ndim != 2 or txt_attr.ndim != 2:
+                raise ValueError(f"img_attr/txt_attr 需要是 2 维张量，但得到 {tuple(img_attr.shape)} / {tuple(txt_attr.shape)}")
+            if img_emb.shape[0] != img_attr.shape[0] or img_emb.shape[1] != img_attr.shape[1]:
+                raise ValueError(f"img_emb/img_attr 形状不匹配：img={tuple(img_emb.shape)} attr={tuple(img_attr.shape)}")
+            if txt_emb.shape[0] != txt_attr.shape[0] or txt_emb.shape[1] != txt_attr.shape[1]:
+                raise ValueError(f"txt_emb/txt_attr 形状不匹配：txt={tuple(txt_emb.shape)} attr={tuple(txt_attr.shape)}")
 
         img_mask = img_mask.to(dtype=torch.bool)
         txt_mask = txt_mask.to(dtype=torch.bool)
 
         # 1) Projection
-        img_feat = self.img_proj(img_emb)  # [B, N, d_model]
-        txt_feat = self.txt_proj(txt_emb)  # [B, M, d_model]
+        img_feat = self.img_proj(img_emb)
+        txt_feat = self.txt_proj(txt_emb)
+        if self.use_attr:
+            img_feat = img_feat + self.img_attr_proj(img_attr.unsqueeze(-1))  # [B, N, d_model]
+            txt_feat = txt_feat + self.txt_attr_proj(txt_attr.unsqueeze(-1))  # [B, M, d_model]
+        img_feat = self.img_ln(img_feat)
+        txt_feat = self.txt_ln(txt_feat)
 
         # 2) Query Generator
         K_img, V_img, img_q = self.img_query_gen(img_feat, img_mask)
@@ -345,6 +369,7 @@ def build_dcan_model(
 ) -> DCANBinaryClassifier:
     return DCANBinaryClassifier(
         use_meta=bool(use_meta),
+        use_attr=bool(getattr(cfg, "use_attr", True)),
         meta_input_dim=int(meta_input_dim) if bool(use_meta) else 0,
         image_embedding_dim=int(image_embedding_dim),
         text_embedding_dim=int(text_embedding_dim),
@@ -353,6 +378,7 @@ def build_dcan_model(
         cross_ffn_dropout=float(getattr(cfg, "cross_ffn_dropout", 0.1)),
         meta_hidden_dim=int(getattr(cfg, "meta_hidden_dim", 256)),
         meta_dropout=float(getattr(cfg, "meta_dropout", 0.3)),
-        fusion_dropout=float(getattr(cfg, "fusion_dropout", 0.9)),
+        fusion_dropout=float(getattr(cfg, "fusion_dropout", 0.5)),
     )
+
 

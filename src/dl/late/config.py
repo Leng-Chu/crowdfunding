@@ -38,6 +38,7 @@ class LateConfig:
     # 分支开关
     # -----------------------------
     use_meta: bool = True
+    use_attr: bool = True  # 是否注入文本长度/图片面积属性（attr）
 
     # -----------------------------
     # 列配置（CSV）
@@ -117,4 +118,5 @@ class LateConfig:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
 

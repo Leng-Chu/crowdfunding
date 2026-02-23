@@ -1,6 +1,6 @@
 # 深度学习模块通用工程规范
 
-本文总结 `src/dl/seq` 与 `src/dl/late` 两套训练代码的共同工程规范，用于保证实验可复现、指标口径一致、产物结构稳定，便于实验比较与自动化汇总。
+本文总结 `src/dl/seq`、`src/dl/late`、`src/dl/mdl` 与 `src/dl/dcan` 的共同工程规范，用于保证实验可复现、指标口径一致、产物结构稳定，便于实验比较与自动化汇总。
 
 该规范也可作为其它 `src/dl/*` 子模块的参考（尤其是二分类阈值与产物结构部分）。
 
@@ -11,7 +11,7 @@
 - 从仓库根目录运行脚本（代码内部会基于 `__file__` 推断仓库根路径，避免工作目录差异导致路径错误）。
 - 所有路径使用相对仓库根目录的相对路径（例如 `data/...`、`experiments/...`），避免硬编码绝对路径。
 - 输出目录统一写入 `<experiment_root>/<mode>/<run_id>/`，其中：
-  - `<experiment_root>` 由各模块 `config.py` 的 `experiment_root` 指定（当前默认使用 `experiments/newtest`）
+  - `<experiment_root>` 由各模块 `config.py` 的 `experiment_root` 指定（例如 `experiments/newtest` 或 `experiments/dcan`）
   - `<mode>` 为实验组名称（由 `baseline_mode` 及开关组合得到；必要时建议加模块前缀避免冲突，例如 `late_*` / `mdl_*`）
   - `<run_id>` 为时间戳（可附带 `run_name` 后缀）
 
@@ -25,7 +25,7 @@
   - 关键字段：`project_id`（样本 ID）、`state`（二分类标签）
 - 项目目录：`data/projects/now/<project_id>/`
   - 必备：`content.json`（包含 `content_sequence` 及预处理统计信息）
-  - 预计算 embedding（建议先保证以下两类必备文件；`seq/late/mdl` 默认会作为“前缀 token”读取）：
+  - 预计算 embedding（建议先保证以下两类必备文件；`seq/late/mdl/dcan` 默认会作为“前缀 token”读取）：
     - `cover_image_<image_embedding_type>.npy`（封面图）
     - `title_blurb_<text_embedding_type>.npy`（标题 + 简介）
   - 正文 embedding（是否必需取决于 `content_sequence` 与具体模块/配置）：
