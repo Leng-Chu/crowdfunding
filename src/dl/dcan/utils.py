@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-工具与实用函数模块：
+工具与实用函数模块（dcan）：
 - 随机种子
 - 日志
 - 指标计算与绘图
@@ -73,7 +73,7 @@ def make_run_dirs(experiment_root: Path, run_name: Optional[str] = None) -> Tupl
 
 def setup_logger(log_file: Path, level: int = logging.INFO) -> logging.Logger:
     """同时输出到控制台与文件的 logger（utf-8）。"""
-    logger = logging.getLogger("mlp")
+    logger = logging.getLogger("dcan")
     logger.setLevel(level)
     logger.propagate = False
 
@@ -142,37 +142,42 @@ def _roc_curve(y_true: np.ndarray, y_score: np.ndarray) -> Tuple[np.ndarray, np.
     y_score_sorted = y_score[order]
 
     distinct = np.where(np.diff(y_score_sorted))[0]
-    thr_idx = np.r_[distinct, y_true_sorted.size - 1]
+    thresholds_idx = np.r_[distinct, y_true_sorted.size - 1]
 
-    tps = np.cumsum(y_true_sorted == 1)[thr_idx]
-    fps = 1 + thr_idx - tps
+    tps = np.cumsum(y_true_sorted)[thresholds_idx]
+    fps = 1 + thresholds_idx - tps
 
     tps = np.r_[0, tps]
     fps = np.r_[0, fps]
-    thresholds = np.r_[np.inf, y_score_sorted[thr_idx]]
 
-    fpr = fps / max(1, n_neg)
-    tpr = tps / max(1, n_pos)
+    fpr = fps / float(n_neg)
+    tpr = tps / float(n_pos)
+    thresholds = np.r_[y_score_sorted[thresholds_idx], 0]
     return fpr.astype(np.float64), tpr.astype(np.float64), thresholds.astype(np.float64)
 
 
 def _auc_trapz(x: np.ndarray, y: np.ndarray) -> float:
     """梯形法则计算 AUC。"""
-    x = np.asarray(x, dtype=np.float64).reshape(-1)
-    y = np.asarray(y, dtype=np.float64).reshape(-1)
-    if x.size < 2:
+    x = np.asarray(x, dtype=np.float64)
+    y = np.asarray(y, dtype=np.float64)
+    if x.size <= 1:
         return 0.0
     return float(np.trapz(y, x))
 
 
 def _roc_auc_rank(y_true: np.ndarray, y_score: np.ndarray) -> float:
-    """秩统计方式计算 AUC（需要同时包含正负样本）。"""
+    """
+    通过秩统计计算 AUC（不需要构造 ROC 曲线，适用于数值稳定）。
+    """
     y_true = np.asarray(y_true).astype(int).reshape(-1)
     y_score = np.asarray(y_score).astype(float).reshape(-1)
+    if y_true.shape != y_score.shape:
+        raise ValueError(f"y_true/y_score 形状不一致：{y_true.shape} vs {y_score.shape}")
+
     n_pos = int(np.sum(y_true == 1))
     n_neg = int(np.sum(y_true == 0))
     if n_pos == 0 or n_neg == 0:
-        raise ValueError("AUC 需要同时包含正负样本。")
+        raise ValueError("ROC 需要同时包含正负样本。")
 
     order = np.argsort(y_score, kind="mergesort")
     ranks = np.empty_like(order, dtype=np.float64)
@@ -383,4 +388,3 @@ def plot_roc(y_true: np.ndarray, y_prob: np.ndarray, save_path: Path) -> None:
     fig.tight_layout()
     fig.savefig(save_path, dpi=160)
     plt.close(fig)
-

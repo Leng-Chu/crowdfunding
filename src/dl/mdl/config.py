@@ -99,14 +99,14 @@ class MdlConfig:
     text_use_batch_norm: bool = True
 
     # 融合 head（fusion_hidden_dim 自动计算）
-    fusion_dropout: float = 0.9
+    fusion_dropout: float = 0.5
 
     # -----------------------------
     # 训练超参
     # -----------------------------
     alpha: float = 5e-4  # weight_decay（L2）
     learning_rate_init: float = 5e-4
-    batch_size: int = 1024
+    batch_size: int = 256
 
     max_epochs: int = 100
     early_stop_patience: int = 10

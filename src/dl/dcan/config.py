@@ -1,17 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-mlp 配置（单文件 / 单类）：
-- 三路输入：metadata / image / text
-- 通过 use_meta / use_image / use_text 三个开关自由组合分支
-- `fusion_hidden_dim` 在代码里根据实际启用的分支自动计算
+DCAN 配置（图文 Cross-Attention baseline）：
+
+目标：
+- 固定使用 image + text 两路输入（不提供 use_image/use_text 开关）
+- 仅保留 use_meta 开关：meta 分支与 mlp baseline 完全一致，仅在融合阶段 concat，不参与 DCAN 注意力交互
 
 运行方式（在项目根目录）：
 - 使用默认配置：
-  `conda run -n crowdfunding python src/dl/mlp/main.py`
+  `conda run -n crowdfunding python src/dl/dcan/main.py`
 - 指定 run_name / 嵌入类型 / 显卡：
-  `conda run -n crowdfunding python src/dl/mlp/main.py --run-name clip --image-embedding-type clip --text-embedding-type clip --device cuda:0`
-- 强制使用 CPU：
-  `conda run -n crowdfunding python src/dl/mlp/main.py --device cpu`
+  `conda run -n crowdfunding python src/dl/dcan/main.py --run-name clip --image-embedding-type clip --text-embedding-type clip --device cuda:0`
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ from typing import Optional, Tuple
 
 
 @dataclass(frozen=True)
-class MlpConfig:
+class DcanConfig:
     # -----------------------------
     # 运行相关
     # -----------------------------
@@ -33,10 +32,10 @@ class MlpConfig:
     # -----------------------------
     data_csv: str = "data/metadata/now_processed.csv"
     projects_root: str = "data/projects/now"
-    experiment_root: str = "experiments/mlp"
+    experiment_root: str = "experiments/dcan"
 
     # -----------------------------
-    # 分支开关
+    # 分支开关（仅保留 meta）
     # -----------------------------
     use_meta: bool = True
 
@@ -59,16 +58,18 @@ class MlpConfig:
     shuffle_before_split: bool = False
 
     # -----------------------------
-    # 嵌入类型（决定读取的 .npy 文件后缀）
+    # 嵌入配置（图片）
     # -----------------------------
     image_embedding_type: str = "clip"  # clip / siglip / resnet
-    text_embedding_type: str = "clip"  # bge / clip / siglip
+    max_image_vectors: int = 20
+    image_select_strategy: str = "first"  # first / random
 
     # -----------------------------
-    # 统一序列截断（按 content_sequence）
+    # 嵌入配置（文本）
     # -----------------------------
-    max_seq_len: int = 40
-    truncation_strategy: str = "first"  # first / random（random 需可复现）
+    text_embedding_type: str = "clip"  # bge / clip / siglip
+    max_text_vectors: int = 20
+    text_select_strategy: str = "first"  # first / random
 
     # -----------------------------
     # 缺失处理
@@ -81,22 +82,14 @@ class MlpConfig:
     # -----------------------------
     # 模型结构超参
     # -----------------------------
-    # meta 分支
+    # meta 分支（与 mlp baseline 一致）
     meta_hidden_dim: int = 256
     meta_dropout: float = 0.3
 
-    # image 分支
-    image_conv_channels: int = 256
-    image_conv_kernel_size: int = 3
-    image_input_dropout: float = 0.1
-    image_dropout: float = 0.5
-    image_use_batch_norm: bool = True
-
-    # text 分支
-    text_conv_kernel_size: int = 3
-    text_input_dropout: float = 0.1
-    text_dropout: float = 0.3
-    text_use_batch_norm: bool = True
+    # DCAN（图文交互）
+    d_model: int = 256
+    num_cross_layers: int = 2
+    cross_ffn_dropout: float = 0.1
 
     # 融合 head（fusion_hidden_dim 自动计算）
     fusion_dropout: float = 0.9
@@ -113,10 +106,13 @@ class MlpConfig:
     early_stop_min_epochs: int = 5
     metric_for_best: str = "val_accuracy"  # val_accuracy / val_auc / val_loss
 
-    lr_scheduler_min_lr: float = 1e-5
+    use_lr_scheduler: bool = True
+    lr_scheduler_patience: int = 2
+    lr_scheduler_factor: float = 0.5
+    lr_scheduler_min_lr: float = 1e-6
+    reset_early_stop_on_lr_change: bool = False
 
     max_grad_norm: float = 0.0
-
     threshold: float = 0.5
     random_seed: int = 42
     save_plots: bool = True

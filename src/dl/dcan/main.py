@@ -1,20 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-mlp 主程序入口：
-- 三路输入：metadata / image / text
-- 通过 use_meta / use_image / use_text 三个开关自由组合分支
+dcan 主程序入口：
 
-说明：
-- 本目录代码不依赖 `src/dl/mlp` 之外的其他训练代码，可独立运行
-- fusion_hidden_dim 会在构建模型时根据实际启用的分支自动计算
+- 固定使用 image + text 两路输入（不提供 use_image/use_text 开关）
+- 仅保留 use_meta 开关：meta 分支与 mlp baseline 完全一致，仅在融合阶段 concat
 
 运行（在项目根目录）：
 - 使用默认配置：
-  `conda run -n crowdfunding python src/dl/mlp/main.py`
+  `conda run -n crowdfunding python src/dl/dcan/main.py`
 - 指定 run_name / 嵌入类型 / 显卡：
-  `conda run -n crowdfunding python src/dl/mlp/main.py --run-name clip --image-embedding-type clip --text-embedding-type clip --device cuda:0`
-- 使用第 2 张 GPU（等价写法）：
-  `conda run -n crowdfunding python src/dl/mlp/main.py --gpu 1`
+  `conda run -n crowdfunding python src/dl/dcan/main.py --run-name clip --image-embedding-type clip --text-embedding-type clip --device cuda:0`
 """
 
 from __future__ import annotations
@@ -27,18 +22,17 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from config import MlpConfig
+from config import DcanConfig
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="mlp 训练入口（支持命令行覆盖部分配置）。")
+    parser = argparse.ArgumentParser(description="dcan 训练入口（支持命令行覆盖部分配置）。")
     parser.add_argument("--run-name", default=None, help="实验名称后缀，用于产物目录命名。")
-    parser.add_argument("--seed", type=int, default=None, help="随机种子（覆盖 config.py 的 random_seed）")
     parser.add_argument(
         "--use-meta",
         default=None,
         action=argparse.BooleanOptionalAction,
-        help="是否启用 meta 分支。",
+        help="是否启用 meta 分支（默认读取 config.py）。",
     )
     parser.add_argument(
         "--image-embedding-type",
@@ -104,9 +98,7 @@ def _save_predictions_csv(
 
 
 def _save_single_row_csv(save_path: Path, row: dict) -> None:
-    """
-    保存“单行结果”CSV（包含表头 + 1 条数据）。
-    """
+    """保存“单行结果”CSV（包含表头 + 1 条数据）。"""
     save_path.parent.mkdir(parents=True, exist_ok=True)
     with save_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(row.keys()))
@@ -115,18 +107,18 @@ def _save_single_row_csv(save_path: Path, row: dict) -> None:
 
 
 def _mode_name(use_meta: bool) -> str:
-    return "mlp+meta" if use_meta else "mlp"
+    return "meta+image+text" if bool(use_meta) else "image+text"
 
 
 def main() -> int:
     args = _parse_args()
-    cfg = MlpConfig()
+    cfg = DcanConfig()
 
     import torch
 
-    from data import prepare_multimodal_data
-    from model import build_multimodal_model
-    from train_eval import evaluate_multimodal_split, train_multimodal_with_early_stopping
+    from data import prepare_dcan_data
+    from model import build_dcan_model
+    from train_eval import evaluate_dcan_split, train_dcan_with_early_stopping
     from utils import (
         compute_binary_metrics,
         find_best_f1_threshold,
@@ -141,8 +133,6 @@ def main() -> int:
 
     if args.run_name is not None:
         cfg = replace(cfg, run_name=str(args.run_name))
-    if args.seed is not None:
-        cfg = replace(cfg, random_seed=int(args.seed))
     if args.use_meta is not None:
         cfg = replace(cfg, use_meta=bool(args.use_meta))
     if args.image_embedding_type is not None:
@@ -154,15 +144,14 @@ def main() -> int:
         cfg = replace(cfg, device=str(args.device))
     elif args.gpu is not None:
         cfg = replace(cfg, device=f"cuda:{int(args.gpu)}")
+
     use_meta = bool(cfg.use_meta)
-    use_image = True
-    use_text = True
+    mode = _mode_name(use_meta)
 
     project_root = Path(__file__).resolve().parents[3]
     csv_path = project_root / cfg.data_csv
     projects_root = project_root / cfg.projects_root
 
-    mode = _mode_name(use_meta)
     experiment_root = project_root / cfg.experiment_root / mode
     experiment_root.mkdir(parents=True, exist_ok=True)
 
@@ -170,42 +159,37 @@ def main() -> int:
     run_dir = reports_dir.parent
     logger = setup_logger(run_dir / "train.log")
 
-    logger.info("模式=%s | run_id=%s | use_meta=%s use_image=%s use_text=%s", mode, run_id, use_meta, use_image, use_text)
+    logger.info("模式=%s | run_id=%s | use_meta=%s", mode, run_id, use_meta)
     logger.info("python=%s | 平台=%s", sys.version.replace("\n", " "), platform.platform())
     logger.info("data_csv=%s", str(csv_path))
     logger.info("projects_root=%s", str(projects_root))
     logger.info("device=%s", str(getattr(cfg, "device", "auto")))
     logger.info(
-        "嵌入类型：image=%s text=%s | max_seq_len=%d trunc=%s | 缺失策略=%s",
+        "嵌入类型：image=%s text=%s | 缺失策略=%s",
         cfg.image_embedding_type,
         cfg.text_embedding_type,
-        int(getattr(cfg, "max_seq_len", 0)),
-        str(getattr(cfg, "truncation_strategy", "")),
         cfg.missing_strategy,
     )
 
     set_global_seed(cfg.random_seed)
-
-    prepared = prepare_multimodal_data(
+    # -----------------------------
+    # ratio：单次 train/val/test
+    # -----------------------------
+    prepared = prepare_dcan_data(
         csv_path=csv_path,
         projects_root=projects_root,
         cfg=cfg,
         use_meta=use_meta,
-        use_image=use_image,
-        use_text=use_text,
         logger=logger,
     )
     logger.info(
-        "数据集：train=%d val=%d test=%d | meta_dim=%d | image_dim=%d text_dim=%d | max_seq_len=%d | max_img_len=%d max_txt_len=%d",
+        "数据：train=%d val=%d test=%d | meta_dim=%d | image_dim=%d text_dim=%d",
         int(prepared.y_train.shape[0]),
         int(prepared.y_val.shape[0]),
         int(prepared.y_test.shape[0]),
         int(prepared.meta_dim),
         int(prepared.image_embedding_dim),
         int(prepared.text_embedding_dim),
-        int(getattr(prepared, "max_seq_len", 0)),
-        int(prepared.max_image_seq_len),
-        int(prepared.max_text_seq_len),
     )
     if prepared.stats:
         logger.info("统计信息：%s", prepared.stats)
@@ -230,11 +214,9 @@ def main() -> int:
     except Exception as e:
         logger.warning("保存 splits.csv 失败：%s", e)
 
-    model = build_multimodal_model(
+    model = build_dcan_model(
         cfg,
         use_meta=use_meta,
-        use_image=use_image,
-        use_text=use_text,
         meta_input_dim=int(prepared.meta_dim),
         image_embedding_dim=int(prepared.image_embedding_dim),
         text_embedding_dim=int(prepared.text_embedding_dim),
@@ -247,10 +229,7 @@ def main() -> int:
         {
             "run_id": run_id,
             "mode": mode,
-            "baseline_mode": "mlp",
             "use_meta": use_meta,
-            "use_image": use_image,
-            "use_text": use_text,
             "meta_dim": int(prepared.meta_dim),
             "image_embedding_dim": int(prepared.image_embedding_dim),
             "text_embedding_dim": int(prepared.text_embedding_dim),
@@ -260,11 +239,9 @@ def main() -> int:
         reports_dir / "config.json",
     )
 
-    best_model, history, best_info = train_multimodal_with_early_stopping(
-        model,
+    best_model, history, best_info = train_dcan_with_early_stopping(
+        model=model,
         use_meta=use_meta,
-        use_image=use_image,
-        use_text=use_text,
         X_meta_train=prepared.X_meta_train,
         X_image_train=prepared.X_image_train,
         len_image_train=prepared.len_image_train,
@@ -288,11 +265,9 @@ def main() -> int:
     except Exception as e:
         logger.warning("保存 history.csv 失败：%s", e)
 
-    train_out = evaluate_multimodal_split(
+    train_out = evaluate_dcan_split(
         best_model,
         use_meta=use_meta,
-        use_image=use_image,
-        use_text=use_text,
         X_meta=prepared.X_meta_train,
         X_image=prepared.X_image_train,
         len_image=prepared.len_image_train,
@@ -301,11 +276,9 @@ def main() -> int:
         y=prepared.y_train,
         cfg=cfg,
     )
-    val_out = evaluate_multimodal_split(
+    val_out = evaluate_dcan_split(
         best_model,
         use_meta=use_meta,
-        use_image=use_image,
-        use_text=use_text,
         X_meta=prepared.X_meta_val,
         X_image=prepared.X_image_val,
         len_image=prepared.len_image_val,
@@ -314,11 +287,9 @@ def main() -> int:
         y=prepared.y_val,
         cfg=cfg,
     )
-    test_out = evaluate_multimodal_split(
+    test_out = evaluate_dcan_split(
         best_model,
         use_meta=use_meta,
-        use_image=use_image,
-        use_text=use_text,
         X_meta=prepared.X_meta_test,
         X_image=prepared.X_image_test,
         len_image=prepared.len_image_test,
@@ -335,41 +306,35 @@ def main() -> int:
     test_out["metrics"] = compute_binary_metrics(prepared.y_test, test_out["prob"], threshold=best_threshold)
     logger.info("阈值选择：best_threshold=%.6f（val_f1=%.6f）", float(best_threshold), float(val_out["metrics"]["f1"]))
 
-    results = {
-        "run_id": run_id,
-        "best_info": best_info,
-        "selected_threshold": float(best_threshold),
-        "train": train_out["metrics"],
-        "val": val_out["metrics"],
-        "test": test_out["metrics"],
-    }
-    save_json(results, reports_dir / "metrics.json")
+    save_json(
+        {
+            "run_id": run_id,
+            "best_info": best_info,
+            "selected_threshold": float(best_threshold),
+            "train": train_out["metrics"],
+            "val": val_out["metrics"],
+            "test": test_out["metrics"],
+        },
+        reports_dir / "metrics.json",
+    )
 
     torch.save(
         {
             "state_dict": best_model.state_dict(),
             "use_meta": bool(use_meta),
-            "use_image": bool(use_image),
-            "use_text": bool(use_text),
             "meta_dim": int(prepared.meta_dim),
             "image_embedding_dim": int(prepared.image_embedding_dim),
             "text_embedding_dim": int(prepared.text_embedding_dim),
             "image_embedding_type": cfg.image_embedding_type,
             "text_embedding_type": cfg.text_embedding_type,
             "missing_strategy": str(cfg.missing_strategy),
-            "meta_hidden_dim": int(cfg.meta_hidden_dim),
-            "meta_dropout": float(cfg.meta_dropout),
-            "image_conv_channels": int(cfg.image_conv_channels),
-            "image_conv_kernel_size": int(cfg.image_conv_kernel_size),
-            "image_input_dropout": float(cfg.image_input_dropout),
-            "image_dropout": float(cfg.image_dropout),
-            "image_use_batch_norm": bool(cfg.image_use_batch_norm),
-            "text_conv_kernel_size": int(cfg.text_conv_kernel_size),
-            "text_input_dropout": float(cfg.text_input_dropout),
-            "text_dropout": float(cfg.text_dropout),
-            "text_use_batch_norm": bool(cfg.text_use_batch_norm),
+            "d_model": int(getattr(cfg, "d_model", 256)),
+            "num_cross_layers": int(getattr(cfg, "num_cross_layers", 2)),
+            "cross_ffn_dropout": float(getattr(cfg, "cross_ffn_dropout", 0.1)),
+            "meta_hidden_dim": int(getattr(cfg, "meta_hidden_dim", 256)),
+            "meta_dropout": float(getattr(cfg, "meta_dropout", 0.3)),
             "fusion_hidden_dim": None if fusion_hidden_dim is None else int(fusion_hidden_dim),
-            "fusion_dropout": float(cfg.fusion_dropout),
+            "fusion_dropout": float(getattr(cfg, "fusion_dropout", 0.9)),
         },
         artifacts_dir / "model.pt",
     )
@@ -392,7 +357,7 @@ def main() -> int:
     except Exception as e:
         logger.warning("保存预测 CSV 失败：%s", e)
 
-    if cfg.save_plots:
+    if bool(getattr(cfg, "save_plots", True)):
         plot_history(history, plots_dir / "history.png")
         plot_roc(prepared.y_val, val_out["prob"], plots_dir / "roc_val.png")
         plot_roc(prepared.y_test, test_out["prob"], plots_dir / "roc_test.png")
@@ -403,7 +368,6 @@ def main() -> int:
             run_dir / "result.csv",
             {
                 "mode": mode,
-                "baseline_mode": "mlp",
                 "image_embedding_type": cfg.image_embedding_type,
                 "text_embedding_type": cfg.text_embedding_type,
                 "threshold": float(best_threshold),
@@ -415,7 +379,7 @@ def main() -> int:
             },
         )
     except Exception as e:
-        logger.warning("保存单行结果 CSV 失败：%s", e)
+        logger.warning("保存 result.csv 失败：%s", e)
 
     logger.info("完成：产物已保存到 %s", str(run_dir))
     logger.info("测试集指标：%s", test_out["metrics"])
@@ -424,4 +388,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
