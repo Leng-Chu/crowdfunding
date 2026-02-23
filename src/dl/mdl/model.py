@@ -322,7 +322,7 @@ class MultiModalBinaryClassifier(nn.Module):
         text_input_dropout: float = 0.0,
         text_dropout: float = 0.3,
         text_use_batch_norm: bool = False,
-        fusion_hidden_dim: int | None = None,
+        fusion_hidden_dim: int = 512,
         fusion_dropout: float = 0.9,
     ) -> None:
         super().__init__()
@@ -368,10 +368,8 @@ class MultiModalBinaryClassifier(nn.Module):
 
         if fusion_in_dim <= 0:
             raise ValueError("fusion_in_dim 需要 > 0")
-        if fusion_hidden_dim is None:
-            fusion_hidden_dim = int(fusion_in_dim * 2)
-        if fusion_hidden_dim <= 0:
-            raise ValueError(f"fusion_hidden_dim 需要 > 0，但得到 {fusion_hidden_dim}")
+        if int(fusion_hidden_dim) <= 0:
+            fusion_hidden_dim = int(2 * fusion_in_dim)
         if fusion_dropout < 0.0 or fusion_dropout >= 1.0:
             raise ValueError("fusion_dropout 需要在 [0, 1) 之间")
 
@@ -457,6 +455,6 @@ def build_multimodal_model(
         text_input_dropout=float(getattr(cfg, "text_input_dropout", 0.0)),
         text_dropout=float(getattr(cfg, "text_dropout", 0.3)),
         text_use_batch_norm=bool(getattr(cfg, "text_use_batch_norm", False)),
+        fusion_hidden_dim=int(getattr(cfg, "fusion_hidden_dim", 512)),
         fusion_dropout=float(getattr(cfg, "fusion_dropout", 0.9)),
     )
-

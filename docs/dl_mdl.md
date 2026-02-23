@@ -68,7 +68,7 @@
 
 - image/text 分支会显式接收 `attr_image/attr_text`，并通过线性投影后加到 token embedding 上，再进入 CNN。
 - image/text 分支均支持 `length=0` 样本（返回零向量，避免数值异常）。
-- 融合层 `fusion_hidden_dim` 自动按输入维度计算。
+- 融合层 `fusion_hidden_dim` 支持手动配置（默认 `512`，与 `seq` 一致）；当配置 `<=0` 时自动取 `2 * fusion_in_dim`。
 
 ## 4. 训练与 best checkpoint 规则（已与 late 对齐）
 

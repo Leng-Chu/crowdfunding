@@ -3,7 +3,7 @@
 mdl 配置（单文件 / 单类）：
 - 三路输入：metadata / image / text
 - 通过 use_meta / use_image / use_text 三个开关自由组合分支
-- `fusion_hidden_dim` 在代码里根据实际启用的分支自动计算
+- `fusion_hidden_dim` 支持手动配置（默认与 seq 一致为 512）
 
 运行方式（在项目根目录）：
 - 使用默认配置：
@@ -99,7 +99,8 @@ class MdlConfig:
     text_dropout: float = 0.3
     text_use_batch_norm: bool = True
 
-    # 融合 head（fusion_hidden_dim 自动计算）
+    # 融合 head（可手动配置；<=0 时按 2 * fusion_in_dim 自动计算）
+    fusion_hidden_dim: int = 512
     fusion_dropout: float = 0.5
 
     # -----------------------------
@@ -120,4 +121,3 @@ class MdlConfig:
 
     def to_dict(self) -> dict:
         return asdict(self)
-

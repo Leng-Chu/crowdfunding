@@ -89,7 +89,8 @@ class DcanConfig:
     num_cross_layers: int = 2
     cross_ffn_dropout: float = 0.1
 
-    # 融合 head（fusion_hidden_dim 自动计算）
+    # 融合 head（可手动配置；<=0 时按 2 * fusion_in_dim 自动计算）
+    fusion_hidden_dim: int = 512
     fusion_dropout: float = 0.5
 
     # -----------------------------
@@ -110,4 +111,3 @@ class DcanConfig:
 
     def to_dict(self) -> dict:
         return asdict(self)
-

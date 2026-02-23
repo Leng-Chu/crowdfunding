@@ -49,6 +49,7 @@ best epoch 确定后：
 - `batch_size = 256`
 - `max_epochs = 80`
 - `alpha = 4e-4`
+- `fusion_hidden_dim = 512`（可在 `src/dl/dcan/config.py` 手动配置；若设为 `<=0` 则自动回退为 `2 * fusion_in_dim`）
 
 ## 6. 运行方式
 在项目根目录执行：

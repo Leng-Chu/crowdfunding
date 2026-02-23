@@ -241,9 +241,9 @@ def main() -> int:
         image_embedding_dim=int(prepared.image_embedding_dim),
         text_embedding_dim=int(prepared.text_embedding_dim),
     )
-    fusion_hidden_dim = int(getattr(getattr(model, "fusion_fc", None), "out_features", 0)) or None
-    if fusion_hidden_dim is not None:
-        logger.info("fusion_hidden_dim（自动）=%d", int(fusion_hidden_dim))
+    fusion_hidden_dim = int(getattr(model, "fusion_hidden_dim", 0))
+    if fusion_hidden_dim > 0:
+        logger.info("fusion_hidden_dim=%d", int(fusion_hidden_dim))
 
     save_json(
         {
@@ -255,7 +255,7 @@ def main() -> int:
             "image_embedding_dim": int(prepared.image_embedding_dim),
             "text_embedding_dim": int(prepared.text_embedding_dim),
             "max_seq_len": int(prepared.max_seq_len),
-            "fusion_hidden_dim": None if fusion_hidden_dim is None else int(fusion_hidden_dim),
+            "fusion_hidden_dim": int(fusion_hidden_dim),
             **cfg.to_dict(),
         },
         reports_dir / "config.json",
@@ -376,7 +376,7 @@ def main() -> int:
             "cross_ffn_dropout": float(getattr(cfg, "cross_ffn_dropout", 0.1)),
             "meta_hidden_dim": int(getattr(cfg, "meta_hidden_dim", 256)),
             "meta_dropout": float(getattr(cfg, "meta_dropout", 0.3)),
-            "fusion_hidden_dim": None if fusion_hidden_dim is None else int(fusion_hidden_dim),
+            "fusion_hidden_dim": int(fusion_hidden_dim),
             "fusion_dropout": float(getattr(cfg, "fusion_dropout", 0.5)),
         },
         artifacts_dir / "model.pt",
@@ -430,4 +430,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

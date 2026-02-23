@@ -6,7 +6,7 @@ mdl 主程序入口：
 
 说明：
 - 本目录代码不依赖 `src/dl/mdl` 之外的其他训练代码，可独立运行
-- fusion_hidden_dim 会在构建模型时根据实际启用的分支自动计算
+- fusion_hidden_dim 支持手动配置（默认 512；<=0 时自动回退）
 
 运行（在项目根目录）：
 - 使用默认配置：
@@ -256,9 +256,9 @@ def main() -> int:
         image_embedding_dim=int(prepared.image_embedding_dim),
         text_embedding_dim=int(prepared.text_embedding_dim),
     )
-    fusion_hidden_dim = int(getattr(getattr(model, "fusion_fc", None), "out_features", 0)) or None
-    if fusion_hidden_dim is not None:
-        logger.info("fusion_hidden_dim（自动）：%d", int(fusion_hidden_dim))
+    fusion_hidden_dim = int(getattr(model, "fusion_hidden_dim", 0))
+    if fusion_hidden_dim > 0:
+        logger.info("fusion_hidden_dim=%d", int(fusion_hidden_dim))
 
     save_json(
         {
@@ -272,7 +272,7 @@ def main() -> int:
             "image_embedding_dim": int(prepared.image_embedding_dim),
             "text_embedding_dim": int(prepared.text_embedding_dim),
             "max_seq_len": int(getattr(prepared, "max_seq_len", 0)),
-            "fusion_hidden_dim": None if fusion_hidden_dim is None else int(fusion_hidden_dim),
+            "fusion_hidden_dim": int(fusion_hidden_dim),
             **cfg.to_dict(),
         },
         reports_dir / "config.json",
@@ -407,7 +407,7 @@ def main() -> int:
             "text_input_dropout": float(cfg.text_input_dropout),
             "text_dropout": float(cfg.text_dropout),
             "text_use_batch_norm": bool(cfg.text_use_batch_norm),
-            "fusion_hidden_dim": None if fusion_hidden_dim is None else int(fusion_hidden_dim),
+            "fusion_hidden_dim": int(fusion_hidden_dim),
             "fusion_dropout": float(cfg.fusion_dropout),
         },
         artifacts_dir / "model.pt",
@@ -462,4 +462,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

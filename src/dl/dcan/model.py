@@ -212,6 +212,7 @@ class DCANBinaryClassifier(nn.Module):
         cross_ffn_dropout: float = 0.1,
         meta_hidden_dim: int = 256,
         meta_dropout: float = 0.3,
+        fusion_hidden_dim: int = 512,
         fusion_dropout: float = 0.9,
     ) -> None:
         super().__init__()
@@ -264,7 +265,10 @@ class DCANBinaryClassifier(nn.Module):
             )
             fusion_in_dim += int(self.meta.output_dim)
 
-        fusion_hidden_dim = int(fusion_in_dim * 2)
+        if int(fusion_hidden_dim) <= 0:
+            fusion_hidden_dim = int(2 * fusion_in_dim)
+        self.fusion_in_dim = int(fusion_in_dim)
+        self.fusion_hidden_dim = int(fusion_hidden_dim)
         self.fusion_fc = nn.Linear(int(fusion_in_dim), int(fusion_hidden_dim))
         self.fusion_drop = nn.Dropout(p=float(fusion_dropout))
         self.head = nn.Linear(int(fusion_hidden_dim), 1)
@@ -378,7 +382,7 @@ def build_dcan_model(
         cross_ffn_dropout=float(getattr(cfg, "cross_ffn_dropout", 0.1)),
         meta_hidden_dim=int(getattr(cfg, "meta_hidden_dim", 256)),
         meta_dropout=float(getattr(cfg, "meta_dropout", 0.3)),
+        fusion_hidden_dim=int(getattr(cfg, "fusion_hidden_dim", 512)),
         fusion_dropout=float(getattr(cfg, "fusion_dropout", 0.5)),
     )
-
 
