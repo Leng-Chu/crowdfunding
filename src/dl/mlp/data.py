@@ -1,12 +1,17 @@
 # -*- coding: utf-8 -*-
 """
 数据加载与特征构建（mlp）：
+
+- 读取项目目录下的 content.json，并根据 content_sequence 做“统一序列截断”
+- 根据截断后的内容块，映射回 image_{emb}.npy / text_{emb}.npy 的子集
+- 并将 cover_image_{emb}.npy / title_blurb_{emb}.npy 分别拼接到 image/text 序列最前面
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 import hashlib
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -90,9 +95,10 @@ def _as_2d_embedding(arr: np.ndarray, name: str) -> np.ndarray:
 
 
 def _stable_hash_int(text: str) -> int:
-    """把字符串稳定地映射为 int（用于可复现的抽样）。"""
-    digest = hashlib.md5(text.encode("utf-8")).hexdigest()[:8]
-    return int(digest, 16)
+    """把字符串稳定地映射为 int（用于可复现的抽样/截断）。"""
+    digest = hashlib.sha256(text.encode("utf-8")).digest()
+    v = int.from_bytes(digest[:8], byteorder="big", signed=False)
+    return int(v & 0x7FFFFFFFFFFFFFFF)
 
 
 @dataclass
@@ -237,6 +243,9 @@ class PreparedMultiModalData:
     text_embedding_dim: int
     max_text_seq_len: int
 
+    # 统一截断配置（用于复现）
+    max_seq_len: int
+
     stats: Dict[str, int]
 
 
@@ -244,104 +253,223 @@ def _mm_load_dataframe(csv_path: Path) -> pd.DataFrame:
     return pd.read_csv(csv_path)
 
 
-def _mm_load_image_embedding_stack(project_dir: Path, cfg: MlpConfig) -> Tuple[Optional[np.ndarray], int, int]:
-    emb_type = (cfg.image_embedding_type or "").strip().lower()
-    if emb_type not in {"clip", "siglip", "resnet"}:
-        raise ValueError(f"不支持的 image_embedding_type={cfg.image_embedding_type!r}，可选：clip/siglip/resnet")
+def _read_content_json(content_json_path: Path) -> Dict[str, Any]:
+    try:
+        obj = json.loads(content_json_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise ValueError(f"读取 content.json 失败：{content_json_path} | {type(e).__name__}: {e}") from e
+    if not isinstance(obj, dict):
+        raise ValueError(f"content.json 顶层不是 dict：{content_json_path}")
+    return dict(obj)
 
-    cover_path = project_dir / f"cover_image_{emb_type}.npy"
-    image_path = project_dir / f"image_{emb_type}.npy"
 
-    missing_strategy = (cfg.missing_strategy or "").strip().lower()
+def _truncate_window(seq_len: int, max_seq_len: int, strategy: str, seed: int) -> Tuple[int, int]:
+    """
+    统一序列截断（仅用于控制样本使用的内容块数量，不用于顺序建模）。
+    - first：取 [0, max_seq_len)
+    - random：在所有长度为 max_seq_len 的窗口中随机选一个（可复现）
+    """
+    L = int(seq_len)
+    m = int(max_seq_len)
+    if m <= 0:
+        raise ValueError("max_seq_len 需要 > 0。")
+    if L <= 0:
+        return 0, 0
+    if L <= m:
+        return 0, L
+
+    strategy = str(strategy or "first").strip().lower()
+    if strategy == "first":
+        return 0, m
+    if strategy == "random":
+        rng = np.random.default_rng(int(seed))
+        start = int(rng.integers(0, L - m + 1))
+        return start, start + m
+    raise ValueError(f"不支持的 truncation_strategy={strategy!r}，可选：first/random")
+
+
+def _mlp_load_project_keep_seqs(
+    project_dir: Path,
+    project_id: str,
+    cfg: MlpConfig,
+    use_image: bool,
+    use_text: bool,
+) -> Tuple[
+    Optional[np.ndarray],
+    Optional[np.ndarray],
+    int,
+    int,
+    int,
+    int,
+    int,
+]:
+    """
+    返回：img_keep, txt_keep, img_dim, txt_dim, len_img, len_txt, skipped(0/1)
+
+    说明：
+    - img_keep/txt_keep 可能为“仅包含 cover/title_blurb”的序列；
+    - 当必须文件缺失且 missing_strategy=skip 时，skipped=1。
+    """
+    missing_strategy = str(getattr(cfg, "missing_strategy", "error") or "error").strip().lower()
     if missing_strategy not in {"skip", "error"}:
         raise ValueError(f"不支持的 missing_strategy={cfg.missing_strategy!r}，可选：skip/error")
 
-    if not cover_path.exists():
+    if not (bool(use_image) or bool(use_text)):
+        return None, None, 0, 0, 0, 0, 0
+
+    content_json_path = project_dir / "content.json"
+    if not content_json_path.exists():
         if missing_strategy == "skip":
-            return None, 0, 1
-        raise FileNotFoundError(f"缺少 cover_image 嵌入文件：{cover_path}")
+            return None, None, 0, 0, 0, 0, 1
+        raise FileNotFoundError(f"缺少 content.json：{content_json_path}")
 
-    cover = _as_2d_embedding(np.load(cover_path), cover_path.name)
+    content_obj = _read_content_json(content_json_path)
+    seq = content_obj.get("content_sequence", None)
+    if not isinstance(seq, list):
+        raise ValueError(f"content_sequence 不存在或不是 list：{content_json_path}")
+    seq = list(seq)
+    if not seq:
+        if missing_strategy == "skip":
+            return None, None, 0, 0, 0, 0, 1
+        raise ValueError(f"项目 {project_id} content_sequence 为空，无法训练。")
 
-    missing_image = 0
-    if image_path.exists():
-        image = _as_2d_embedding(np.load(image_path), image_path.name)
-        max_vec = int(getattr(cfg, "max_image_vectors", 0))
-        if max_vec > 0 and int(image.shape[0]) > max_vec:
-            strategy = str(getattr(cfg, "image_select_strategy", "first")).strip().lower()
-            if strategy == "first":
-                image = image[:max_vec]
-            elif strategy == "random":
-                seed = int(getattr(cfg, "random_seed", 42)) + _stable_hash_int(str(project_dir.name))
-                rng = np.random.default_rng(seed)
-                idx = rng.choice(int(image.shape[0]), size=max_vec, replace=False)
-                idx = np.sort(idx)
-                image = image[idx]
-            else:
-                raise ValueError(f"不支持的 image_select_strategy={strategy!r}，可选：first/random")
-        if int(image.shape[0]) > 0:
-            if int(image.shape[1]) != int(cover.shape[1]):
-                raise ValueError(f"项目 {project_dir.name} 的 cover/image 维度不一致：{cover.shape} vs {image.shape}")
-            seq = np.concatenate([cover, image], axis=0).astype(np.float32, copy=False)
+    n_img_expected = 0
+    n_txt_expected = 0
+    for pos, item in enumerate(seq):
+        t = (item.get("type", None) or "").strip().lower()
+        if t == "image":
+            n_img_expected += 1
+        elif t == "text":
+            n_txt_expected += 1
         else:
-            seq = cover
-            missing_image = 1
-    else:
-        seq = cover
-        missing_image = 1
+            raise ValueError(f"项目 {project_id} content_sequence type 不支持：{t!r}（pos={pos}）")
 
-    return seq, int(missing_image), 0
+    img_keep = None
+    txt_keep = None
+    img_dim = 0
+    txt_dim = 0
+    len_img = 0
+    len_txt = 0
 
+    img_emb = None
+    txt_emb = None
 
-def _mm_load_text_embedding_stack(project_dir: Path, cfg: MlpConfig) -> Tuple[Optional[np.ndarray], int, int]:
-    emb_type = (cfg.text_embedding_type or "").strip().lower()
-    if emb_type not in {"bge", "clip", "siglip"}:
-        raise ValueError(f"不支持的 text_embedding_type={cfg.text_embedding_type!r}，可选：bge/clip/siglip")
+    if bool(use_image):
+        img_type = str(getattr(cfg, "image_embedding_type", "") or "").strip().lower()
+        if img_type not in {"clip", "siglip", "resnet"}:
+            raise ValueError(f"不支持的 image_embedding_type={cfg.image_embedding_type!r}，可选：clip/siglip/resnet")
 
-    title_blurb_path = project_dir / f"title_blurb_{emb_type}.npy"
-    text_path = project_dir / f"text_{emb_type}.npy"
+        cover_emb_path = project_dir / f"cover_image_{img_type}.npy"
+        if not cover_emb_path.exists():
+            if missing_strategy == "skip":
+                return None, None, 0, 0, 0, 0, 1
+            raise FileNotFoundError(f"缺少 cover_image 嵌入文件：{cover_emb_path}")
 
-    missing_strategy = (cfg.missing_strategy or "").strip().lower()
-    if missing_strategy not in {"skip", "error"}:
-        raise ValueError(f"不支持的 missing_strategy={cfg.missing_strategy!r}，可选：skip/error")
+        cover_emb = _as_2d_embedding(np.load(cover_emb_path), cover_emb_path.name)
+        if int(cover_emb.shape[0]) != 1:
+            raise ValueError(f"项目 {project_id} cover_image 行数不合法：期望 1，但得到 {cover_emb.shape}")
+        img_dim = int(cover_emb.shape[1])
 
-    if not title_blurb_path.exists():
-        if missing_strategy == "skip":
-            return None, 1, 1
-        raise FileNotFoundError(f"缺少 title_blurb 嵌入文件：{title_blurb_path}")
-
-    title_blurb = _as_2d_embedding(np.load(title_blurb_path), title_blurb_path.name)
-
-    missing_text = 0
-    if text_path.exists():
-        text = _as_2d_embedding(np.load(text_path), text_path.name)
-        max_vec = int(getattr(cfg, "max_text_vectors", 0))
-        if max_vec > 0 and int(text.shape[0]) > max_vec:
-            strategy = str(getattr(cfg, "text_select_strategy", "first")).strip().lower()
-            if strategy == "first":
-                text = text[:max_vec]
-            elif strategy == "random":
-                seed = int(getattr(cfg, "random_seed", 42)) + _stable_hash_int(str(project_dir.name))
-                rng = np.random.default_rng(seed)
-                idx = rng.choice(int(text.shape[0]), size=max_vec, replace=False)
-                idx = np.sort(idx)
-                text = text[idx]
-            else:
-                raise ValueError(f"不支持的 text_select_strategy={strategy!r}，可选：first/random")
-        if int(text.shape[0]) > 0:
-            if int(text.shape[1]) != int(title_blurb.shape[1]):
+        image_emb_path = project_dir / f"image_{img_type}.npy"
+        if image_emb_path.exists():
+            img_emb = _as_2d_embedding(np.load(image_emb_path), image_emb_path.name)
+            if int(img_emb.shape[1]) != int(img_dim):
+                raise ValueError(f"项目 {project_id} image dim 不一致：cover={img_dim} vs story={img_emb.shape[1]}")
+            if int(img_emb.shape[0]) != int(n_img_expected):
                 raise ValueError(
-                    f"项目 {project_dir.name} 的 title_blurb/text 维度不一致：{title_blurb.shape} vs {text.shape}"
+                    f"项目 {project_id} image 数量不一致：content_sequence={n_img_expected} vs {image_emb_path.name}={img_emb.shape}"
                 )
-            seq = np.concatenate([title_blurb, text], axis=0).astype(np.float32, copy=False)
         else:
-            seq = title_blurb
-            missing_text = 1
-    else:
-        seq = title_blurb
-        missing_text = 1
+            if int(n_img_expected) != 0:
+                if missing_strategy == "skip":
+                    return None, None, 0, 0, 0, 0, 1
+                raise FileNotFoundError(f"缺少 image 嵌入文件：{image_emb_path}")
 
-    return seq, int(missing_text), 0
+    if bool(use_text):
+        txt_type = str(getattr(cfg, "text_embedding_type", "") or "").strip().lower()
+        if txt_type not in {"bge", "clip", "siglip"}:
+            raise ValueError(f"不支持的 text_embedding_type={cfg.text_embedding_type!r}，可选：bge/clip/siglip")
+
+        title_blurb_emb_path = project_dir / f"title_blurb_{txt_type}.npy"
+        if not title_blurb_emb_path.exists():
+            if missing_strategy == "skip":
+                return None, None, 0, 0, 0, 0, 1
+            raise FileNotFoundError(f"缺少 title_blurb 嵌入文件：{title_blurb_emb_path}")
+
+        title_blurb_emb = _as_2d_embedding(np.load(title_blurb_emb_path), title_blurb_emb_path.name)
+        if int(title_blurb_emb.shape[0]) <= 0:
+            raise ValueError(f"项目 {project_id} title_blurb 为空：{title_blurb_emb_path}")
+        txt_dim = int(title_blurb_emb.shape[1])
+
+        text_emb_path = project_dir / f"text_{txt_type}.npy"
+        if text_emb_path.exists():
+            txt_emb = _as_2d_embedding(np.load(text_emb_path), text_emb_path.name)
+            if int(txt_emb.shape[1]) != int(txt_dim):
+                raise ValueError(f"项目 {project_id} text dim 不一致：title_blurb={txt_dim} vs story={txt_emb.shape[1]}")
+            if int(txt_emb.shape[0]) != int(n_txt_expected):
+                raise ValueError(
+                    f"项目 {project_id} text 数量不一致：content_sequence={n_txt_expected} vs {text_emb_path.name}={txt_emb.shape}"
+                )
+        else:
+            if int(n_txt_expected) != 0:
+                if missing_strategy == "skip":
+                    return None, None, 0, 0, 0, 0, 1
+                raise FileNotFoundError(f"缺少 text 嵌入文件：{text_emb_path}")
+
+    # 统一序列截断：决定窗口 [start, end)
+    max_seq_len = int(getattr(cfg, "max_seq_len", 0))
+    if max_seq_len <= 0:
+        raise ValueError("max_seq_len 需要 > 0。")
+    truncation_strategy = str(getattr(cfg, "truncation_strategy", "first"))
+    seed = (int(getattr(cfg, "random_seed", 42)) + _stable_hash_int(str(project_id))) & 0x7FFFFFFFFFFFFFFF
+    start, end = _truncate_window(len(seq), max_seq_len=max_seq_len, strategy=truncation_strategy, seed=seed)
+
+    keep_img_indices: List[int] = []
+    keep_txt_indices: List[int] = []
+    img_idx = 0
+    txt_idx = 0
+    for pos, item in enumerate(seq):
+        t = (item.get("type", None) or "").strip().lower()
+        in_window = int(start) <= int(pos) < int(end)
+        if t == "image":
+            if in_window:
+                keep_img_indices.append(int(img_idx))
+            img_idx += 1
+        elif t == "text":
+            if in_window:
+                keep_txt_indices.append(int(txt_idx))
+            txt_idx += 1
+        else:
+            raise ValueError(f"项目 {project_id} content_sequence type 不支持：{t!r}（pos={pos}）")
+
+    if int(img_idx) != int(n_img_expected):
+        raise ValueError(f"项目 {project_id} image 计数器不一致：{img_idx} vs expected {n_img_expected}")
+    if int(txt_idx) != int(n_txt_expected):
+        raise ValueError(f"项目 {project_id} text 计数器不一致：{txt_idx} vs expected {n_txt_expected}")
+
+    if bool(use_image):
+        if img_emb is not None:
+            if keep_img_indices:
+                img_keep_story = img_emb[np.asarray(keep_img_indices, dtype=np.int64)]
+            else:
+                img_keep_story = img_emb[:0]
+        else:
+            img_keep_story = cover_emb[:0]
+        img_keep = np.concatenate([cover_emb, img_keep_story], axis=0).astype(np.float32, copy=False)
+        len_img = int(img_keep.shape[0])
+
+    if bool(use_text):
+        if txt_emb is not None:
+            if keep_txt_indices:
+                txt_keep_story = txt_emb[np.asarray(keep_txt_indices, dtype=np.int64)]
+            else:
+                txt_keep_story = txt_emb[:0]
+        else:
+            txt_keep_story = title_blurb_emb[:0]
+        txt_keep = np.concatenate([title_blurb_emb, txt_keep_story], axis=0).astype(np.float32, copy=False)
+        len_txt = int(txt_keep.shape[0])
+
+    return img_keep, txt_keep, int(img_dim), int(txt_dim), int(len_img), int(len_txt), 0
 
 
 def _mm_build_features_for_split(
@@ -384,13 +512,15 @@ def _mm_build_features_for_split(
     txt_seqs: List[np.ndarray] = []
     txt_lens: List[int] = []
 
-    missing_image_total = 0
-    missing_text_total = 0
     skipped_total = 0
+    missing_project_dir = 0
     image_dim = 0
     text_dim = 0
 
     need_project_dir = bool(use_image or use_text)
+    missing_strategy = str(getattr(cfg, "missing_strategy", "error") or "error").strip().lower()
+    if missing_strategy not in {"skip", "error"}:
+        raise ValueError(f"不支持的 missing_strategy={cfg.missing_strategy!r}，可选：skip/error")
 
     for i, (pid, _) in enumerate(zip(project_ids, y_all)):
         if not pid:
@@ -399,44 +529,50 @@ def _mm_build_features_for_split(
 
         project_dir = projects_root / pid if need_project_dir else None
         if need_project_dir and project_dir is not None and not project_dir.exists():
-            if (cfg.missing_strategy or "").strip().lower() == "skip":
+            missing_project_dir += 1
+            if missing_strategy == "skip":
                 skipped_total += 1
                 continue
             raise FileNotFoundError(f"找不到项目目录：{project_dir}")
 
         img_seq = None
-        miss_img = 0
-        skip_img = 0
-        if use_image:
-            img_seq, miss_img, skip_img = _mm_load_image_embedding_stack(project_dir, cfg)
-
         txt_seq = None
-        miss_txt = 0
-        skip_txt = 0
-        if use_text:
-            txt_seq, miss_txt, skip_txt = _mm_load_text_embedding_stack(project_dir, cfg)
-
-        if (use_image and (skip_img or img_seq is None)) or (use_text and (skip_txt or txt_seq is None)):
+        img_dim_one = 0
+        txt_dim_one = 0
+        len_img = 0
+        len_txt = 0
+        skipped = 0
+        if need_project_dir and project_dir is not None:
+            img_seq, txt_seq, img_dim_one, txt_dim_one, len_img, len_txt, skipped = _mlp_load_project_keep_seqs(
+                project_dir,
+                project_id=str(pid),
+                cfg=cfg,
+                use_image=bool(use_image),
+                use_text=bool(use_text),
+            )
+        if int(skipped) != 0:
             skipped_total += 1
             continue
 
-        if use_image and img_seq is not None:
-            if image_dim <= 0:
-                image_dim = int(img_seq.shape[1])
-            if int(img_seq.shape[1]) != int(image_dim):
-                raise ValueError(f"image_embedding_dim 不一致：期望 {image_dim}，但 {pid} 为 {img_seq.shape[1]}")
+        if bool(use_image):
+            if img_seq is None or int(len_img) <= 0:
+                raise RuntimeError(f"加载 image 失败但未被 skip：{pid}")
+            if int(image_dim) <= 0:
+                image_dim = int(img_dim_one)
+            if int(img_dim_one) != int(image_dim):
+                raise ValueError(f"image_embedding_dim 不一致：期望 {image_dim}，但 {pid} 为 {img_dim_one}")
             img_seqs.append(img_seq)
-            img_lens.append(int(img_seq.shape[0]))
-            missing_image_total += int(miss_img)
+            img_lens.append(int(len_img))
 
-        if use_text and txt_seq is not None:
-            if text_dim <= 0:
-                text_dim = int(txt_seq.shape[1])
-            if int(txt_seq.shape[1]) != int(text_dim):
-                raise ValueError(f"text_embedding_dim 不一致：期望 {text_dim}，但 {pid} 为 {txt_seq.shape[1]}")
+        if bool(use_text):
+            if txt_seq is None or int(len_txt) <= 0:
+                raise RuntimeError(f"加载 text 失败但未被 skip：{pid}")
+            if int(text_dim) <= 0:
+                text_dim = int(txt_dim_one)
+            if int(txt_dim_one) != int(text_dim):
+                raise ValueError(f"text_embedding_dim 不一致：期望 {text_dim}，但 {pid} 为 {txt_dim_one}")
             txt_seqs.append(txt_seq)
-            txt_lens.append(int(txt_seq.shape[0]))
-            missing_text_total += int(miss_txt)
+            txt_lens.append(int(len_txt))
 
         kept_ids.append(pid)
         kept_indices.append(i)
@@ -471,11 +607,10 @@ def _mm_build_features_for_split(
             X_text[j, :L, :] = seq
         len_text = np.asarray(txt_lens, dtype=np.int64)
 
-    stats: Dict[str, int] = {"skipped_samples": int(skipped_total)}
-    if use_image:
-        stats["missing_image_files"] = int(missing_image_total)
-    if use_text:
-        stats["missing_text_files"] = int(missing_text_total)
+    stats: Dict[str, int] = {
+        "skipped_samples": int(skipped_total),
+        "missing_project_dir": int(missing_project_dir),
+    }
 
     return (
         X_meta,
@@ -625,6 +760,7 @@ def prepare_multimodal_data(
         len_text_test=len_txt_test,
         text_embedding_dim=int(txt_dim) if use_text else 0,
         max_text_seq_len=int(max(max_txt_train, max_txt_val, max_txt_test)) if use_text else 0,
+        max_seq_len=int(getattr(cfg, "max_seq_len", 0)),
         stats=stats,
     )
 

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import copy
+import math
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
@@ -18,6 +19,61 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from config import MlpConfig
 from utils import compute_binary_metrics
+
+_WARMUP_RATIO = 0.1
+
+
+def _build_adamw(model: nn.Module, lr: float, weight_decay: float) -> torch.optim.Optimizer:
+    norm_param_ids: set[int] = set()
+    for module in model.modules():
+        if isinstance(module, (nn.LayerNorm, nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
+            for p in module.parameters(recurse=False):
+                norm_param_ids.add(id(p))
+
+    decay_params: List[torch.nn.Parameter] = []
+    no_decay_params: List[torch.nn.Parameter] = []
+    for name, p in model.named_parameters():
+        if not bool(p.requires_grad):
+            continue
+        if name.endswith(".bias") or id(p) in norm_param_ids:
+            no_decay_params.append(p)
+        else:
+            decay_params.append(p)
+
+    param_groups: List[Dict[str, Any]] = []
+    if decay_params:
+        param_groups.append({"params": decay_params, "weight_decay": float(weight_decay)})
+    if no_decay_params:
+        param_groups.append({"params": no_decay_params, "weight_decay": 0.0})
+
+    return torch.optim.AdamW(param_groups, lr=float(lr))
+
+
+def _build_warmup_cosine_scheduler(
+    optimizer: torch.optim.Optimizer,
+    max_epochs: int,
+    steps_per_epoch: int,
+    min_lr: float,
+) -> torch.optim.lr_scheduler.LambdaLR:
+    total_steps = max(1, int(max_epochs) * max(1, int(steps_per_epoch)))
+    warmup_steps = max(1, int(_WARMUP_RATIO * float(total_steps)))
+
+    base_lr = float(optimizer.param_groups[0].get("lr", 0.0))
+    if base_lr <= 0.0:
+        min_lr_ratio = 0.0
+    else:
+        min_lr_ratio = float(min_lr) / float(base_lr)
+    min_lr_ratio = float(np.clip(min_lr_ratio, 0.0, 1.0))
+
+    def lr_lambda(step: int) -> float:
+        step = int(step)
+        if step < warmup_steps:
+            return float(step + 1) / float(warmup_steps)
+        progress = float(step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+        cosine = 0.5 * (1.0 + math.cos(math.pi * float(np.clip(progress, 0.0, 1.0))))
+        return float(min_lr_ratio + (1.0 - min_lr_ratio) * cosine)
+
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
 
 def _get_device(cfg: MlpConfig) -> torch.device:
@@ -174,21 +230,17 @@ def train_multimodal_with_early_stopping(
     )
 
     criterion = nn.BCEWithLogitsLoss()
-    optimizer = torch.optim.Adam(
-        model.parameters(),
+    optimizer = _build_adamw(
+        model,
         lr=float(cfg.learning_rate_init),
         weight_decay=float(cfg.alpha),
     )
-
-    scheduler = None
-    if getattr(cfg, "use_lr_scheduler", False):
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer,
-            mode="min",
-            factor=float(getattr(cfg, "lr_scheduler_factor", 0.5)),
-            patience=int(getattr(cfg, "lr_scheduler_patience", 3)),
-            min_lr=float(getattr(cfg, "lr_scheduler_min_lr", 1e-6)),
-        )
+    scheduler = _build_warmup_cosine_scheduler(
+        optimizer,
+        max_epochs=int(cfg.max_epochs),
+        steps_per_epoch=len(train_loader),
+        min_lr=float(getattr(cfg, "lr_scheduler_min_lr", 1e-6)),
+    )
 
     best_state: Dict[str, torch.Tensor] | None = None
     best_epoch = 0
@@ -240,6 +292,7 @@ def train_multimodal_with_early_stopping(
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
 
             optimizer.step()
+            scheduler.step()
 
             bs = int(yb.shape[0])
             running_loss += float(loss.detach().cpu()) * bs
@@ -316,15 +369,6 @@ def train_multimodal_with_early_stopping(
             int(best_epoch),
             int(bad_epochs),
         )
-
-        if scheduler is not None:
-            old_lr = float(optimizer.param_groups[0]["lr"])
-            scheduler.step(float(val_metrics["log_loss"]))
-            new_lr = float(optimizer.param_groups[0]["lr"])
-            if new_lr < old_lr:
-                logger.info("学习率调整：%.6g -> %.6g", old_lr, new_lr)
-                if bool(getattr(cfg, "reset_early_stop_on_lr_change", True)):
-                    bad_epochs = 0
 
         if bad_epochs >= int(cfg.early_stop_patience):
             min_epochs = int(getattr(cfg, "early_stop_min_epochs", 0))

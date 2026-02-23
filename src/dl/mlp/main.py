@@ -176,9 +176,11 @@ def main() -> int:
     logger.info("projects_root=%s", str(projects_root))
     logger.info("device=%s", str(getattr(cfg, "device", "auto")))
     logger.info(
-        "嵌入类型：image=%s text=%s | 缺失策略=%s",
+        "嵌入类型：image=%s text=%s | max_seq_len=%d trunc=%s | 缺失策略=%s",
         cfg.image_embedding_type,
         cfg.text_embedding_type,
+        int(getattr(cfg, "max_seq_len", 0)),
+        str(getattr(cfg, "truncation_strategy", "")),
         cfg.missing_strategy,
     )
 
@@ -194,13 +196,14 @@ def main() -> int:
         logger=logger,
     )
     logger.info(
-        "数据集：train=%d val=%d test=%d | meta_dim=%d | image_dim=%d text_dim=%d | max_img_len=%d max_txt_len=%d",
+        "数据集：train=%d val=%d test=%d | meta_dim=%d | image_dim=%d text_dim=%d | max_seq_len=%d | max_img_len=%d max_txt_len=%d",
         int(prepared.y_train.shape[0]),
         int(prepared.y_val.shape[0]),
         int(prepared.y_test.shape[0]),
         int(prepared.meta_dim),
         int(prepared.image_embedding_dim),
         int(prepared.text_embedding_dim),
+        int(getattr(prepared, "max_seq_len", 0)),
         int(prepared.max_image_seq_len),
         int(prepared.max_text_seq_len),
     )

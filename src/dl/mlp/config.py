@@ -59,18 +59,16 @@ class MlpConfig:
     shuffle_before_split: bool = False
 
     # -----------------------------
-    # 嵌入配置（图片）
+    # 嵌入类型（决定读取的 .npy 文件后缀）
     # -----------------------------
     image_embedding_type: str = "clip"  # clip / siglip / resnet
-    max_image_vectors: int = 20
-    image_select_strategy: str = "first"  # first / random
+    text_embedding_type: str = "clip"  # bge / clip / siglip
 
     # -----------------------------
-    # 嵌入配置（文本）
+    # 统一序列截断（按 content_sequence）
     # -----------------------------
-    text_embedding_type: str = "clip"  # bge / clip / siglip
-    max_text_vectors: int = 20
-    text_select_strategy: str = "first"  # first / random
+    max_seq_len: int = 40
+    truncation_strategy: str = "first"  # first / random（random 需可复现）
 
     # -----------------------------
     # 缺失处理
@@ -115,11 +113,7 @@ class MlpConfig:
     early_stop_min_epochs: int = 5
     metric_for_best: str = "val_accuracy"  # val_accuracy / val_auc / val_loss
 
-    use_lr_scheduler: bool = True
-    lr_scheduler_patience: int = 2
-    lr_scheduler_factor: float = 0.5
-    lr_scheduler_min_lr: float = 1e-6
-    reset_early_stop_on_lr_change: bool = False
+    lr_scheduler_min_lr: float = 1e-5
 
     max_grad_norm: float = 0.0
 
