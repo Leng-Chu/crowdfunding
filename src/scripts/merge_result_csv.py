@@ -7,7 +7,7 @@ def merge_result_csv():
     找到其中的result.csv文件，合并为一个CSV文件并按test_f1排序
     """
     # 定义根目录路径
-    base_dir = "experiments/newtest"
+    base_dir = "experiments/meta"
     
     # 存储所有CSV数据的列表
     all_csv_data = []

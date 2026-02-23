@@ -32,7 +32,7 @@ class DcanConfig:
     # -----------------------------
     data_csv: str = "data/metadata/now_processed.csv"
     projects_root: str = "data/projects/now"
-    experiment_root: str = "experiments/dcan"
+    experiment_root: str = "experiments/meta"
 
     # -----------------------------
     # 分支开关
