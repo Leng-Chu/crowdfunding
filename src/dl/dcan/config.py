@@ -55,7 +55,7 @@ class DcanConfig:
     train_ratio: float = 0.6
     val_ratio: float = 0.2
     test_ratio: float = 0.2
-    shuffle_before_split: bool = False
+    shuffle_before_split: bool = True
 
     # -----------------------------
     # 嵌入配置（图片）
@@ -92,14 +92,14 @@ class DcanConfig:
     cross_ffn_dropout: float = 0.1
 
     # 融合 head（fusion_hidden_dim 自动计算）
-    fusion_dropout: float = 0.9
+    fusion_dropout: float = 0.5
 
     # -----------------------------
     # 训练超参
     # -----------------------------
     alpha: float = 5e-4  # weight_decay（L2）
     learning_rate_init: float = 5e-4
-    batch_size: int = 1024
+    batch_size: int = 256
 
     max_epochs: int = 100
     early_stop_patience: int = 10
