@@ -5,7 +5,7 @@ seq 配置（Chapter 1：图文内容块序列建模）：
 - 任务：Kickstarter 项目二分类（成功/失败），loss = BCEWithLogitsLoss
 - 输入：预先计算好的 image/text embedding（不涉及原始模态特征）
 - 可选：是否融合 meta 表格特征
-- 命令行仅覆盖常用参数：--run-name / --baseline-mode / --use-meta / --image-embedding-type / --text-embedding-type / --device / --gpu
+- 命令行仅覆盖常用参数：--run-name / --baseline-mode / --use-meta / --use-prefix / --use-seq-attr / --image-embedding-type / --text-embedding-type / --device / --gpu
 """
 
 from __future__ import annotations
@@ -43,6 +43,11 @@ class SeqConfig:
     # prefix token 开关
     # -----------------------------
     use_prefix: bool = True  # 是否使用 title_blurb 和 cover_image 作为 prefix token
+
+    # -----------------------------
+    # 序列属性开关
+    # -----------------------------
+    use_seq_attr: bool = True  # 是否注入文本长度/图片面积属性（seq_attr）
 
     # -----------------------------
     # 列配置

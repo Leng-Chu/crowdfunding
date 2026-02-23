@@ -6,7 +6,7 @@ seq 主程序入口（Chapter 1：图文内容块序列建模）：
 - 使用默认配置：
   `conda run -n crowdfunding python src/dl/seq/main.py`
 - 覆盖常用参数（只覆盖少量配置项，其余请改 config.py）：
-  `conda run -n crowdfunding python src/dl/seq/main.py --baseline-mode trm_pos --use-meta --image-embedding-type clip --text-embedding-type clip --device cuda:0`
+  `conda run -n crowdfunding python src/dl/seq/main.py --baseline-mode trm_pos --use-meta --use-seq-attr --image-embedding-type clip --text-embedding-type clip --device cuda:0`
 """
 
 from __future__ import annotations
@@ -45,6 +45,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         action=argparse.BooleanOptionalAction,
         help="是否使用 title_blurb 和 cover_image 作为 prefix token（默认为 True）。",
+    )
+    parser.add_argument(
+        "--use-seq-attr",
+        default=None,
+        action=argparse.BooleanOptionalAction,
+        help="是否启用文本长度/图片面积属性（seq_attr，默认为 True）。",
     )
     parser.add_argument(
         "--image-embedding-type",
@@ -147,6 +153,8 @@ def main() -> int:
         cfg = replace(cfg, use_meta=bool(args.use_meta))
     if args.use_prefix is not None:
         cfg = replace(cfg, use_prefix=bool(args.use_prefix))
+    if args.use_seq_attr is not None:
+        cfg = replace(cfg, use_seq_attr=bool(args.use_seq_attr))
     if args.image_embedding_type is not None:
         cfg = replace(cfg, image_embedding_type=str(args.image_embedding_type))
     if args.text_embedding_type is not None:
@@ -189,6 +197,11 @@ def main() -> int:
     logger = setup_logger(run_dir / "train.log")
 
     logger.info("模式=%s | run_id=%s | baseline_mode=%s | use_meta=%s", mode, run_id, baseline_mode, bool(cfg.use_meta))
+    logger.info(
+        "开关：use_prefix=%s | use_seq_attr=%s",
+        bool(getattr(cfg, "use_prefix", True)),
+        bool(getattr(cfg, "use_seq_attr", True)),
+    )
     logger.info("python=%s | 平台=%s", sys.version.replace("\n", " "), platform.platform())
     logger.info("data_csv=%s", str(csv_path))
     logger.info("projects_root=%s", str(projects_root))
@@ -260,6 +273,8 @@ def main() -> int:
             "mode": mode,
             "baseline_mode": baseline_mode,
             "use_meta": bool(cfg.use_meta),
+            "use_prefix": bool(getattr(cfg, "use_prefix", True)),
+            "use_seq_attr": bool(getattr(cfg, "use_seq_attr", True)),
             "meta_dim": int(prepared.meta_dim),
             "image_embedding_dim": int(prepared.image_embedding_dim),
             "text_embedding_dim": int(prepared.text_embedding_dim),
@@ -370,6 +385,8 @@ def main() -> int:
             "best_threshold": float(best_threshold),
             "baseline_mode": baseline_mode,
             "use_meta": bool(cfg.use_meta),
+            "use_prefix": bool(getattr(cfg, "use_prefix", True)),
+            "use_seq_attr": bool(getattr(cfg, "use_seq_attr", True)),
             "meta_dim": int(prepared.meta_dim),
             "image_embedding_dim": int(prepared.image_embedding_dim),
             "text_embedding_dim": int(prepared.text_embedding_dim),

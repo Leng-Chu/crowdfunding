@@ -51,7 +51,7 @@ class MetaMLPEncoder(nn.Module):
 class TokenEncoder(nn.Module):
     """
     内容块统一表示（不含位置信息）：
-    x_i = proj(e_i) + type_embedding(t_i) + attr_proj(a_i)
+    x_i = proj(e_i) + type_embedding(t_i) [+ attr_proj(a_i)]
     """
 
     def __init__(
@@ -60,6 +60,7 @@ class TokenEncoder(nn.Module):
         text_embedding_dim: int,
         d_model: int,
         token_dropout: float = 0.0,
+        use_seq_attr: bool = True,
     ) -> None:
         super().__init__()
         if image_embedding_dim <= 0:
@@ -74,7 +75,8 @@ class TokenEncoder(nn.Module):
         self.img_proj = nn.Linear(int(image_embedding_dim), int(d_model))
         self.txt_proj = nn.Linear(int(text_embedding_dim), int(d_model))
         self.type_emb = nn.Embedding(2, int(d_model))  # 0=text，1=image
-        self.attr_proj = nn.Linear(1, int(d_model))
+        self.use_seq_attr = bool(use_seq_attr)
+        self.attr_proj: Optional[nn.Linear] = nn.Linear(1, int(d_model)) if self.use_seq_attr else None
         self.ln = nn.LayerNorm(int(d_model))
         self.drop = nn.Dropout(p=float(token_dropout))
         self.d_model = int(d_model)
@@ -83,13 +85,14 @@ class TokenEncoder(nn.Module):
     def _init_weights(self) -> None:
         nn.init.xavier_uniform_(self.img_proj.weight)
         nn.init.xavier_uniform_(self.txt_proj.weight)
-        nn.init.xavier_uniform_(self.attr_proj.weight)
         if self.img_proj.bias is not None:
             nn.init.zeros_(self.img_proj.bias)
         if self.txt_proj.bias is not None:
             nn.init.zeros_(self.txt_proj.bias)
-        if self.attr_proj.bias is not None:
-            nn.init.zeros_(self.attr_proj.bias)
+        if self.attr_proj is not None:
+            nn.init.xavier_uniform_(self.attr_proj.weight)
+            if self.attr_proj.bias is not None:
+                nn.init.zeros_(self.attr_proj.bias)
 
     def forward(
         self,
@@ -113,8 +116,12 @@ class TokenEncoder(nn.Module):
         content = img_feat * img_mask + txt_feat * txt_mask
 
         type_feat = self.type_emb(seq_type.to(torch.long))
-        attr_feat = self.attr_proj(seq_attr.to(dtype=content.dtype).unsqueeze(-1))
-        x = content + type_feat + attr_feat
+        x = content + type_feat
+        if self.use_seq_attr:
+            if self.attr_proj is None:
+                raise RuntimeError("use_seq_attr=True 但 attr_proj 未初始化。")
+            attr_feat = self.attr_proj(seq_attr.to(dtype=content.dtype).unsqueeze(-1))
+            x = x + attr_feat
         x = self.ln(x)
         x = self.drop(x)
         return x
@@ -193,6 +200,7 @@ class SeqBinaryClassifier(nn.Module):
         text_embedding_dim: int,
         d_model: int,
         token_dropout: float,
+        use_seq_attr: bool,
         max_seq_len: int,
         transformer_num_layers: int,
         transformer_num_heads: int,
@@ -212,6 +220,7 @@ class SeqBinaryClassifier(nn.Module):
             text_embedding_dim=int(text_embedding_dim),
             d_model=int(d_model),
             token_dropout=float(token_dropout),
+            use_seq_attr=bool(use_seq_attr),
         )
 
         self.set_attn_pool: Optional[SetAttentionPooling] = None
@@ -329,6 +338,7 @@ def build_seq_model(
         text_embedding_dim=int(text_embedding_dim),
         d_model=int(getattr(cfg, "d_model", 256)),
         token_dropout=float(getattr(cfg, "token_dropout", 0.0)),
+        use_seq_attr=bool(getattr(cfg, "use_seq_attr", True)),
         max_seq_len=int(getattr(cfg, "max_seq_len", 128)),
         transformer_num_layers=int(getattr(cfg, "transformer_num_layers", 2)),
         transformer_num_heads=int(getattr(cfg, "transformer_num_heads", 4)),

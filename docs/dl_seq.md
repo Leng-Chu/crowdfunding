@@ -9,6 +9,7 @@
     - 前缀（固定拼在最前面）：`title → blurb → cover_image`
     - 正文：按 `content_sequence` 的原始顺序追加
     - 对应向量：`cover_image_*.npy / title_blurb_*.npy / image_*.npy / text_*.npy`
+    - 可选属性：`seq_attr`（文本长度/图片面积），由 `use_seq_attr` 控制
   - **可选 meta**：表格元数据特征（类别 + 数值），仅在分类前与 pooled 表示拼接（`use_meta=True` 时启用）。
 - **输出**：二分类 **logits**（训练使用 `BCEWithLogitsLoss`），推理时对 logits 施加 `sigmoid` 得到正类概率。
 
@@ -91,16 +92,20 @@ data/projects/<dataset>/<project_id>/
 - `content_sequence` 中 `"text"` 数量必须与 `text_{emb_type}.npy` 的行数一致。
 - 不一致默认直接报错并记录项目 id（`missing_strategy=error`）。
 
-### 2.4 内容块属性（attr）
+### 2.4 内容块属性（attr，可选）
 
-对每个 token 计算 1 个标量属性，并在模型端做线性映射：
+由 `use_seq_attr` 控制（默认 `True`）：
+
+- `use_seq_attr=True`：对每个 token 计算 1 个标量属性，并在模型端做线性映射：
 
 - **title/blurb**：属性为 `log(max(1, len(text)))`
 - **封面图**：直接读取 `cover_image.width/cover_image.height`，计算 `area = width * height`，属性为 `log(max(1, area))`
 - **正文文本块**：读取 `content_length`，属性为 `log(max(1, content_length))`
 - **正文图片块**：读取 `width/height`，属性为 `log(max(1, area))`
 
-字段要求：
+- `use_seq_attr=False`：`seq_attr` 全部置为 0，不再注入文本长度/图片尺寸信息。
+
+字段要求（仅 `use_seq_attr=True` 时）：
 
 - `type="text"`：必须包含 `content_length`（int）
 - `type="image"`：必须包含 `width` 与 `height`（int）
@@ -130,7 +135,7 @@ data/projects/<dataset>/<project_id>/
 - `content.json` 缺失
 - `content_sequence` 不合法
 - 必需 embedding 文件缺失（当 `content_sequence` 中对应模态数量 > 0 时）
-- 图片文件缺失或无法解析尺寸（影响 image 块属性）
+- `use_seq_attr=True` 时缺少 `content_length/width/height` 或字段类型不合法
 
 ---
 
@@ -140,19 +145,19 @@ data/projects/<dataset>/<project_id>/
 
 - 内容 embedding：来自 image 或 text embedding
 - 类型标识：image / text
-- 块属性：`log(length)` 或 `log(area)`
+- 块属性（可选）：`log(length)` 或 `log(area)`
 
 映射方式：
 
 - `img_proj: Linear(D_img → d_model) + ReLU`
 - `txt_proj: Linear(D_txt → d_model) + ReLU`
 - `type_embedding: Embedding(2, d_model)`
-- `attr_proj: Linear(1 → d_model)`（输入为 `seq_attr`）
+- `attr_proj: Linear(1 → d_model)`（仅 `use_seq_attr=True` 时启用，输入为 `seq_attr`）
 
 最终 token 表示：
 
 ```
-x_i = proj(e_i) + type_embedding(t_i) + attr_proj(a_i)
+x_i = proj(e_i) + type_embedding(t_i) [+ attr_proj(a_i)]
 X ∈ R^{B×L×d_model}
 ```
 
@@ -282,11 +287,14 @@ X ∈ R^{B×L×d_model}
   - `conda run -n crowdfunding python src/dl/seq/main.py --baseline-mode trm_pos_shuffled`
 - 指定嵌入类型与设备：
   - `conda run -n crowdfunding python src/dl/seq/main.py --baseline-mode trm_pos --image-embedding-type clip --text-embedding-type clip --device cuda:0`
+- 关闭文本长度/图片面积属性：
+  - `conda run -n crowdfunding python src/dl/seq/main.py --baseline-mode trm_pos --no-use-seq-attr`
 - 仅指定 GPU 序号（等价于 `--device cuda:N`）：
   - `conda run -n crowdfunding python src/dl/seq/main.py --gpu 1`
 
 说明：
 - 命令行参数仅覆盖少数常用项；其余超参建议直接编辑 `src/dl/seq/config.py` 的默认值。
+- 属性开关支持 `--use-seq-attr / --no-use-seq-attr`（默认由 `config.py` 的 `use_seq_attr` 决定）。
 
 ### 8.1 Optuna 自动化调参（仅 `trm_pos+meta`）
 
