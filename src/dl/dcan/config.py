@@ -85,9 +85,9 @@ class DcanConfig:
     meta_dropout: float = 0.3
 
     # DCAN（图文交互）
-    d_model: int = 256
-    num_cross_layers: int = 2
-    cross_ffn_dropout: float = 0.1
+    d_model: int = 128
+    num_cross_layers: int = 1
+    cross_ffn_dropout: float = 0.3
 
     # 融合 head（可手动配置；<=0 时按 2 * fusion_in_dim 自动计算）
     fusion_hidden_dim: int = 512
@@ -96,8 +96,8 @@ class DcanConfig:
     # -----------------------------
     # 训练超参
     # -----------------------------
-    alpha: float = 4e-4  # weight_decay（AdamW）
-    learning_rate_init: float = 5e-4
+    alpha: float = 1e-3  # weight_decay（增强正则，缓解过拟合）
+    learning_rate_init: float = 2e-4
     batch_size: int = 256
 
     max_epochs: int = 80

@@ -89,13 +89,13 @@ class MdlConfig:
     # image 分支
     image_conv_channels: int = 256
     image_conv_kernel_size: int = 3
-    image_input_dropout: float = 0.1
+    image_input_dropout: float = 0.3
     image_dropout: float = 0.5
     image_use_batch_norm: bool = True
 
     # text 分支
     text_conv_kernel_size: int = 3
-    text_input_dropout: float = 0.1
+    text_input_dropout: float = 0.3
     text_dropout: float = 0.3
     text_use_batch_norm: bool = True
 
@@ -106,8 +106,8 @@ class MdlConfig:
     # -----------------------------
     # 训练超参
     # -----------------------------
-    alpha: float = 4e-4  # weight_decay（与 late 对齐）
-    learning_rate_init: float = 5e-4
+    alpha: float = 1e-3  # weight_decay（增强正则，缓解过拟合）
+    learning_rate_init: float = 3e-4
     batch_size: int = 256
 
     max_epochs: int = 80
