@@ -112,7 +112,7 @@ def _save_single_row_csv(save_path: Path, row: dict) -> None:
 
 
 def _mode_name(use_meta: bool, use_attr: bool) -> str:
-    mode = "image+text"
+    mode = "dcan"
     if bool(use_meta):
         mode += "+meta"
     if bool(use_attr):
@@ -410,6 +410,7 @@ def main() -> int:
             run_dir / "result.csv",
             {
                 "mode": mode,
+                "baseline_mode": "dcan",
                 "image_embedding_type": cfg.image_embedding_type,
                 "text_embedding_type": cfg.text_embedding_type,
                 "threshold": float(best_threshold),
