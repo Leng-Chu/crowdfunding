@@ -25,7 +25,7 @@ from config import DcanConfig
 from utils import compute_threshold_free_metrics
 
 _LABEL_SMOOTHING_EPS = 0.05
-_EMA_DECAY = 0.999
+_EMA_DECAY = 0.99
 _WARMUP_RATIO = 0.1
 _DEFAULT_MAX_GRAD_NORM = 1.0
 

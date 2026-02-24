@@ -85,13 +85,13 @@ class DcanConfig:
     meta_dropout: float = 0.3
 
     # DCAN（图文交互）
-    d_model: int = 128
-    num_cross_layers: int = 1
+    d_model: int = 256
+    num_cross_layers: int = 2
     cross_ffn_dropout: float = 0.3
 
     # 融合 head（可手动配置；<=0 时按 2 * fusion_in_dim 自动计算）
     fusion_hidden_dim: int = 512
-    fusion_dropout: float = 0.5
+    fusion_dropout: float = 0.7
 
     # -----------------------------
     # 训练超参

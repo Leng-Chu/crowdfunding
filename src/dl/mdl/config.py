@@ -33,7 +33,7 @@ class MdlConfig:
     # -----------------------------
     data_csv: str = "data/metadata/now_processed.csv"
     projects_root: str = "data/projects/now"
-    experiment_root: str = "experiments/meta"
+    experiment_root: str = "experiments/nometa"
 
     # -----------------------------
     # 分支开关
@@ -64,7 +64,7 @@ class MdlConfig:
     # -----------------------------
     image_embedding_type: str = "clip"  # clip / siglip / resnet
     text_embedding_type: str = "clip"  # bge / clip / siglip
-
+    
     # -----------------------------
     # 统一序列截断（按 content_sequence）
     # -----------------------------
@@ -89,25 +89,25 @@ class MdlConfig:
     # image 分支
     image_conv_channels: int = 256
     image_conv_kernel_size: int = 3
-    image_input_dropout: float = 0.3
+    image_input_dropout: float = 0.1
     image_dropout: float = 0.5
     image_use_batch_norm: bool = True
 
     # text 分支
     text_conv_kernel_size: int = 3
-    text_input_dropout: float = 0.3
+    text_input_dropout: float = 0.1
     text_dropout: float = 0.3
     text_use_batch_norm: bool = True
 
     # 融合 head（可手动配置；<=0 时按 2 * fusion_in_dim 自动计算）
-    fusion_hidden_dim: int = 512
+    fusion_hidden_dim: int = 768
     fusion_dropout: float = 0.5
 
     # -----------------------------
     # 训练超参
     # -----------------------------
-    alpha: float = 1e-3  # weight_decay（增强正则，缓解过拟合）
-    learning_rate_init: float = 3e-4
+    alpha: float = 1e-3  # weight_decay（AdamW）
+    learning_rate_init: float = 2e-4
     batch_size: int = 256
 
     max_epochs: int = 80

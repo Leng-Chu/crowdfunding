@@ -7,7 +7,7 @@ MDL模型实验运行脚本
 python src/scripts/run/mdl_run_all.py --seed 42 --use-meta --use-attr
 
 # 2. 运行seed区间实验
-python src/scripts/run/mdl_run_all.py --start-seed 42 --end-seed 46 --no-use-meta --use-attr
+python src/scripts/run/mdl_run_all.py --start-seed 42 --end-seed 46 --use-meta --use-attr
 """
 
 import argparse
