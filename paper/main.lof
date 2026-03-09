@@ -1,0 +1,24 @@
+\contentsline {figure}{\numberline {1{}.1}{\ignorespaces 类别分布不匹配示意图\relax }}{1}{figure.caption.1}%
+\contentsline {figure}{\numberline {2{}.1}{\ignorespaces 基于池的主动学习框架示意图\relax }}{10}{figure.caption.2}%
+\contentsline {figure}{\numberline {2{}.2}{\ignorespaces 基于流的主动学习框架示意图\relax }}{10}{figure.caption.3}%
+\contentsline {figure}{\numberline {2{}.3}{\ignorespaces 基于生成的主动学习框架示意图\relax }}{11}{figure.caption.4}%
+\contentsline {figure}{\numberline {2{}.4}{\ignorespaces 对比学习示意图\relax }}{14}{figure.caption.5}%
+\contentsline {figure}{\numberline {2{}.5}{\ignorespaces 对比学习流程示意图\relax }}{15}{figure.caption.6}%
+\contentsline {figure}{\numberline {2{}.6}{\ignorespaces 借口任务示意图\relax }}{16}{figure.caption.7}%
+\contentsline {figure}{\numberline {3{}.1}{\ignorespaces CCAL的主动学习周期示意图\relax }}{21}{figure.caption.8}%
+\contentsline {figure}{\numberline {4{}.1}{\ignorespaces CCAL的提取语义信息的对比学习示意图\relax }}{23}{figure.caption.9}%
+\contentsline {figure}{\numberline {4{}.2}{\ignorespaces CCAL的语义分数示意图\relax }}{24}{figure.caption.10}%
+\contentsline {figure}{\numberline {4{}.3}{\ignorespaces CCAL的提取显著性特征的对比学习示意图\relax }}{26}{figure.caption.11}%
+\contentsline {figure}{\numberline {4{}.4}{\ignorespaces CCAL的显著性分数示意图\relax }}{27}{figure.caption.12}%
+\contentsline {figure}{\numberline {4{}.5}{\ignorespaces CCAL的算法框架示意图\relax }}{28}{figure.caption.13}%
+\contentsline {figure}{\numberline {5{}.1}{\ignorespaces CCAL和对比的主动学习算法在类别分布不匹配的CIFAR10数据集上的精度曲线\relax }}{38}{figure.caption.17}%
+\contentsline {figure}{\numberline {5{}.2}{\ignorespaces CCAL和对比的主动学习算法在类别分布不匹配的CIFAR100数据集上的精度曲线 \relax }}{39}{figure.caption.18}%
+\contentsline {figure}{\numberline {5{}.3}{\ignorespaces CCAL和对比的主动学习算法在类别分布不匹配的交叉数据集上的精度曲线\relax }}{40}{figure.caption.19}%
+\contentsline {figure}{\numberline {5{}.4}{\ignorespaces 消融实验评估CCAL的各个模块的有效性\relax }}{41}{figure.caption.20}%
+\contentsline {figure}{\numberline {5{}.5}{\ignorespaces $S_{query}$中参数$t$和$k$的敏感性分析实验\relax }}{42}{figure.caption.21}%
+\contentsline {subfigure}{\numberline {(a)}{\ignorespaces {分析$S_{query}$中参数$t$ 的变化对性能的影响}}}{42}{subfigure.5.1}%
+\contentsline {subfigure}{\numberline {(b)}{\ignorespaces {分析$S_{query}$中参数$k$ 的变化对性能的影响}}}{42}{subfigure.5.2}%
+\contentsline {figure}{\numberline {5{}.6}{\ignorespaces CCAL 与面向类别分布不匹配问题的半监督学习算法（$\text {DS}^3\text {L}$ 和 USAD）的精度曲线\relax }}{43}{figure.caption.22}%
+\contentsline {subfigure}{\numberline {(a)}{\ignorespaces {$\text {DS}^3\text {L}$ 和 CCAL.}}}{43}{subfigure.6.1}%
+\contentsline {subfigure}{\numberline {(b)}{\ignorespaces {UASD 和 CCAL.}}}{43}{subfigure.6.2}%
+\contentsfinish 
