@@ -5,11 +5,11 @@
 \fancyfoot{}
 \lfoot{}
 \rfoot{}
-\renewcommand{\abstractname}{\textbf{\Large \heiti 摘要}}
+\renewcommand{\abstractname}{{\Large \heiti 摘要}}
 \setlength{\topskip}{90pt}
 \renewenvironment{abstract}{%
     \par
-    \noindent\mbox{}\hfill{\bfseries \abstractname}\hfill\mbox{}\par
+    \noindent\mbox{}\hfill{\abstractname}\hfill\mbox{}\par
     \vskip 2.5ex}{\par\vskip 2.5ex}
 \begin{abstract}
 \setlength{\baselineskip}{20pt}
@@ -20,7 +20,7 @@
 
 基于 Kickstarter 真实数据集的实验结果显示，本研究提出的 MSTC 模型在准确率、F1 分数及 AUC 等核心指标上均显著优于传统的无序集合模型、卷积融合模型及晚期融合模型。消融实验进一步证实了内容呈现结构的判别价值：明确的图文顺序所体现的叙事逻辑能够提供显著的性能增益，而视觉密度属性则通过表征认知负荷，为语义信息提供了稳健的补充。本研究不仅提升了众筹预测的精度，更通过实验验证了多模态内容呈现结构在众筹领域的信号作用，实现了从“关注各模态内容语义”到“关注模态内容组织形式”的转变，为众筹项目质量评估提供了新视角。
 
-\textbf{\heiti 关键词：}众筹结果预测；多模态深度学习；叙事传输理论
+{\heiti 关键词：}众筹结果预测；多模态深度学习；叙事传输理论
 
 \end{abstract}
 \setcounter{page}{1}

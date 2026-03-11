@@ -22,17 +22,12 @@
 \newtheorem{property}{性质}
 \newtheorem{lemma}{引理}
 
-
 \usepackage{amsmath,amssymb,amsfonts}
-\usepackage{amsthm,amsmath,amssymb}
-\usepackage{amsmath}
-\usepackage{amssymb,amsfonts}
 \usepackage{algpseudocode}
 \usepackage{float}
 \usepackage{cite}
 \usepackage{listings}
 \usepackage{graphicx}
-\usepackage{epstopdf}
 \usepackage{booktabs}
 \usepackage{multirow}
 \usepackage{geometry}
@@ -40,10 +35,11 @@
 \usepackage{hyperref}
 \usepackage{enumerate}
 \usepackage{enumitem}
+\usepackage{needspace}
+\usepackage[section]{placeins}
 \usepackage{threeparttable}
 \usepackage{fancyhdr}
 \usepackage{setspace}
-\usepackage[T1]{fontenc}
 %\usepackage{mathptmx}%Times New Roman字体
 \usepackage{titletoc}
 \usepackage{fontspec}
@@ -54,6 +50,7 @@
 \usepackage{xcolor}
 \usepackage{caption}
 \usepackage{array}
+\usepackage{tabularx}
 \usepackage{titlesec}
 %\usepackage{subfigure}
 \usepackage{diagbox}
@@ -75,17 +72,22 @@
 \usepackage{bibspacing}
 \setlength{\bibspacing}{0\baselineskip}
 \setlist[enumerate]{itemsep=0pt,parsep=0pt,topsep=4pt,partopsep=0pt}
+\setlist[itemize]{itemsep=0pt,parsep=0pt,topsep=4pt,partopsep=0pt}
 \setlength{\parskip}{0pt}
-\setlength{\abovedisplayskip}{12pt}
-\setlength{\belowdisplayskip}{12pt}
-\setlength{\abovedisplayshortskip}{12pt}
-\setlength{\belowdisplayshortskip}{12pt}
-\everydisplay{\abovedisplayskip=12pt \belowdisplayskip=12pt \abovedisplayshortskip=12pt \belowdisplayshortskip=12pt}
-\setlength{\textfloatsep}{10pt plus 2pt minus 2pt}
-\setlength{\intextsep}{10pt plus 2pt minus 2pt}
-\setlength{\floatsep}{10pt plus 2pt minus 2pt}
+\setlength{\abovedisplayskip}{3pt plus 1pt minus 1pt}
+\setlength{\belowdisplayskip}{3pt plus 1pt minus 1pt}
+\setlength{\abovedisplayshortskip}{3pt plus 1pt minus 1pt}
+\setlength{\belowdisplayshortskip}{3pt plus 1pt minus 1pt}
+\everydisplay{\abovedisplayskip=3pt \belowdisplayskip=3pt \abovedisplayshortskip=3pt \belowdisplayshortskip=3pt}
+\setlength{\jot}{3pt}
+\setlength{\textfloatsep}{8pt plus 2pt minus 2pt}
+\setlength{\intextsep}{8pt plus 2pt minus 2pt}
+\setlength{\floatsep}{8pt plus 2pt minus 2pt}
+\AtBeginEnvironment{tabular}{\renewcommand{\arraystretch}{1.5}\setlength{\extrarowheight}{1pt}}
+\AtBeginEnvironment{tabularx}{\renewcommand{\arraystretch}{1.5}\setlength{\extrarowheight}{1pt}}
+\BeforeBeginEnvironment{figure}{\par\Needspace{10\baselineskip}}
+\BeforeBeginEnvironment{table}{\par\Needspace{10\baselineskip}}
 
-\usepackage{fancyhdr}
 \usepackage{afterpage}
 \newcommand\myemptypage{
     \null
@@ -125,8 +127,7 @@
 % 装订线（T）：0.5 cm
 % 装订线位置（T）：左
 
-\geometry{a4paper,left = 3.5cm,right = 3cm,top = 4.5cm,bottom= 4cm}
-\geometry{textheight=21.2cm,textwidth=14.5cm}
+\geometry{a4paper,left = 3.5cm,right = 3cm,top = 4.5cm,bottom = 4cm}
 
 
 % 页眉：学校标志（教务处主页提供下载）：
@@ -148,6 +149,7 @@ citecolor=black
 }
 
 \begin{document}
+\raggedbottom
 
 \newcommand\dunderline[3][-1pt]{{%
   \setbox0=\hbox{#3}
@@ -195,7 +197,7 @@ citecolor=black
 \pagestyle{fancy}
 \renewcommand{\headrulewidth}{.5pt}
 \lhead{}
-\chead{面向类别分布不匹配场景的主动学习方法研究}
+\chead{基于多模态数据的众筹结果预测研究}
 \rhead{}
 \lfoot{}
 \rfoot{}
@@ -215,25 +217,20 @@ citecolor=black
 \titlespacing{\subsubsection}{0pt}{6pt}{6pt}
 %倍间距20pt
 \setlength{\baselineskip}{20pt}
+\setlength{\abovedisplayskip}{3pt plus 1pt minus 1pt}
+\setlength{\belowdisplayskip}{3pt plus 1pt minus 1pt}
+\setlength{\abovedisplayshortskip}{3pt plus 1pt minus 1pt}
+\setlength{\belowdisplayshortskip}{3pt plus 1pt minus 1pt}
 
 \input{textfiles/1Introduction}
 \input{textfiles/2Related_work}
 \input{textfiles/3FirstResearch}
 \input{textfiles/4SecondResearch}
 \input{textfiles/5ThirdResearch}
-\input{textfiles/6Conclusion}
-\input{textfiles/Summary}
 
 \input{textfiles/References}
 
 \input{textfiles/7Acknowledgement}
-
-
-\newpage
-\addcontentsline{toc}{section}{攻读硕士期间发表学术论文情况}
-\section*{攻读硕士期间发表学术论文情况}
-
-\noindent[1] XXXXXXXXXX.
 
 
 % %% 添加附录

@@ -39,20 +39,15 @@
 数值特征为：
 
 \begin{enumerate}[label=(\arabic*)]
-  \item 项目持续时间：持续时间以天为单位定义为：
+  \item 项目持续时间：持续时间以天为单位定义为
+  \begin{equation}
+  \text{duration\_days}=\frac{\text{deadline}-\text{launched\_at}}{86400}.
+  \end{equation}
+  \item 项目目标金额：以美元为基准并做对数变换以平滑数据分布
+  \begin{equation}
+  \text{log\_usd\_goal}=\log(1+\text{usd\_goal}).
+  \end{equation}
 \end{enumerate}
-
-\begin{equation}
-\text{duration\_days}=\frac{\text{deadline}-\text{launched\_at}}{86400}
-\end{equation}
-
-\begin{enumerate}[label=(\arabic*)]
-  \item 项目目标金额：以美元为基准并做对数变换以平滑数据分布：
-\end{enumerate}
-
-\begin{equation}
-\text{log\_usd\_goal}=\log(1+\text{usd\_goal})
-\end{equation}
 
 以上数值特征采用训练集统计量做标准化。
 
@@ -63,14 +58,14 @@
 \centering
 \caption{元数据特征}
 \label{tab:exp4_1}
-\begin{tabular}{@{}llll@{}}
+\begin{tabular}{@{}p{1.8cm}p{4.0cm}p{6.0cm}p{1.3cm}@{}}
 \toprule
 \textbf{特征类别} & \textbf{特征名称} & \textbf{处理方式} & \textbf{维度} \\ \midrule
 离散特征 & 项目类别 / category & One-hot 编码 & 117 维 \\
  & 国家 / country & One-hot 编码 & 22 维 \\
  & 币种 / currency & One-hot 编码 & 14 维 \\
-数值特征 & 项目持续时间 / duration\_days & 以天为单位，并进行标准化处理 & 1 维 \\
- & 项目目标金额 / log\_usd\_goal & 以美元为基准进行对数变换，并进行标准化处理 & 1 维 \\
+数值特征 & \makecell[l]{\rule{0pt}{5.2ex}项目持续时间 /\\ duration\_days} & \makecell[l]{以天为单位，\\并进行标准化处理} & 1 维 \\
+ & \makecell[l]{\rule{0pt}{5.2ex}项目目标金额 /\\ log\_usd\_goal} & \makecell[l]{以美元为基准进行对数变换，\\并进行标准化处理} & 1 维 \\
 总计 & -- & -- & 155 维 \\ \bottomrule
 \end{tabular}
 \end{table}
@@ -80,13 +75,10 @@
 \subsubsection{实验设置}
 \begin{enumerate}[label=(\arabic*)]
   \item 数据划分策略
-\end{enumerate}
 
 为确保实验对比的公平性、稳定性和结果的可复现性，本研究采用多轮随机实验取平均值的评估方案。所有模型均在五个不同的随机种子下进行独立训练与测试，最终汇报五次实验结果的算术平均值。通过在每一轮实验中严格对齐种子，各模型使用的训练集、验证集、测试集划分完全一致（划分比例为 6:2:2），从而排除了数据采样差异对性能评估的干扰。
 
-\begin{enumerate}[label=(\arabic*)]
   \item 训练配置
-\end{enumerate}
 
 本研究在统一的计算环境下配置了各模型的训练参数，以排除工程实现差异对模型性能的影响。
 
@@ -97,7 +89,7 @@
 \centering
 \caption{实验环境}
 \label{tab:exp4_2}
-\begin{tabular}{@{}lll@{}}
+\begin{tabular}{@{}p{1.8cm}p{3.1cm}p{6.3cm}@{}}
 \toprule
 \textbf{环境类别} & \textbf{参数项} & \textbf{环境说明} \\ \midrule
 操作系统 & OS & Ubuntu 24.04.1 LTS \\
@@ -106,7 +98,7 @@
  & 内存 & 256 GB \\
 软件环境 & Python版本 & 3.11.14 \\
  & 深度学习框架 & PyTorch 2.9.1 (CUDA 12.8) \\
- & 核心依赖库 & Transformers, DrissionPage, BeautifulSoup4, Pillow等 \\ \bottomrule
+ & 核心依赖库 & \makecell[l]{Transformers, DrissionPage,\\ BeautifulSoup4, Pillow 等} \\ \bottomrule
 \end{tabular}
 \end{table}
 
@@ -119,9 +111,7 @@
   \item 迭代轮数：最大训练轮数设定为 80 Epochs，以确保模型充分收敛。
 \end{itemize}
 
-\begin{enumerate}[label=(\arabic*)]
   \item 多模态输入约定
-\end{enumerate}
 
 为了公平地评估不同建模范式对众筹项目内容的表征能力，所有模型均共享相同的内容输入窗口：
 
@@ -130,6 +120,7 @@
   \item 样本构成：每个项目由标题、简介、封面图与正文内容块共同表示，其中正文部分按照 HTML DOM 树中真实的物理展示顺序进行图文交替排列。
   \item 截断策略：为模拟用户关注页面前部信息的浏览行为、控制计算量并保证对照公平，内容块长度上限固定为 40，并统一取页面前部窗口。
 \end{itemize}
+\end{enumerate}
 
 \subsubsection{评价口径}
 为全面客观地评估各模型在众筹成功性预测任务中的表现，本研究采用了二分类任务中通用的评价指标。这些评价指标的计算基于二分类任务的混淆矩阵，混淆矩阵通过对比模型预测结果与真实标签，将样本划分为以下四个基础维度：
@@ -142,9 +133,8 @@
 \end{enumerate}
 
 对于给定的分类阈值 $ \tau $，模型根据如下指示函数来预测项目是否成功：
-
 \begin{equation}
-\hat{y}(\tau)=\mathbb{I}[\hat{p}\ge\tau].
+\hat{y}(\tau)=\mathbb{I}[\hat{p}\ge\tau],
 \end{equation}
 
 其中，$ \hat{p} $为模型输出的预测概率。当概率大于或等于阈值$ \tau $时，判定项目为成功，否则判定为失败。
@@ -153,37 +143,24 @@
 
 \begin{enumerate}[label=(\arabic*)]
   \item 准确率（Accuracy, Acc）：代表模型预测正确的样本（包括成功和失败）占总样本的比例，反映了模型的整体判别能力。其公式为：
-\end{enumerate}
-
-\begin{equation}
-\mathrm{Acc}(\tau)=\frac{TP(\tau)+TN(\tau)}{TP(\tau)+FP(\tau)+FN(\tau)+TN(\tau)}
-\end{equation}
-
-\begin{enumerate}[label=(\arabic*)]
+  \begin{equation}
+  \mathrm{Acc}(\tau)=\frac{TP(\tau)+TN(\tau)}{TP(\tau)+FP(\tau)+FN(\tau)+TN(\tau)}.
+  \end{equation}
   \item 精确率（Precision, P）：又称查准率，代表在模型预测为“成功”的所有样本中，真正成功的项目所占的比例。其公式为：
-\end{enumerate}
-
-\begin{equation}
-\mathrm{P}(\tau)=\frac{TP(\tau)}{TP(\tau)+FP(\tau)}
-\end{equation}
-
-\begin{enumerate}[label=(\arabic*)]
+  \begin{equation}
+  \mathrm{P}(\tau)=\frac{TP(\tau)}{TP(\tau)+FP(\tau)}.
+  \end{equation}
   \item 召回率（Recall, R）：又称查全率，代表在所有真实的成功项目中，被模型正确预测出来的比例。其公式为：
-\end{enumerate}
-
-$
-\mathrm{R}(\tau)=\frac{TP(\tau)}{TP(\tau)+FN(\tau)} $
-
-\begin{enumerate}[label=(\arabic*)]
+  \begin{equation}
+  \mathrm{R}(\tau)=\frac{TP(\tau)}{TP(\tau)+FN(\tau)}.
+  \end{equation}
   \item F1 分数（F1-score）：由于精确率与召回率存在权衡冲突，F1 分数作为两者的调和平均数，能够综合评价模型在查准和查全两方面的平衡表现。其公式为：
+  \begin{equation}
+  \mathrm{F1}(\tau)=\frac{2\mathrm{P}(\tau)\mathrm{R}(\tau)}{\mathrm{P}(\tau)+\mathrm{R}(\tau)}=\frac{2TP(\tau)}{2TP(\tau)+FP(\tau)+FN(\tau)}.
+  \end{equation}
 \end{enumerate}
-
-\begin{equation}
-\mathrm{F1}(\tau)=\frac{2\mathrm{P}(\tau)\mathrm{R}(\tau)}{\mathrm{P}(\tau)+\mathrm{R}(\tau)}=\frac{2TP(\tau)}{2TP(\tau)+FP(\tau)+FN(\tau)}
-\end{equation}
 
 除了上述与阈值相关的指标外，本研究还引入了阈值无关指标 AUC（Area Under Curve）。AUC 的物理意义可以解释为：随机抽取一个正样本和负样本，正样本得分大于负样本得分的概率。其公式为：
-
 \begin{equation}
 \mathrm{AUC}=\Pr(\hat{p}^+>\hat{p}^-)+\frac{1}{2}\Pr(\hat{p}^+=\hat{p}^-).
 \end{equation}
@@ -196,7 +173,6 @@ $
 
 \begin{enumerate}[label=(\arabic*)]
   \item 无序集合范式（Mean-Pool）：该模型假设页面信息为离散模块的无序堆砌，完全忽略了模块间的空间与逻辑关联。
-\end{enumerate}
 
 其结构层级如下：
 
@@ -209,9 +185,7 @@ $
 
 该基线不包含 Token 间的注意力交互，反映了仅依赖图文内容而无结构信息的性能下限。
 
-\begin{enumerate}[label=(\arabic*)]
   \item 卷积融合范式（MDL）：该模型复现了先前论文中基于 CNN 的多分支融合模型，代表了具有优秀局部特征提取能力的建模范式。
-\end{enumerate}
 
 MDL 模型的结构特点是：
 
@@ -224,9 +198,7 @@ MDL 模型的结构特点是：
 
 与本研究不同，MDL 不以 Transformer 显式建模序列，其表现将更多反映卷积结构对局部模式的表征能力。
 
-\begin{enumerate}[label=(\arabic*)]
   \item 晚期融合范式（Late-MSTC）：该模型是 MSTC 模型的晚期融合变体，旨在通过剥离跨模态交互机制，验证 Token 级图文对齐的必要性。
-\end{enumerate}
 
 其与 MSTC 的主要区别在于：
 
@@ -237,6 +209,7 @@ MDL 模型的结构特点是：
 \end{itemize}
 
 为严格控制实验变量并确保对比的公正性，Late-MSTC 采用参数共享的双塔 Transformer 架构，图像与文本分支共用同一套编码器权重，使得模型在总参数量与计算容量上与本研究 MSTC 模型保持严格一致。在该设计下，两者的核心差异仅在于是否允许模态间进行 Token 级的交互映射，而其余超参数设定（如层数、隐层维度及注意力头数等）完全相同。此举旨在排除模型容量差异带来的性能干扰，从而验证细粒度跨模态交互在众筹成功性预测中的必要性。
+\end{enumerate}
 
 \subsubsection{实验结果与分析}
 表 4-3 与图 4-1 共同展示了各模型在测试集上的综合表现，汇报数据取五次实验结果的算术平均值。
@@ -258,10 +231,9 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 
 
 
-<!-- 这是一张图片，ocr 内容为： -->
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.95\textwidth]{figures/432.png}
+  \includegraphics[width=0.88\textwidth]{figures/432.png}
   \caption{对比实验：五次实验平均性能对比}
   \label{fig:exp4_1}
 \end{figure}
@@ -271,28 +243,25 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 为排除数据随机划分对实验结论的干扰，本研究进行了五次独立重复实验，通过变换数据集随机种子（42-46）来观察模型性能波动情况。
 
 
-<!-- 这是一张图片，ocr 内容为： -->
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.95\textwidth]{figures/accuracy_432.png}
+  \includegraphics[width=0.88\textwidth]{figures/accuracy_432.png}
   \caption{对比实验：不同随机种子下的准确率对比}
   \label{fig:exp4_2}
 \end{figure}
 
 
-<!-- 这是一张图片，ocr 内容为： -->
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.95\textwidth]{figures/auc_432.png}
+  \includegraphics[width=0.88\textwidth]{figures/auc_432.png}
   \caption{对比实验：不同随机种子下的 AUC 对比}
   \label{fig:exp4_3}
 \end{figure}
 
 
-<!-- 这是一张图片，ocr 内容为： -->
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.95\textwidth]{figures/f1_432.png}
+  \includegraphics[width=0.88\textwidth]{figures/f1_432.png}
   \caption{对比实验：不同随机种子下的 F1-score 对比}
   \label{fig:exp4_4}
 \end{figure}
@@ -322,14 +291,14 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 \centering
 \caption{顺序消融实验：基线模型结构差异}
 \label{tab:exp4_4}
-\begin{tabular}{@{}lllll@{}}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}X>{\centering\arraybackslash}p{1.4cm}>{\centering\arraybackslash}p{2.1cm}>{\raggedright\arraybackslash}p{2.5cm}@{}}
 \toprule
 \textbf{模型名称} & \textbf{序列编码器} & \textbf{位置编码} & \textbf{顺序是否保留} & \textbf{池化方式} \\ \midrule
-Attn-Pool & 无 & 无 & 保留 & 单 query 注意力池化 \\
+Attn-Pool & 无 & 无 & 保留 & \makecell[l]{单 query\\注意力池化} \\
 NoPos-MSTC & Transformer Encoder & 无 & 保留 & masked mean \\
 Shuffled-MSTC & Transformer Encoder & 正弦位置编码 & 置乱 & masked mean \\
 MSTC & Transformer Encoder & 正弦位置编码 & 保留 & masked mean \\ \bottomrule
-\end{tabular}
+\end{tabularx}
 \end{table}
 
 
@@ -352,10 +321,9 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 
 
 
-<!-- 这是一张图片，ocr 内容为： -->
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.95\textwidth]{figures/441.png}
+  \includegraphics[width=0.88\textwidth]{figures/441.png}
   \caption{顺序消融实验：五次实验平均性能对比}
   \label{fig:exp4_5}
 \end{figure}
@@ -363,28 +331,25 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 五次独立重复实验的详细结果如图 4-6、4-7、4-8 所示：
 
 
-<!-- 这是一张图片，ocr 内容为： -->
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.95\textwidth]{figures/accuracy_441.png}
+  \includegraphics[width=0.88\textwidth]{figures/accuracy_441.png}
   \caption{顺序消融实验：不同随机种子下的准确率对比}
   \label{fig:exp4_6}
 \end{figure}
 
 
-<!-- 这是一张图片，ocr 内容为： -->
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.95\textwidth]{figures/auc_441.png}
+  \includegraphics[width=0.88\textwidth]{figures/auc_441.png}
   \caption{顺序消融实验：不同随机种子下的 AUC 对比}
   \label{fig:exp4_7}
 \end{figure}
 
 
-<!-- 这是一张图片，ocr 内容为： -->
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.95\textwidth]{figures/f1_441.png}
+  \includegraphics[width=0.88\textwidth]{figures/f1_441.png}
   \caption{顺序消融实验：不同随机种子下的 F1-score 对比}
   \label{fig:exp4_8}
 \end{figure}
@@ -423,38 +388,34 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 
 
 
-<!-- 这是一张图片，ocr 内容为： -->
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.95\textwidth]{figures/442.png}
+  \includegraphics[width=0.88\textwidth]{figures/442.png}
   \caption{视觉密度消融实验：五次实验平均性能对比}
   \label{fig:exp4_9}
 \end{figure}
 
 为了进一步验证视觉密度属性带来的增益是否具备统计意义上的稳健性，图 4-10、4-11 与 4-12 展示了在五次独立重复实验中，两个模型在核心指标上的波动对比：
 
-图 4-10 视觉密度消融实验：不同随机种子下的准确率对比<!-- 这是一张图片，ocr 内容为： -->
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.95\textwidth]{figures/accuracy_442.png}
-  \caption{示意图}
+  \includegraphics[width=0.88\textwidth]{figures/accuracy_442.png}
+  \caption{视觉密度消融实验：不同随机种子下的准确率对比}
   \label{fig:exp4_10}
 \end{figure}
 
 
-<!-- 这是一张图片，ocr 内容为： -->
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.95\textwidth]{figures/auc_442.png}
+  \includegraphics[width=0.88\textwidth]{figures/auc_442.png}
   \caption{视觉密度消融实验：不同随机种子下的 AUC 对比}
   \label{fig:exp4_11}
 \end{figure}
 
 
-<!-- 这是一张图片，ocr 内容为： -->
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.95\textwidth]{figures/f1_442.png}
+  \includegraphics[width=0.88\textwidth]{figures/f1_442.png}
   \caption{视觉密度消融实验：不同随机种子下的 F1-score 对比}
   \label{fig:exp4_12}
 \end{figure}
