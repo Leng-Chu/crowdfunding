@@ -39,6 +39,7 @@
 \usepackage{appendix}
 \usepackage{hyperref}
 \usepackage{enumerate}
+\usepackage{enumitem}
 \usepackage{threeparttable}
 \usepackage{fancyhdr}
 \usepackage{setspace}
@@ -46,6 +47,7 @@
 %\usepackage{mathptmx}%Times New Roman字体
 \usepackage{titletoc}
 \usepackage{fontspec}
+\setmainfont{Times New Roman}
 \usepackage{pdfpages}
 \usepackage{tikz}
 \usepackage{etoolbox}
@@ -72,6 +74,16 @@
 \usepackage{makecell}
 \usepackage{bibspacing}
 \setlength{\bibspacing}{0\baselineskip}
+\setlist[enumerate]{itemsep=0pt,parsep=0pt,topsep=4pt,partopsep=0pt}
+\setlength{\parskip}{0pt}
+\setlength{\abovedisplayskip}{12pt}
+\setlength{\belowdisplayskip}{12pt}
+\setlength{\abovedisplayshortskip}{12pt}
+\setlength{\belowdisplayshortskip}{12pt}
+\everydisplay{\abovedisplayskip=12pt \belowdisplayskip=12pt \abovedisplayshortskip=12pt \belowdisplayshortskip=12pt}
+\setlength{\textfloatsep}{10pt plus 2pt minus 2pt}
+\setlength{\intextsep}{10pt plus 2pt minus 2pt}
+\setlength{\floatsep}{10pt plus 2pt minus 2pt}
 
 \usepackage{fancyhdr}
 \usepackage{afterpage}
@@ -93,7 +105,7 @@
 \renewcommand {\thetable} {\thesection{}-\arabic{table}}
 \renewcommand {\thefigure} {\thesection{}-\arabic{figure}}
 \DeclareCaptionLabelSeparator{twospace}{\ ~}  
-\captionsetup{labelsep=twospace}
+\captionsetup{labelsep=twospace,skip=6pt}
 
 
 \renewcommand{\algorithmicrequire}{\textbf{输入:}}  
@@ -146,7 +158,7 @@ citecolor=black
 \include{textfiles/Cover}
 
 %%添加摘要
-\include{textfiles/0abstract}
+\include{textfiles/0Abstract}
 
 % \myemptypage
 
@@ -163,6 +175,7 @@ citecolor=black
 \rfoot{}
 \fancyfoot[LO, RE]{}
 \fancyfoot[OR, LE]{\footnotesize \thepage}
+\setlength{\headheight}{14.5pt}
 \setlength{\topskip}{0pt}
 \renewcommand\contentsname{目\ 录}
 \renewcommand\listfigurename{图\ 目\ 录}
@@ -203,7 +216,7 @@ citecolor=black
 %倍间距20pt
 \setlength{\baselineskip}{20pt}
 
-\input{textfiles/1introduction}
+\input{textfiles/1Introduction}
 \input{textfiles/2Related_work}
 \input{textfiles/3FirstResearch}
 \input{textfiles/4SecondResearch}
@@ -211,11 +224,7 @@ citecolor=black
 \input{textfiles/6Conclusion}
 \input{textfiles/Summary}
 
-%%参考文献
-\newpage
-\addcontentsline{toc}{section}{参考文献}
-\bibliographystyle{unsrt}
-\bibliography{REF/references.bib}
+\input{textfiles/References}
 
 \input{textfiles/7Acknowledgement}
 
