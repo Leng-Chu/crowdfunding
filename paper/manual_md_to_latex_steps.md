@@ -55,7 +55,7 @@
 1. 全列表统一编号样式：
 
 ```latex
-\begin{enumerate}[(1)]
+\begin{enumerate}[label=(\arabic*)]
   \item 条目A
   \item 条目B
 \end{enumerate}
@@ -70,7 +70,7 @@
 \end{itemize}
 ```
 
-> 若你从 Markdown 的 `1. 2. 3.` 迁移，默认不要写成裸 `\item`，应改为 `\begin{enumerate}[(1)]` 或 `\item[(1)]` 风格，保证与模板一致。
+> 若你从 Markdown 的 `1. 2. 3.` 迁移，默认不要写成裸 `\item`，应改为 `\begin{enumerate}[label=(\arabic*)]` 或 `\item[(1)]` 风格，保证与模板一致。
 
 ### 2.4 公式
 
@@ -156,7 +156,7 @@ Markdown 表格需手工改为 `table + tabular`，并尽量贴近 `template.tex
 3. 图表标题样式、编号样式是否与学校模板一致。
 4. 公式编号是否按章连续或全文连续（按模板规范）。
 5. 参考文献样式是否符合提交规范。
-6. 有序列表是否统一为 `[(1)]` 风格（`\begin{enumerate}[(1)]` 或 `\item[(1)]`）。
+6. 有序列表是否统一为 `[(1)]` 风格（`\begin{enumerate}[label=(\arabic*)]` 或 `\item[(1)]`）。
 7. 表格是否统一采用 `booktabs` 风格，复杂表是否使用 `threeparttable`。
 
 ## 5. 推荐的人工工作流（最稳妥）
@@ -187,7 +187,7 @@ Markdown 表格需手工改为 `table + tabular`，并尽量贴近 `template.tex
 - [ ] 逐章粘贴 `paper.md` 内容并完成 LaTeX 语法替换。
 - [ ] 全部图片替换为 `figure` 环境并加 `caption+label`。
 - [ ] 全部表格替换为 `table/tabular` 并加 `caption+label`。
-- [ ] 检查所有有序列表：统一成 `\begin{enumerate}[(1)]` 或 `\item[(1)]`。
+- [ ] 检查所有有序列表：统一成 `\begin{enumerate}[label=(\arabic*)]` 或 `\item[(1)]`。
 - [ ] 检查所有表格：优先 `[H] + booktabs + @{}...@{}`，必要时 `threeparttable`。
 - [ ] 将正文数字引用替换为 `\cite{}`。
 - [ ] 构建并校对参考文献（BibTeX 或 `thebibliography`）。
