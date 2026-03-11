@@ -75,10 +75,14 @@
 \usepackage{bibspacing}
 \setlength{\bibspacing}{0\baselineskip}
 \setlist[enumerate]{itemsep=0pt,parsep=0pt,topsep=4pt,partopsep=0pt}
-\setlength{\abovedisplayskip}{20pt}
-\setlength{\belowdisplayskip}{20pt}
-\setlength{\abovedisplayshortskip}{20pt}
-\setlength{\belowdisplayshortskip}{20pt}
+\setlength{\parskip}{0pt}
+\setlength{\abovedisplayskip}{12pt}
+\setlength{\belowdisplayskip}{12pt}
+\setlength{\abovedisplayshortskip}{12pt}
+\setlength{\belowdisplayshortskip}{12pt}
+\setlength{\textfloatsep}{10pt plus 2pt minus 2pt}
+\setlength{\intextsep}{10pt plus 2pt minus 2pt}
+\setlength{\floatsep}{10pt plus 2pt minus 2pt}
 
 \usepackage{fancyhdr}
 \usepackage{afterpage}
@@ -100,7 +104,7 @@
 \renewcommand {\thetable} {\thesection{}-\arabic{table}}
 \renewcommand {\thefigure} {\thesection{}-\arabic{figure}}
 \DeclareCaptionLabelSeparator{twospace}{\ ~}  
-\captionsetup{labelsep=twospace}
+\captionsetup{labelsep=twospace,skip=6pt}
 
 
 \renewcommand{\algorithmicrequire}{\textbf{输入:}}  
