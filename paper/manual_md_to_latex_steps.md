@@ -12,6 +12,11 @@
 - `figures/`：图片目录（`paper.md` 已改为本地相对路径）。
 - `REF/`、`textfiles/`：可用于参考模板已有拆分方式。
 
+先看两处“硬约束”再动手迁移：
+
+- `main.tex` 已固定图表编号形式为“节号-序号”（如 `2-1`），不要手工改编号。
+- `main.tex` 已加载 `booktabs`、`threeparttable`、`enumerate`、`float`，说明表格和列表格式应尽量按模板示例来写，而不是随意发挥。
+
 ## 1. 建议的人工迁移顺序
 
 建议按“先框架、后内容、再公式图表、最后参考文献”的顺序，减少返工。
@@ -43,7 +48,29 @@
 ### 2.3 列表
 
 - 无序列表 `-` → `itemize`。
-- 有序列表 `1.` → `enumerate`。
+- 有序列表 `1.` → `enumerate`，并按模板显式写编号样式。
+
+模板中常见两种写法，建议优先使用第 1 种：
+
+1. 全列表统一编号样式：
+
+```latex
+\begin{enumerate}[(1)]
+  \item 条目A
+  \item 条目B
+\end{enumerate}
+```
+
+2. 对单条目手工指定标签（在“研究结论/创新点”类段落很常见）：
+
+```latex
+\begin{itemize}
+  \item[(1)] \textbf{创新点1.} 说明文字。
+  \item[(2)] \textbf{创新点2.} 说明文字。
+\end{itemize}
+```
+
+> 若你从 Markdown 的 `1. 2. 3.` 迁移，默认不要写成裸 `\item`，应改为 `\begin{enumerate}[(1)]` 或 `\item[(1)]` 风格，保证与模板一致。
 
 ### 2.4 公式
 
@@ -77,13 +104,28 @@
 
 ### 2.6 表格
 
-Markdown 表格需手工改为 `tabular` 或 `table+tabular`。
+Markdown 表格需手工改为 `table + tabular`，并尽量贴近 `template.tex` 的“标准样式”：
 
-建议流程：
+```latex
+\begin{table}[H]
+\centering
+\caption{表题}
+\label{tab:example}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{列1} & \textbf{列2} & \textbf{列3} \\ \midrule
+内容A         & 内容B         & 内容C         \\ \bottomrule
+\end{tabular}
+\end{table}
+```
 
-1. 先确定列对齐（左中右）。
-2. 再补 `\caption{}` 与 `\label{}`。
-3. 若表格太宽，使用 `\resizebox` 或 `tabularx`（看模板是否已引入）。
+请特别注意：
+
+1. 浮动体位置优先用 `[H]`（模板已加载 `float`）。
+2. 线型优先用 `\toprule / \midrule / \bottomrule`（`booktabs` 风格），避免满屏竖线。
+3. 列格式优先使用 `@{}...@{}` 去除两侧多余留白。
+4. 复杂表可用 `\multirow`；带注释的表优先套 `threeparttable + tablenotes`。
+5. 表题和标签顺序按模板：`\caption{}` 在前，`\label{}` 在后。
 
 ## 3. 参考文献人工迁移建议
 
@@ -114,6 +156,8 @@ Markdown 表格需手工改为 `tabular` 或 `table+tabular`。
 3. 图表标题样式、编号样式是否与学校模板一致。
 4. 公式编号是否按章连续或全文连续（按模板规范）。
 5. 参考文献样式是否符合提交规范。
+6. 有序列表是否统一为 `[(1)]` 风格（`\begin{enumerate}[(1)]` 或 `\item[(1)]`）。
+7. 表格是否统一采用 `booktabs` 风格，复杂表是否使用 `threeparttable`。
 
 ## 5. 推荐的人工工作流（最稳妥）
 
@@ -143,6 +187,8 @@ Markdown 表格需手工改为 `tabular` 或 `table+tabular`。
 - [ ] 逐章粘贴 `paper.md` 内容并完成 LaTeX 语法替换。
 - [ ] 全部图片替换为 `figure` 环境并加 `caption+label`。
 - [ ] 全部表格替换为 `table/tabular` 并加 `caption+label`。
+- [ ] 检查所有有序列表：统一成 `\begin{enumerate}[(1)]` 或 `\item[(1)]`。
+- [ ] 检查所有表格：优先 `[H] + booktabs + @{}...@{}`，必要时 `threeparttable`。
 - [ ] 将正文数字引用替换为 `\cite{}`。
 - [ ] 构建并校对参考文献（BibTeX 或 `thebibliography`）。
 - [ ] 全文编译检查格式、页码、引用、图表目录。
