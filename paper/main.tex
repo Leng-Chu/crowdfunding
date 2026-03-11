@@ -80,6 +80,7 @@
 \setlength{\belowdisplayskip}{12pt}
 \setlength{\abovedisplayshortskip}{12pt}
 \setlength{\belowdisplayshortskip}{12pt}
+\everydisplay{\abovedisplayskip=12pt \belowdisplayskip=12pt \abovedisplayshortskip=12pt \belowdisplayshortskip=12pt}
 \setlength{\textfloatsep}{10pt plus 2pt minus 2pt}
 \setlength{\intextsep}{10pt plus 2pt minus 2pt}
 \setlength{\floatsep}{10pt plus 2pt minus 2pt}
@@ -222,11 +223,7 @@ citecolor=black
 \input{textfiles/6Conclusion}
 \input{textfiles/Summary}
 
-%%参考文献
-\newpage
-\addcontentsline{toc}{section}{参考文献}
-\bibliographystyle{unsrt}
-\bibliography{REF/references.bib}
+\input{textfiles/References}
 
 \input{textfiles/7Acknowledgement}
 
