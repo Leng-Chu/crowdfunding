@@ -183,13 +183,31 @@ citecolor=black
 \rhead{}
 \lfoot{}
 \rfoot{}
-\fancyfoot[LO, RE]{}
-\fancyfoot[OR, LE]{\footnotesize \thepage}
+\fancyfoot[L,C]{}
+\fancyfoot[RO,RE]{\footnotesize \thepage}
 \setlength{\headheight}{14.5pt}
 \setlength{\topskip}{0pt}
 \renewcommand\contentsname{目\ 录}
 \renewcommand\listfigurename{图\ 目\ 录}
 \renewcommand\listtablename{表\ 目\ 录}
+\makeatletter
+\renewcommand*\l@section[2]{%
+  \ifnum \c@tocdepth >\z@
+    \addpenalty\@secpenalty
+    \addvspace{1.0em \@plus\p@}%
+    \settowidth\@tempdima{第10章\quad}%
+    \begingroup
+      \parindent \z@ \rightskip \@pnumwidth
+      \parfillskip -\@pnumwidth
+      \leavevmode \bfseries
+      \def\numberline##1{\hb@xt@\@tempdima{第##1章\hfil}}%
+      \advance\leftskip\@tempdima
+      \hskip -\leftskip
+      #1\nobreak\hfil
+      \nobreak\hb@xt@\@pnumwidth{\hss #2\kern-\p@\kern\p@}\par
+    \endgroup
+  \fi}
+\makeatother
 \tableofcontents
 \newpage
 \listoffigures
@@ -205,23 +223,23 @@ citecolor=black
 \pagestyle{fancy}
 \renewcommand{\headrulewidth}{.5pt}
 \lhead{}
-\chead{基于多模态数据的众筹结果预测研究}
+\chead{\songti\zihao{5}基于多模态数据的众筹结果预测研究}
 \rhead{}
 \lfoot{}
 \rfoot{}
-\fancyfoot[LO, RE]{}
-\fancyfoot[OR, LE]{\footnotesize \thepage}
+\fancyfoot[L,C]{}
+\fancyfoot[RO,RE]{\footnotesize \thepage}
 % \rfoot{\footnotesize \thepage }
 % 按照自然段依次排列，每段起行空两格，回行顶格。12号宋体字，（重点文句，12号宋体字，加粗），倍行距20pt。
 %正文、注释双面打印，编排页码，自第1页起，设置页眉。
 %大标题(第1章)       黑体小二号（18pt），占六行（按宋体小四号计）居中
-\titleformat{\section}[block]{\centering\heiti\LARGE\bfseries}{第\arabic{section}章}{1em}{}[]
+\titleformat{\section}[block]{\centering\heiti\fontsize{18pt}{20pt}\selectfont}{第\arabic{section}章}{1em}{}[]
 \titlespacing{\section}{0pt}{27pt}{27pt}
 %一级节标题（1.1）    黑体小三号（14pt），占四行（按宋体小四号计）顶头
-\titleformat{\subsection}[block]{\heiti\Large}{\arabic{section}.\arabic{subsection}}{1em}{}[]
+\titleformat{\subsection}[block]{\heiti\fontsize{14pt}{20pt}\selectfont}{\arabic{section}.\arabic{subsection}}{1em}{}[]
 \titlespacing{\subsection}{0pt}{17pt}{17pt}
 %二级节标题（1.1.1）  黑体小四号（12pt），占两行（按宋体小四号计）顶头
-\titleformat{\subsubsection}[block]{\heiti\large}{\arabic{section}.\arabic{subsection}.\arabic{subsubsection}}{1em}{}[]
+\titleformat{\subsubsection}[block]{\heiti\fontsize{12pt}{20pt}\selectfont}{\arabic{section}.\arabic{subsection}.\arabic{subsubsection}}{1em}{}[]
 \titlespacing{\subsubsection}{0pt}{6pt}{6pt}
 %倍间距20pt
 \setlength{\baselineskip}{20pt}
@@ -236,5 +254,9 @@ citecolor=black
 \input{textfiles/reference_list}
 
 \input{textfiles/acknowledgements}
+\clearpage
+\thispagestyle{empty}
+\null
+\newpage
 \end{document}
 
