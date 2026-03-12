@@ -19,12 +19,9 @@
 本研究将众筹项目的成功预测建模为一个二分类任务。给定一个众筹项目样本，预测目标为判断该项目在筹款周期结束后能否达到预定的筹资目标。这种任务表达形式遵循了主流奖励式众筹平台（如 Kickstarter 和 Indiegogo）所采用的“全有或全无（All-or-Nothing）”策略：只有当项目在规定期限内筹得的资金总额大于或等于预设的目标金额时，项目才会被判定为成功，发起者可以获得众筹资金；否则，资金将退还给投资者，项目也将被判定为失败。
 
 形式化表述如下：设标签为 $ y\in\{0,1\} $，其中 $ y=1 $ 表示项目成功（即最终筹款金额达到或超过筹资目标），$ y=0 $ 表示项目失败。模型的目标是学习一个映射函数，使预测值尽可能接近真实标签。具体而言，模型通过学习项目元数据、图片或文本中蕴含的多维特征，输出标量预测值 Logit $ z\in\mathbb{R} $，并最终通过 Sigmoid 激活函数将该值映射到$ (0,1) $区间，得到项目成功的预测概率：
-
 \begin{equation}
 \hat{p}=\sigma(z)=\frac{1}{1+\exp(-z)}.
 \end{equation}
-
-
 在模型训练阶段，预测概率与真实标签之间的差异通过二分类交叉熵（Binary Cross Entropy, BCE）损失函数进行度量。训练目标为最小化该损失函数，从而驱动模型捕捉众筹页面和元数据中与项目筹资结果相关的深层判别模式。
 
 \subsubsection{模型架构概述}
@@ -66,7 +63,6 @@
   \begin{equation}
   a=\log(\max(1,\ell));
   \end{equation}
-
   \item 对于图片块，令 $ w,h $ 为图片的分辨率宽高，则其面积为 $ \text{area}=w\cdot h $，同理进行对数处理：
   \begin{equation}
   a=\log(\max(1,\text{area})).
@@ -80,12 +76,9 @@
 基于线性叙事理论，本研究放弃了传统的晚期融合范式，转而将页面内容抽象为符合人类浏览顺序的统一序列。序列由固定前缀与正文内容块组成，前缀包含标题、简介与封面图；随后按页面呈现顺序，即 HTML DOM 树中真实的物理展示顺序拼接正文中的图文块。
 
 为模拟用户在有限注意力下的前部窗口浏览行为，并平衡计算效率，本研究设定块长度上限为 40（ 即 $ L_{\max}=40 $），并固定取页面前部窗口。前缀长度固定为 3，设正文长度为 $ L_{\text{body}} $，则截断前序列长度为 $ 3+L_{\text{body}} $，统一后的序列实际长度为：
-
 \begin{equation}
 L=\min(3+L_{\text{body}},L_{\max})
 \end{equation}
-
-
 \subsection{统一序列预测模型设计}
 本研究构建了一个基于统一序列建模范式的多模态深度学习模型 MSTC。模型的核心思想是将项目内容表示为统一的图文 Token 序列，通过 Transformer 显式建模 Token 间的叙事交互，并融合元数据进行预测。
 
@@ -93,63 +86,42 @@ L=\min(3+L_{\text{body}},L_{\max})
 为了将异构的语义向量、类型信息与物理属性整合为统一的隐藏层表示，本研究在模型的 Token 编码器模块构建了一套层次化的特征融合流程。
 
 模态投影作为流程的起点，旨在消除不同原始模态间的量纲差异。设第 $ i $ 个位置的图像与文本嵌入向量分别为 $ e_i^{\text{img}}\in\mathbb{R}^{512} $ 与 $ e_i^{\text{txt}}\in\mathbb{R}^{512} $。模型首先对两种模态分别做线性投影并经 ReLU 激活：
-
 \begin{equation}
 u_i^{\text{img}}=\text{ReLU}(W_{\text{img}}e_i^{\text{img}}+b_{\text{img}}),\quad
 u_i^{\text{txt}}=\text{ReLU}(W_{\text{txt}}e_i^{\text{txt}}+b_{\text{txt}}),
 \end{equation}
-
-
 其中权重矩阵 $ W_{\text{img}},W_{\text{txt}}\in\mathbb{R}^{256\times 512} $。
 
 在获得投影向量后，模型依据输入序列中的类型标识动态选择有效的模态投影，确保对应位置仅保留所属模态的特征表达：
-
 \begin{equation}
 u_i=\mathbb{I}[t_i=1]\cdot u_i^{\text{img}}+\mathbb{I}[t_i=0]\cdot u_i^{\text{txt}}.
 \end{equation}
-
-
 模型通过类型与属性注入进一步丰富 Token 的上下文含义。为了显式区分图像块与文本块，本研究引入了可学习的类型嵌入表 $ E_{\text{type}}\in\mathbb{R}^{2\times 256} $，显式编码该位置的类型，通过查表操作获取类型编码：
-
 \begin{equation}
 v_i=E_{\text{type}}(t_i).
 \end{equation}
-
-
 属性标量通过线性层投影到隐藏空间，转化为能够与语义特征对齐的维度：
-
 \begin{equation}
 w_i=W_{\text{attr}}a_i+b_{\text{attr}},\quad W_{\text{attr}}\in\mathbb{R}^{256\times 1}.
 \end{equation}
-
-
 整个编码过程汇聚于特征融合层，最终 Token 表示定义为三者相加后的正则化输出：
-
 \begin{equation}
 x_i=\text{Dropout}\big(\text{LayerNorm}(u_i+v_i+w_i)\big),
 \end{equation}
-
-
 其中 Token 级 Dropout 取 0.33。
 
 综上所述，图文序列通过 Token 编码器后得到序列张量 $ X\in\mathbb{R}^{B\times L_{\max}\times 256} $，为后续建模奠定了数据基础。
 
 \subsubsection{正弦位置编码}
 在图文 Token 序列进入 Transformer 序列编码器前，必须赋予模型感知呈现顺序的能力，以模拟投资者沿纵向页面浏览时的线性感知过程。为显式刻画图文块的先后排列关系，本研究在序列中注入固定的正弦位置编码（Position Encoding）。对位置 $ p\in\{0,\ldots,L_{\max}-1\} $ 与维度索引 $ k $，编码定义如下：
-
 \begin{equation}
 \text{PE}(p,2k)=\sin\left(\frac{p}{10000^{2k/d}}\right),\quad
 \text{PE}(p,2k+1)=\cos\left(\frac{p}{10000^{2k/d}}\right),
 \end{equation}
-
-
 在有效位置上进行元素级相加，得到增强顺序感知的输入向量：
-
 \begin{equation}
 x'_i=x_i+m_i\cdot \text{PE}(p=i-1).
 \end{equation}
-
-
 该设计确保了模型对图文顺序的识别能力：若不加位置编码，则 Transformer 架构退化为对无序 Token 集合的处理；而加入位置编码后，模型具备表达相对位置与顺序模式的能力，从而可用于检验顺序信息的边际贡献。
 
 \subsubsection{Transformer 序列编码器}
@@ -158,73 +130,50 @@ x'_i=x_i+m_i\cdot \text{PE}(p=i-1).
 编码器由两层编码层堆叠构成，每层隐藏维度位 $ d=256 $，多头数 $ H=4 $（每头维度 $ d_k=64 $），前馈网络中间维度 $ d_{\text{ff}}=512 $，Dropout 率为 0.1，采用 pre-LN 结构以提升训练稳定性。
 
 设第 $ \ell $ 层输入为 $ Z^{(\ell-1)}\in\mathbb{R}^{B\times L_{\max}\times 256} $， 则单层编码过程定义为：
-
 \begin{equation}
 \tilde{Z}^{(\ell)}=Z^{(\ell-1)}+\text{MHA}(\text{LN}(Z^{(\ell-1)})),
 \end{equation}
-
-
 \begin{equation}
 Z^{(\ell)}=\tilde{Z}^{(\ell)}+\text{FFN}(\text{LN}(\tilde{Z}^{(\ell)})),
 \end{equation}
-
-
 其中多头注意力的核心计算如下：
-
 \begin{equation}
 \begin{aligned}
 \text{MHA}(x)&=\text{Concat}(\text{head}_1,\ldots,\text{head}_H)W^O,\\
 \text{head}_h&=\text{softmax}\left(\frac{Q_hK_h^\top}{\sqrt{d_k}}\right)V_h.
 \end{aligned}
 \end{equation}
-
-
 前馈网络定义为：
-
 \begin{equation}
 \text{FFN}(x) = W_2\text{ReLU}(W_1x + b_1) + b_2
 \end{equation}
-
-
 经过两层编码，模型输出蕴含了深度跨模态交互信息的序列表示 $ Z\in\mathbb{R}^{B\times L_{\max}\times 256} $。
 
 \subsubsection{融合分类}
 通过 Transformer 编码器捕获 Token 间的叙事交互后，模型需要将局部的、动态的序列信息聚合为全局的项目表征，并结合结构化元数据给出最终的预测结果。
 
 为了从图文交替的叙事流中提取出反映项目整体质量的特征向量，本研究对 Transformer 输出的序列表示进行屏蔽均值池化（Masked Mean Pooling），得到项目级内容表示$ h\in\mathbb{R}^{256} $：
-
 \begin{equation}
 h=\frac{\sum_{i=1}^{L_{\max}} m_i z_i}{\sum_{i=1}^{L_{\max}} m_i},
 \end{equation}
-
-
 其中 $ z_i $ 表示 $ Z $ 在位置 $ i $ 的向量。该设计模拟了投资者在阅读完整个页面后形成的综合印象。
 
 除了页面内容呈现的叙事价值外，项目的先天背景（如目标金额、持续时间）也是影响决策的关键因素。本研究将 155 维的结构化元数据特征$ x_{\text{meta}}\in\mathbb{R}^{155} $， 输入一层多层感知机（MLP）进行非线性映射，得到元数据表示：
-
 \begin{equation}
 h_{\text{meta}}=\text{Dropout}\big(\text{ReLU}(W_{\text{meta}}x_{\text{meta}}+b_{\text{meta}})\big),
 \end{equation}
-
-
 其中隐藏层维度为 128，Dropout 为 0.2，故 $ h_{\text{meta}}\in\mathbb{R}^{128} $。
 
 将代表图文序列整体叙事的向量与代表项目属性的元数据向量进行拼接，形成最终的融合表征向量：
-
 \begin{equation}
 f=[h;h_{\text{meta}}]\in\mathbb{R}^{384}.
 \end{equation}
-
-
 分类头负责将融合后的多维特征映射为预测空间。为了提升训练稳定性并防止过拟合，本研究采用了两层全连接结构并引入层归一化（LayerNorm）：
-
 \begin{equation}
 \tilde{f}=\text{LN}(f),\quad
 g=\text{Dropout}\big(\text{ReLU}(W_f\tilde{f}+b_f)\big),\quad
 z=w^\top g+b,
 \end{equation}
-
-
 其中 $ W_f $ 将输入映射到 512 维隐藏层， Dropout 率为 0.5，最终输出标量 Logit$ z $, 代表该众筹项目成功预测的原始得分。
 
 \subsubsection{模型总体结构}
@@ -241,19 +190,13 @@ z=w^\top g+b,
 \subsection{训练目标与优化策略}
 \subsubsection{概率输出与损失函数}
 本研究将众筹成功性预测建模为二分类任务。模型末层输出原始分数 Logit$ z $并通过 Sigmoid 函数映射为预测概率$ \hat{p}=\sigma(z) $。采用二分类交叉熵作为目标损失函数，以衡量预测分布与真实分布之间的差异：
-
 \begin{equation}
 \mathcal{L}=-\frac{1}{N}\sum_{i=1}^{N}\left(\tilde{y}_i\log \hat{p}_i+(1-\tilde{y}_i)\log(1-\hat{p}_i)\right),
 \end{equation}
-
-
 其中 $ \tilde{y} $ 是经过标签平滑（Label Smoothing）处理后的软标签。传统的硬标签（0或1）容易导致模型在训练时过于自信，进而引发过拟合，降低验证集和测试集上的预测准确度。为缓解过拟合并提升模型表现，本研究采用平滑系数 $ \epsilon=0.05 $，对原始标签 $ y\in\{0,1\} $进行如下变换：
-
 \begin{equation}
 \tilde{y}=(1-\epsilon)y+\frac{\epsilon}{2}.
 \end{equation}
-
-
 通过该处理后，正类标签从 1 变为 0.975，负类标签从 0 变为 0.025，强制模型学习更具有泛化性的特征。该处理在所有对照实验中保持一致。
 
 \subsubsection{训练配置与稳定性策略}
@@ -263,7 +206,6 @@ z=w^\top g+b,
   \item 优化器选择：使用 AdamW 优化器作为模型训练的优化方案。在标准的 Adam 优化器中，$ L_2 $正则化项通常被直接合并至损失函数，正则与梯度更新耦合在一起。这种耦合会导致正则化项的实际强度随梯度变化产生波动，从而使正则化项失去预期的约束作用。
 
   针对这一局限性，AdamW 算法显式地将权重衰减与梯度更新解耦，使其能够以恒定的速率作用于参数更新，能够更有效地防止模型参数过大，提升正则化效果。AdamW 的核心更新流程遵循以下公式：
-
   \begin{equation}
   \begin{aligned}
   g_t &= \nabla_{\theta} L_t(\theta_{t-1}) ,
@@ -273,13 +215,11 @@ z=w^\top g+b,
   \theta_t &= \theta_{t-1} - \eta_t \left( \frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon} + \lambda \theta_{t-1} \right).
   \end{aligned}
   \end{equation}
-
   上式中，$ \eta_t $代表学习率，$ \lambda $代表预设的权重衰减系数。
 
   在这一更新逻辑下，权重衰减项 $ \lambda \theta_{t-1} $ 直接作用于参数更新步骤，而不参与动量与二阶矩的自适应缩放计算。这种独立的权重衰减机制确保了无论梯度如何演变，模型始终能受到恒定的参数约束，从而能够更有效地抑制模型过拟合。
 
   \item 学习率调度策略：为平衡训练初期的稳定性和后期的收敛精度，学习率调度采用线性预热（Warmup）配合余弦退火（Cosine Annealing）策略。设总训练步数为 $ T $，本研究将线性预热阶段比例设置为 0.1（即 Warmup 步数 $ T_w=0.1T $）。学习率随步数的变化定义如下：
-
   \begin{equation}
   \eta(t)=
   \begin{cases}
@@ -287,21 +227,17 @@ z=w^\top g+b,
   \eta_{\min}+(\eta_0-\eta_{\min})\cdot \frac{1+\cos\left(\pi\frac{t-T_w}{T-T_w}\right)}{2}, & T_w\le t\le T.
   \end{cases}
   \end{equation}
-
   在预热期，学习率线性增加以避免梯度爆炸；在退火期，学习率按余弦曲线缓慢下降，有助于模型在损失函数表面的局部极小值附近进行精细搜索。
 
   \item 全局梯度裁剪：在训练过程中，由于长序列数据高度复杂的特征交互，梯度在反向传播时可能出现数值过大的现象，即所谓的“梯度爆炸”。为解决这一问题，本研究使用了全局梯度裁剪技术，通过设定最大范数阈值$ L=1.0 $，对模型所有参数的梯度进行整体缩放。核心公式如下：
-
   \begin{equation}
   \hat{g} = g \cdot \min \left( 1, \frac{L}{\|g\|_2} \right)
   \end{equation}
-
   其中，$ g $代表模型全体参数的梯度向量，$ \|g\|_2 $为该向量的 $ L_2 $ 范数。
 
   该策略能有效限制单次参数更新的跨度，保障训练过程的平滑性。
 
   \item 指数滑动平均（Exponential Moving Average, EMA）：在模型推理阶段，本研究使用 EMA 参数而非即时参数，该技术旨在使用参数的滑动平均值而非单次迭代值进行推理，更新过程遵循以下公式：
-
   \begin{equation}
   \theta_{EMA}^{(t)} = \beta \cdot \theta_{EMA}^{(t-1)} + (1 - \beta) \cdot \theta_t
   \end{equation}
@@ -318,32 +254,21 @@ z=w^\top g+b,
 在训练与验证阶段，本研究首先关注模型的原始输出概率质量，只计算阈值无关指标，即验证集 AUC（ROC 曲线下面积）和验证集对数损失（BCE Loss）。这两个指标反映了模型对样本分类排序的整体能力：AUC 衡量了模型对样本的排序能力（即正样本概率高于负样本的概率），而 BCE 反映了预测概率与真实分布的逼近程度。这两个指标均与具体分类阈值的选取无关，能够客观评价模型特征提取的稳健性。因此，本研究的最优检查点按验证集 AUC 最大化的标准来选择。
 
 在评估阶段，本研究采用动态阈值搜索方案。由于众筹成功预测最终需给出具体的“成功/失败”判定，模型输出的连续概率$ \hat p $必须通过阈值$ \tau $转换为二元类别。预测规则定义为如下指示函数：
-
 \begin{equation}
 \hat{y}(\tau)=\mathbb{I}[\hat{p}\ge \tau].
 \end{equation}
-
-
 基于预测结果可以计算阈值相关指标，即精确率（Precision）、召回率（Recall）以及权衡两者的 F1 分数：
-
 \begin{equation}
 \text{P}(\tau)=\frac{TP(\tau)}{TP(\tau)+FP(\tau)},\quad
 \text{R}(\tau)=\frac{TP(\tau)}{TP(\tau)+FN(\tau)},
 \end{equation}
-
-
 \begin{equation}
 \text{F1}(\tau)=\frac{2\text{P}(\tau)\text{R}(\tau)}{\text{P}(\tau)+\text{R}(\tau)}.
 \end{equation}
-
-
 为了在测试集上获得最优的分类效果，平衡精确率与召回率，本研究不直接采用默认的 0.5 作为分类阈值，而是在验证集上进行阈值动态搜索。具体而言，模型在验证集概率上搜索最优阈值 $ \tau ^* $，以最大化验证集 F1 分数：
-
 \begin{equation}
 \tau^*=\arg\max_{\tau\in\mathcal{T}}\text{F1}(\tau),
 \end{equation}
-
-
 其中 $ \mathcal{T} $ 为验证集预测概率的候选阈值集合；若出现多个 $ \tau $ 达到相同的最大 F1 分数，则选择较小的阈值。该阈值一旦确定，即固定用于后续测试集所有评价指标的计算，确保测试集的评估指标（如测试集 F1 分数、精确率、召回率）是在验证集的最优分类标准下计算得出的。
 
 \subsection{本章小结}

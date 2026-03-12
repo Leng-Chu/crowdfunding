@@ -70,15 +70,21 @@
 \usepackage{subfig}
 \usepackage{makecell}
 \usepackage{bibspacing}
+\newcommand{\fixdisplayspacing}{%
+  \setlength{\abovedisplayskip}{0pt}%
+  \setlength{\belowdisplayskip}{4pt}%
+  \setlength{\abovedisplayshortskip}{0pt}%
+  \setlength{\belowdisplayshortskip}{4pt}%
+}
 \setlength{\bibspacing}{0\baselineskip}
 \setlist[enumerate]{itemsep=0pt,parsep=0pt,topsep=4pt,partopsep=0pt}
 \setlist[itemize]{itemsep=0pt,parsep=0pt,topsep=4pt,partopsep=0pt}
 \setlength{\parskip}{0pt}
-\setlength{\abovedisplayskip}{3pt plus 1pt minus 1pt}
-\setlength{\belowdisplayskip}{3pt plus 1pt minus 1pt}
-\setlength{\abovedisplayshortskip}{3pt plus 1pt minus 1pt}
-\setlength{\belowdisplayshortskip}{3pt plus 1pt minus 1pt}
-\everydisplay{\abovedisplayskip=3pt \belowdisplayskip=3pt \abovedisplayshortskip=3pt \belowdisplayshortskip=3pt}
+\fixdisplayspacing
+\makeatletter
+\g@addto@macro\normalsize{\fixdisplayspacing}
+\makeatother
+\everydisplay{\fixdisplayspacing}
 \setlength{\jot}{3pt}
 \setlength{\textfloatsep}{8pt plus 2pt minus 2pt}
 \setlength{\intextsep}{8pt plus 2pt minus 2pt}
@@ -106,6 +112,8 @@
 
 \renewcommand {\thetable} {\thesection{}-\arabic{table}}
 \renewcommand {\thefigure} {\thesection{}-\arabic{figure}}
+\numberwithin{equation}{section}
+\renewcommand {\theequation} {\thesection{}-\arabic{equation}}
 \DeclareCaptionLabelSeparator{twospace}{\ ~}  
 \captionsetup{labelsep=twospace,skip=6pt}
 
@@ -217,10 +225,7 @@ citecolor=black
 \titlespacing{\subsubsection}{0pt}{6pt}{6pt}
 %倍间距20pt
 \setlength{\baselineskip}{20pt}
-\setlength{\abovedisplayskip}{3pt plus 1pt minus 1pt}
-\setlength{\belowdisplayskip}{3pt plus 1pt minus 1pt}
-\setlength{\abovedisplayshortskip}{3pt plus 1pt minus 1pt}
-\setlength{\belowdisplayshortskip}{3pt plus 1pt minus 1pt}
+\fixdisplayspacing
 
 \input{textfiles/1Introduction}
 \input{textfiles/2Related_work}
