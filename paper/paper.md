@@ -41,9 +41,9 @@ Experimental results based on a real-world Kickstarter dataset demonstrate that 
 
 多模态众筹结果预测技术的发展经历了从传统机器学习模型向深度学习模型转型的过程。
 
-早期众筹预测研究主要采用传统机器学习方法，包括逻辑回归、支持向量机（SVM）、随机森林、决策树等[9-11]。这些方法通常依赖人工特征工程，如从文本中提取词频、主题分布等统计特征，从元数据中提取结构化特征。然而，传统方法存在明显局限性：文本特征表达能力有限，难以捕捉语义复杂性；视觉特征几乎被忽视或简化为简单统计量；特征工程耗时耗力，泛化能力受限。为了提升预测效力，部分过渡性研究开始引入神经网络进行特征挖掘。例如，Kaminski 和 Hopp 利用 Doc2Vec 模型捕捉文本、语音转录以及视频元数据中的语义关联，并使用机器学习模型进行预测[12]。但此类研究对文本和视觉信息的利用仍停留在离散属性统计层面，尚未实现模态间的深度交互。
+早期众筹预测研究主要采用传统机器学习方法，包括逻辑回归、支持向量机（SVM）、随机森林、决策树等[9-10]。这些方法通常依赖人工特征工程，如从文本中提取词频、主题分布等统计特征，从元数据中提取结构化特征。然而，传统方法存在明显局限性：文本特征表达能力有限，难以捕捉语义复杂性；视觉特征几乎被忽视或简化为简单统计量；特征工程耗时耗力，泛化能力受限。为了提升预测效力，部分过渡性研究开始引入神经网络进行特征挖掘。例如，Kaminski 和 Hopp 利用 Doc2Vec 模型捕捉文本、语音转录以及视频元数据中的语义关联，并使用机器学习模型进行预测[11]。但此类研究对文本和视觉信息的利用仍停留在离散属性统计层面，尚未实现模态间的深度交互。
 
-深度学习的引入是众筹预测技术发展的重要里程碑。研究者开始采用深度神经网络处理图像特征和文本特征，并探索多模态融合架构，标志着众筹预测技术从依赖先验知识的人工特征工程转向了数据驱动的自动表征学习时代。不同于传统方法在处理非结构化数据时面临的表达瓶颈，深度学习架构能够通过端到端的训练，从原始文本流和像素级图像中自主提炼出具有高阶语义特征的判别规律，从而更精准地刻画众筹项目的多维度吸引力。Cheng 等首次系统性地提出了基于多模态深度学习的预测模型，将文本、图像和元数据结合起来进行成功预测，奠定了当前多模态预测研究的基础[13]。此后的众多研究也证明了这类建模方法的优越性，研究者们开始在此基础上探索更为复杂的模态融合策略，例如引入交叉注意力机制、解耦学习或图神经网络等[14-16]。这一系列的研究显著提升了预测的准确率与鲁棒性，已成为目前众筹绩效预测领域的主流研究方向之一。
+深度学习的引入是众筹预测技术发展的重要里程碑。研究者开始采用深度神经网络处理图像特征和文本特征，并探索多模态融合架构，标志着众筹预测技术从依赖先验知识的人工特征工程转向了数据驱动的自动表征学习时代。不同于传统方法在处理非结构化数据时面临的表达瓶颈，深度学习架构能够通过端到端的训练，从原始文本流和像素级图像中自主提炼出具有高阶语义特征的判别规律，从而更精准地刻画众筹项目的多维度吸引力。Cheng 等首次系统性地提出了基于多模态深度学习的预测模型，将文本、图像和元数据结合起来进行成功预测，奠定了当前多模态预测研究的基础[12]。此后的众多研究也证明了这类建模方法的优越性，研究者们开始在此基础上探索更为复杂的模态融合策略，例如引入交叉注意力机制、解耦学习或图神经网络等[13-15]。这一系列的研究显著提升了预测的准确率与鲁棒性，已成为目前众筹绩效预测领域的主流研究方向之一。
 
 ## 1.3 研究内容
 本研究旨在构建一个基于统一序列建模范式的、关注众筹项目内容呈现结构的多模态深度学习模型，用于预测奖励型众筹项目的成功与否。为实现这一目标，研究内容涵盖了从数据构建、模型架构设计、模型训练与算法优化到实验验证的全过程。
@@ -64,7 +64,7 @@ Experimental results based on a real-world Kickstarter dataset demonstrate that 
 
 **图 1-1 研究内容**
 
-![画板](figures/content.jpg)
+![](figures/content.jpg)
 
 ## 1.4 研究重点与创新点
 本研究的核心在于探究众筹项目内容呈现逻辑与众筹能否成功之间的内在关联，不局限于分析项目的多模态内容语义，而是转向研究“项目是如何说的”。具体而言，研究重点围绕两个核心维度展开：首先是对叙事逻辑的捕捉，即通过正弦位置编码刻画图文块的先后排列顺序，研究不同的叙述节奏如何构建出差异化的说服逻辑，进而影响投资者的决策反馈；其次是视觉密度的量化，通过提取文本长度、图片大小等非语义物理属性，建模潜在投资者在页面浏览过程中的视觉节奏与认知负荷，从而探索投资者心理感受与筹资成功率之间的关系。
@@ -96,40 +96,40 @@ Experimental results based on a real-world Kickstarter dataset demonstrate that 
 
 在以往的研究范式中，众筹页面通常被抽象为一组高维的特征向量，通过统计学检验或机器学习方法建立变量与众筹结果之间的关联。
 
-从项目主体视角出发，项目目标金额、发起时间、项目类别等元信息在绝大多数研究中被广泛使用，在众筹绩效预测模型中发挥着基础性作用。除上述基础信息之外，既有研究多关注发起人社交资本、动态行为及历史经验对众筹结果的影响。例如，Kao 等研究了发起人之间的社交网络对项目投入产出比的影响，实证结果表明，项目发起人之间通过互惠和联结积累的社交资本显著优化了项目从资源投入到资金产出的转化过程[17]；互动的即时性与深度也是研究热点，李清香等研究发现，发起人与出资者之间的双向在线互动显著影响众筹结果，其中出资者评论的情感倾向以及发起人回复的长度均与筹资成功率正向相关[18]； 在经验积累维度，王念新等的研究表明，项目发起人通过过往发起项目和支持他人项目所积累的直接或间接经验显著提升了项目成功率[19]。
+从项目主体视角出发，项目目标金额、发起时间、项目类别等元信息在绝大多数研究中被广泛使用，在众筹绩效预测模型中发挥着基础性作用。除上述基础信息之外，既有研究多关注发起人社交资本、动态行为及历史经验对众筹结果的影响。例如，Kao 等研究了发起人之间的社交网络对项目投入产出比的影响，实证结果表明，项目发起人之间通过互惠和联结积累的社交资本显著优化了项目从资源投入到资金产出的转化过程[16]；互动的即时性与深度也是研究热点，李清香等研究发现，发起人与出资者之间的双向在线互动显著影响众筹结果，其中出资者评论的情感倾向以及发起人回复的长度均与筹资成功率正向相关[17]；在经验积累维度，王念新等的研究表明，项目发起人通过过往发起项目和支持他人项目所积累的直接或间接经验显著提升了项目成功率[18]。
 
-在项目主体信息之外，随着多媒体技术在平台中的普及，多模态信息在影响众筹结果中也发挥关键作用。既有研究表明，多模态元素的丰富度与内容质量显著影响融资绩效。例如，Carradini 等研究发现，成功的众筹项目往往比失败项目使用了更多的图片、视频等非文本元素，在内容表现上具有明显优势，形成了更强的感官冲击[20]；Raab 等考察了图片中显示的面部情绪表达如何影响资助决策，发现快乐和悲伤的面部表情能够引发共情，对投资者的资助决策有正向诱导作用[21]；Costello 等探讨了众筹中文本模糊性和双面性对项目融资成功可能性的影响，强调了表述清晰度在建立契约信任中的重要性[22]；封面图作为项目的第一视觉入口具有特殊影响力，Chen 等研究了在众筹平台上封面图像如何影响资助结果，以及对于不同类型的众筹活动影响有何不同[23]。尽管这些多模态特征在解释性研究中日益受到重视，但它们很少被系统纳入预测模型的特征工程或深度学习框架中，这构成了本研究后续开展多模态融合预测研究的重要切入点。
+在项目主体信息之外，随着多媒体技术在平台中的普及，多模态信息在影响众筹结果中也发挥关键作用。既有研究表明，多模态元素的丰富度与内容质量显著影响融资绩效。例如，Carradini 等研究发现，成功的众筹项目往往比失败项目使用了更多的图片、视频等非文本元素，在内容表现上具有明显优势，形成了更强的感官冲击[19]；Raab 等考察了图片中显示的面部情绪表达如何影响资助决策，发现快乐和悲伤的面部表情能够引发共情，对投资者的资助决策有正向诱导作用[20]；Costello 等探讨了众筹中文本模糊性和双面性对项目融资成功可能性的影响，强调了表述清晰度在建立契约信任中的重要性[21]；封面图作为项目的第一视觉入口具有特殊影响力，Chen 等研究了在众筹平台上封面图像如何影响资助结果，以及对于不同类型的众筹活动影响有何不同[22]。尽管这些多模态特征在解释性研究中日益受到重视，但它们很少被系统纳入预测模型的特征工程或深度学习框架中，这构成了本研究后续开展多模态融合预测研究的重要切入点。
 
 ## 2.2 众筹领域中的多模态预测研究
 鉴于影响众筹结果的因素众多，且呈现出多模态并存的特征，过往预测研究已从单一模态逐步转向复杂的多模态融合范式。
 
-早期研究多聚焦于单一模态。在文本侧，研究者在预测模型中加入项目描述、项目评论等文本信息，以提升模型的预测效果：Song 等使用 RWW 框架分析文本，建立了技术类众筹的预测模型[24]；Bao 等提出了从评论中挖掘语义特征的新框架，以改进筹款成功预测[25]。在视觉侧，视觉信息（图片、视频）对于吸引潜在支持者、传达项目理念、展示产品特性以及激发捐款意愿有着直接的影响，因此 Blanchard 等重点关注了视觉特征的提取，并使用机器学习方法预测众筹项目筹集到的总金额[26]。
+早期研究多聚焦于单一模态。在文本侧，研究者在预测模型中加入项目描述、项目评论等文本信息，以提升模型的预测效果：Song 等使用 RWW 框架分析文本，建立了技术类众筹的预测模型[23]；Bao 等提出了从评论中挖掘语义特征的新框架，以改进筹款成功预测[24]。在视觉侧，视觉信息（图片、视频）对于吸引潜在支持者、传达项目理念、展示产品特性以及激发捐款意愿有着直接的影响，因此 Blanchard 等重点关注了视觉特征的提取，并使用机器学习方法预测众筹项目筹集到的总金额[25]。
 
-近年来，使用多模态模型整合多维信息进行众筹结果预测成为了主流方向。其中，Cheng 等提出的多模态深度学习（MDL）模型是该领域的开创性工作之一[13]。该研究首次将视觉图像作为除文本和元数据之外的重要模态引入众筹预测任务中，设计了三个并行分支：顶部分支利用 One-hot 编码处理类别和筹资目标等元数据；中间分支利用预训练的 VGG16 网络提取项目描述中多张图像的深层特征；底部分支则通过词嵌入对文本进行语义编码。模型最终通过全连接层实现各模态特征的晚期融合，实验证明引入视觉信息能显著提升预测准确率，特别是在文本信息匮乏的项目中表现优异。
+近年来，使用多模态模型整合多维信息进行众筹结果预测成为了主流方向。其中，Cheng 等提出的多模态深度学习（MDL）模型是该领域的开创性工作之一[12]。该研究首次将视觉图像作为除文本和元数据之外的重要模态引入众筹预测任务中，设计了三个并行分支：顶部分支利用 One-hot 编码处理类别和筹资目标等元数据；中间分支利用预训练的 VGG16 网络提取项目描述中多张图像的深层特征；底部分支则通过词嵌入对文本进行语义编码。模型最终通过全连接层实现各模态特征的晚期融合，实验证明引入视觉信息能显著提升预测准确率，特别是在文本信息匮乏的项目中表现优异。
 
-**图 2-1 ****MDL模型****结构参数图****（重绘自论文[13]）**
+**图 2-1 MDL模型结构参数图（重绘自论文[12]）**
 
-![画板](figures/MDL.jpg)
+![](figures/MDL.jpg)
 
-在 MDL 奠定的基础上，后续研究开始探索更精细的特征工程与多模态融合策略。Kaminski 利用文本、语音、视频元数据构建预测模型，强调语言风格与可视化演示的重要性[12]；徐琳整合了数值、文本和图像三种模态，并采用证据理论融合模型进行决策预测[27]；Al-Qershi 等深入挖掘了众筹广告中的哪些内容特征更有助于准确预测众筹成功，设计了 1368 个细粒度特征，并使用集成学习模型提升了预测的适应性[28]。
+在 MDL 奠定的基础上，后续研究开始探索更精细的特征工程与多模态融合策略。Kaminski 利用文本、语音、视频元数据构建预测模型，强调语言风格与可视化演示的重要性[11]；徐琳整合了数值、文本和图像三种模态，并采用证据理论融合模型进行决策预测[26]；Al-Qershi 等深入挖掘了众筹广告中的哪些内容特征更有助于准确预测众筹成功，设计了 1368 个细粒度特征，并使用集成学习模型提升了预测的适应性[27]。
 
-最新研究在视频模态的引入和模态交互的深度上取得了进一步突破。Tang 等针对众筹页面中信息含量极高的介绍视频，提出了深度交叉注意力网络（DCAN），该模型创新性地开发了跨模态交叉注意力块（Cross-Attention Block）来对齐文本描述与长视频，在有效缓解数据噪声的同时提升了跨模态交互质量[14]。Zhang 和 Lau 结合项目描述文本、音频片段和视频片段等多模态特征，通过将音视频信号转录为文本并进行晚期融合，证明了多模态协同较单一模态具有显著优势[29]。Cai 等提出了多模态动态图卷积网络（MDGCN），将多模态交互建模提升到了图结构层面，增强了模型捕获复杂模态关联的能力[15]。Li 等针对众筹场景下模态间语义关联较弱的挑战，提出了共性增强的多模态解耦框架（CAMD），通过将异构数据映射至模态不变空间与模态特定空间，并利用增强网络放大潜在的跨模态共性，实现了更为平衡且稳健的特征表示[16]。
+最新研究在视频模态的引入和模态交互的深度上取得了进一步突破。Tang 等针对众筹页面中信息含量极高的介绍视频，提出了深度交叉注意力网络（DCAN），该模型创新性地开发了跨模态交叉注意力块（Cross-Attention Block）来对齐文本描述与长视频，在有效缓解数据噪声的同时提升了跨模态交互质量[13]。Zhang 和 Lau 结合项目描述文本、音频片段和视频片段等多模态特征，通过将音视频信号转录为文本并进行晚期融合，证明了多模态协同较单一模态具有显著优势[28]。Cai 等提出了多模态动态图卷积网络（MDGCN），将多模态交互建模提升到了图结构层面，增强了模型捕获复杂模态关联的能力[14]。Li 等针对众筹场景下模态间语义关联较弱的挑战，提出了共性增强的多模态解耦框架（CAMD），通过将异构数据映射至模态不变空间与模态特定空间，并利用增强网络放大潜在的跨模态共性，实现了更为平衡且稳健的特征表示[15]。
 
 上述研究共同推动了众筹预测从单一模态分析向复杂多模态深度交互的范式演进，极大地提升了模型的特征表征能力。然而，尽管现有模型探讨了更复杂的多模态交互结构，但仍主要关注模态内容本身的语义信息，缺乏对内容呈现方式的建模。这些方法往往把文本、图片、视频内容视为语义信息的集合，却忽略了众筹界面图文依序排布所形成的叙事逻辑，以及排版的视觉密度对潜在投资者认知负荷的影响。鉴于此，本研究通过 Transformer 架构捕捉图文交替中的叙事节奏与视觉密度特征，旨在从众筹界面的内容呈现结构这一新视角提升众筹结果预测的准确度。
 
 ## 2.3 多模态内容呈现理论
 众筹项目的页面浏览本质上是一个高强度的信息摄取与决策过程。出资人在面对陌生项目时，既需处理项目本身的内在复杂性，又需、应对信息呈现方式所带来的外在认知负荷。因此，项目描述区的内容呈现直接决定了信息的传递效率与用户的决策行为。
 
-首先，视觉密度深刻影响着用户的阅读意愿。视觉密度是指在给定界面空间内信息元素（包括文本、图像、图标及装饰性元素）的集中程度。认知负荷理论指出，人类的工作记忆容量有限，视觉密度的管理本质上是对用户有限的注意力资源进行调度。如果多模态界面视觉密度过高，单位面积内的信息量（如字数、图片）超出了工作记忆的承载范围，就会引发认知过载与逃离行为[30-32]。Djamasbi 等的眼动追踪研究进一步证实，Web 用户倾向于 F 型扫描，高密度文本会导致视线在垂直扫描中滑落[33]。Liang 等的研究也证明，在文本维度上，众筹项目的字数与融资成功率之间存在显著的“倒 U 型”关系[34]。字数一旦超过某个特定阈值，过剩的信息就会转化为外在负荷，形成理解负担，反而降低了投资者的支持意愿。在此基础上，加工流畅性理论进一步解释了这一现象[35]：文本长度、图片大小等视觉密度特征直接影响界面认知负荷，当页面呈现出较低的认知负荷时，投资者会产生更高的加工流畅性，这种轻松的心理感受往往会转化为对项目质量的直觉判断，进而提升投资意愿。这意味着众筹项目界面不应追求极端的信息堆砌，而应通过优化视觉密度来匹配投资者的认知能力。
+首先，视觉密度深刻影响着用户的阅读意愿。视觉密度是指在给定界面空间内信息元素（包括文本、图像、图标及装饰性元素）的集中程度。认知负荷理论指出，人类的工作记忆容量有限，视觉密度的管理本质上是对用户有限的注意力资源进行调度。如果多模态界面视觉密度过高，单位面积内的信息量（如字数、图片）超出了工作记忆的承载范围，就会引发认知过载与逃离行为[29-31]。Djamasbi 等的眼动追踪研究进一步证实，Web 用户倾向于 F 型扫描，高密度文本会导致视线在垂直扫描中滑落[32]。Liang 等的研究也证明，在文本维度上，众筹项目的字数与融资成功率之间存在显著的“倒 U 型”关系[33]。字数一旦超过某个特定阈值，过剩的信息就会转化为外在负荷，形成理解负担，反而降低了投资者的支持意愿。在此基础上，加工流畅性理论进一步解释了这一现象[34]：文本长度、图片大小等视觉密度特征直接影响界面认知负荷，当页面呈现出较低的认知负荷时，投资者会产生更高的加工流畅性，这种轻松的心理感受往往会转化为对项目质量的直觉判断，进而提升投资意愿。这意味着众筹项目界面不应追求极端的信息堆砌，而应通过优化视觉密度来匹配投资者的认知能力。
 
-除视觉密度等静态属性外，图文内容的排列顺序同样是决定说服效果的关键变量。研究表明，人类对信息的加工具有显著的顺序依赖性。根据 Hogarth 和 Einhorn 提出的信念修正模型[36]，个体在接收序列信息时，会以当前信念为锚点，并根据后续信息进行调整和加权。在这种序贯加工过程中，信息的呈现顺序会直接改变权重的分配，导致相同的多模态刺激产生截然不同的判断结果。在 Web 环境下，用户往往采取自上而下顺序浏览的信息处理模式，使得符合阅读习惯的“倒金字塔”结构及图文交替的呈现节奏能够通过优化认知路径来增强内容说服力[37]。这种顺序效应在多个领域得到了实证：在新闻领域，Tjärnhage 等发现交互式图文叙事能有效维持用户注意力[38]；在电商领域，Lee 等发现图片的排列顺序会影响消费者的购买意愿[39-40]；在广告领域，Razak 等指出文字和视觉元素共同构成了广告的说服过程，广告往往优先使用具有吸引力的图片抓取消费者注意力，随后再使用文字通过深入的信息披露来完成说服[41]。因此，在以 Kickstarter 为代表的众筹场景中，图文顺序所蕴含的叙事结构也不仅仅是信息披露的载体，更是决定筹资说服力的核心逻辑。
+除视觉密度等静态属性外，图文内容的排列顺序同样是决定说服效果的关键变量。研究表明，人类对信息的加工具有显著的顺序依赖性。根据 Hogarth 和 Einhorn 提出的信念修正模型[35]，个体在接收序列信息时，会以当前信念为锚点，并根据后续信息进行调整和加权。在这种序贯加工过程中，信息的呈现顺序会直接改变权重的分配，导致相同的多模态刺激产生截然不同的判断结果。在 Web 环境下，用户往往采取自上而下顺序浏览的信息处理模式，使得符合阅读习惯的“倒金字塔”结构及图文交替的呈现节奏能够通过优化认知路径来增强内容说服力[36]。这种顺序效应在多个领域得到了实证：在新闻领域，Tjärnhage 等发现交互式图文叙事能有效维持用户注意力[37]；在电商领域，Lee 等发现图片的排列顺序会影响消费者的购买意愿[38-39]；在广告领域，Razak 等指出文字和视觉元素共同构成了广告的说服过程，广告往往优先使用具有吸引力的图片抓取消费者注意力，随后再使用文字通过深入的信息披露来完成说服[40]。因此，在以 Kickstarter 为代表的众筹场景中，图文顺序所蕴含的叙事结构也不仅仅是信息披露的载体，更是决定筹资说服力的核心逻辑。
 
-从深层心理机制看，视觉密度和排列顺序对众筹成功性的影响可以用叙事传输理论来解释：该理论指出，受众能否被叙事带入情境并产生信念偏转，高度依赖于叙事质量[42]。在众筹的多模态情境下，叙事质量具体转化为两个维度：顺序决定了叙事的方向感与逻辑自洽性，而视觉密度决定了叙事的呼吸感与情绪节奏，二者共同决定了项目内容对潜在支持者的说服效果。本研究对众筹项目的内容呈现方式进行建模，旨在量化项目的“叙事传输”对众筹成功性的影响。
+从深层心理机制看，视觉密度和排列顺序对众筹成功性的影响可以用叙事传输理论来解释：该理论指出，受众能否被叙事带入情境并产生信念偏转，高度依赖于叙事质量[41]。在众筹的多模态情境下，叙事质量具体转化为两个维度：顺序决定了叙事的方向感与逻辑自洽性，而视觉密度决定了叙事的呼吸感与情绪节奏，二者共同决定了项目内容对潜在支持者的说服效果。本研究对众筹项目的内容呈现方式进行建模，旨在量化项目的“叙事传输”对众筹成功性的影响。
 
 ## 2.4 内容呈现结构建模的工程实践
-鉴于内容呈现结构的重要性，多模态深度学习模型在行为预测领域已形成了较为成熟的工程化建模方案。以微软 LayoutLM 系列模型为代表的系列工作，开创性地将文本、布局坐标和视觉信息统一到同一个预训练框架中，奠定了多模态布局建模的基础[43-44]。这种布局信息的效用在多个交互场景中得到了实证：在点击率预测领域，Cui 等提出了基于扩散模型的多模态协同兴趣网络，通过建模图文在特定布局下的复杂交互与协同效应，证实了捕捉模态间的空间关联对于提升点击率预测精度的关键作用[45]；在新闻推荐领域，Chai 等发现“左图右文”的排列方式更符合人类的认知加工习惯，证实了图文出现的物理顺序与空间占位会直接干预用户的认知效率。上述研究均表明，引入布局信息是提升模型预测精度的重要途径。
+鉴于内容呈现结构的重要性，多模态深度学习模型在行为预测领域已形成了较为成熟的工程化建模方案。以微软 LayoutLM 系列模型为代表的系列工作，开创性地将文本、布局坐标和视觉信息统一到同一个预训练框架中，奠定了多模态布局建模的基础[42-43]。这种布局信息的效用在多个交互场景中得到了实证：在点击率预测领域，Cui 等提出了基于扩散模型的多模态协同兴趣网络，通过建模图文在特定布局下的复杂交互与协同效应，证实了捕捉模态间的空间关联对于提升点击率预测精度的关键作用[44]；在新闻推荐领域，Chai 等发现“左图右文”的排列方式更符合人类的认知加工习惯，证实了图文出现的物理顺序与空间占位会直接干预用户的认知效率。上述研究均表明，引入布局信息是提升模型预测精度的重要途径。
 
-这种建模趋势的背后有着深层的认知与方法论支撑。Paivio 提出的双重编码理论指出，大脑在处理图文交替信息时，文字和视觉信息是由不同系统并行加工但又相互关联的[46]。然而，在传统深度学习中，这种多模态特征往往因模态不同、特征空间割裂而难以整合。CLIP 等预训练模型的出现，通过对比学习将不同模态映射至统一的表征空间，为双重编码理论提供了工程视角的模态间关联处理，已成为当前多模态融合的主流范式[47]。其核心价值在于通过跨模态语义对齐，使模型能够超越单纯的特征堆砌，转而捕捉图文序列中深层的叙事逻辑。
+这种建模趋势的背后有着深层的认知与方法论支撑。Paivio 提出的双重编码理论指出，大脑在处理图文交替信息时，文字和视觉信息是由不同系统并行加工但又相互关联的[45]。然而，在传统深度学习中，这种多模态特征往往因模态不同、特征空间割裂而难以整合。CLIP 等预训练模型的出现，通过对比学习将不同模态映射至统一的表征空间，为双重编码理论提供了工程视角的模态间关联处理，已成为当前多模态融合的主流范式[46]。其核心价值在于通过跨模态语义对齐，使模型能够超越单纯的特征堆砌，转而捕捉图文序列中深层的叙事逻辑。
 
 由此审视众筹场景，虽然其页面不像复杂文档那样具有多变的二维布局，但其图文叙事序列实质上构成了特定场景下一种线性的、流式的布局结构。这种结构虽然在空间维度上进行了简化，但在逻辑维度上对众筹绩效的影响依然存在。然而，现有众筹研究大多关注模态具体内容，鲜有研究系统量化这种图文布局模式对融资绩效的影响。本研究旨在填补这一空白，将上述对内容呈现结构的建模思想引入众筹领域，对众筹项目描述页面的图文序列进行建模与分析。
 
@@ -179,7 +179,7 @@ $ \hat{p}=\sigma(z)=\frac{1}{1+\exp(-z)}. $
 
 **图 3-1 ****MSTC 模型架构概览**
 
-![画板](figures/MSTC_overview.jpg)
+![](figures/MSTC_overview.jpg)
 
 ## 3.3 多模态数据表征与图文序列构建
 为了模拟投资者在众筹页面上的“叙事传输”体验，模型需要将非结构化的网页内容转化为具备顺序特征和物理属性的结构化输入。本节详细说明如何将文本、图像及布局属性编码为统一的多模态序列。
@@ -316,7 +316,7 @@ z=w^\top g+b, $
 
 **图 3-2 MSTC 模型结构参数图 **
 
-![画板](figures/MSTC_param.jpg)
+![](figures/MSTC_param.jpg)
 
 ## 3.5. 训练目标与优化策略
 ### 3.5.1 概率输出与损失函数
@@ -459,14 +459,14 @@ $ \text{log\_usd\_goal}=\log(1+\text{usd\_goal}) $
 
 **表 4-1 元数据特征**
 
-| **<font style="color:rgb(31, 31, 31);">特征类别</font>** | **<font style="color:rgb(31, 31, 31);">特征名称</font>** | **<font style="color:rgb(31, 31, 31);">处理方式</font>** | **<font style="color:rgb(31, 31, 31);">维度</font>** |
+| 特征类别 | 特征名称 | 处理方式 | 维度 |
 | --- | --- | --- | --- |
-| **<font style="color:rgb(31, 31, 31);">离散特征</font>** | <font style="color:rgb(31, 31, 31);">项目类别</font><br/><font style="color:rgb(31, 31, 31);">category</font> | <font style="color:rgb(31, 31, 31);">One-hot 编码 </font> | <font style="color:rgb(31, 31, 31);">117 维 </font> |
-| | <font style="color:rgb(31, 31, 31);">国家</font><br/><font style="color:rgb(31, 31, 31);">country</font> | <font style="color:rgb(31, 31, 31);">One-hot 编码 </font> | <font style="color:rgb(31, 31, 31);">22 维 </font> |
-| | <font style="color:rgb(31, 31, 31);">币种</font><br/><font style="color:rgb(31, 31, 31);">currency</font> | <font style="color:rgb(31, 31, 31);">One-hot 编码 </font> | <font style="color:rgb(31, 31, 31);">14 维 </font> |
-| **<font style="color:rgb(31, 31, 31);">数值特征</font>** | <font style="color:rgb(31, 31, 31);">项目持续时间</font><br/><font style="color:rgb(31, 31, 31);">duration_days</font> | <font style="color:rgb(31, 31, 31);">以天为单位，并进行标准化处理 </font> | <font style="color:rgb(31, 31, 31);">1 维 </font> |
-| | <font style="color:rgb(31, 31, 31);">项目目标金额</font><br/><font style="color:rgb(31, 31, 31);">log_usd_goal</font> | <font style="color:rgb(31, 31, 31);">以美元为基准进行对数变换，并进行标准化处理 </font> | <font style="color:rgb(31, 31, 31);">1 维 </font> |
-| **<font style="color:rgb(31, 31, 31);">总计</font>** | <font style="color:rgb(31, 31, 31);">--</font> | <font style="color:rgb(31, 31, 31);">--</font> | **<font style="color:rgb(31, 31, 31);">155 维</font>** |
+| 离散特征 | 项目类别 / category | One-hot 编码 | 117 维 |
+|  | 国家 / country | One-hot 编码 | 22 维 |
+|  | 币种 / currency | One-hot 编码 | 14 维 |
+| 数值特征 | 项目持续时间 / duration_days | 以天为单位，标准化处理 | 1 维 |
+|  | 目标金额 / log_usd_goal | 以美元为基准，进行对数变换和标准化处理 | 1 维 |
+| 总计 | -- | -- | 155 维 |
 
 
 ## 4.2 实验设置与评价口径
@@ -483,15 +483,15 @@ $ \text{log\_usd\_goal}=\log(1+\text{usd\_goal}) $
 
 **表 4-2 实验环境**
 
-| 环境类别 | <font style="color:rgb(0,0,0);">参数项</font> | <font style="color:rgb(0,0,0);">环境说明</font> |
-| :---: | :---: | :---: |
+| 环境类别 | 参数项 | 环境说明 |
+| --- | --- | --- |
 | 操作系统 | OS | Ubuntu 24.04.1 LTS |
 | 硬件环境 | CPU | Intel(R) Xeon(R) Silver 4116 CPU @ 2.10GHz |
-| | GPU | NVIDIA GeForce RTX 3090 (24GB VRAM) |
-| | 内存 | 256 GB |
-| 软件环境 | Python版本 | <font style="color:rgb(0,0,0);">3.11.14</font> |
-| | 深度学习框架 | <font style="color:rgb(0,0,0);"> PyTorch 2.9.1 (CUDA 12.8) </font> |
-| | 核心依赖库 | <font style="color:rgb(0,0,0);"> Transformers, DrissionPage, BeautifulSoup4, Pillow等 </font> |
+|  | GPU | NVIDIA GeForce RTX 3090 (24GB VRAM) |
+|  | 内存 | 256 GB |
+| 软件环境 | Python版本 | 3.11.14 |
+|  | 深度学习框架 | PyTorch 2.9.1 (CUDA 12.8) |
+|  | 核心依赖库 | Transformers, DrissionPage, BeautifulSoup4, Pillow 等 |
 
 
 具体的超参数设定如下：
@@ -594,14 +594,13 @@ MDL 模型的结构特点是：
 | 模型名称 | Accuracy | Precision | Recall | F1-score | AUC |
 | --- | --- | --- | --- | --- | --- |
 | Mean-Pool | 0.8205 | 0.7897 | 0.8734 | 0.8293 | 0.9086 |
-| MDL | 0.8243 | 0.7891 | **0.8843** | 0.8339 | 0.9101 |
+| MDL | 0.8243 | 0.7891 | 0.8843 | 0.8339 | 0.9101 |
 | Late-MSTC | 0.8285 | 0.7957 | 0.8830 | 0.8370 | 0.9164 |
-| MSTC | **0.8331** | **0.8066** | 0.8766 | **0.8398** | **0.9198** |
+| MSTC | 0.8331 | 0.8066 | 0.8766 | 0.8398 | 0.9198 |
 
 
 **图 4-1 对比实验：五次实验平均性能对比**
 
-<!-- 这是一张图片，ocr 内容为： -->
 ![](figures/432.png)
 
 实验结果显示，本研究提出的 MSTC 模型在 Accuracy、F1-score 和 AUC 等核心评价维度上均显著优于其他基准模型。值得注意的是，MSTC 模型并没有取得最高的 Recall，然而在所有模型中，MSTC 模型的 Precision 和 Recall 最为平衡且 F1-score 最高，这表明其他模型倾向于过度预测项目成功来换取更高的召回率。对于众筹平台而言，这样的模型会产生大量的假阳性（将失败项目误判为成功），不稳定的决策会增加平台的运营风险。
@@ -610,17 +609,14 @@ MDL 模型的结构特点是：
 
 **图 4-2 对比实验：不同随机种子下的准确率对比**
 
-<!-- 这是一张图片，ocr 内容为： -->
 ![](figures/accuracy_432.png)
 
 **图 4-3 对比实验：不同随机种子下的 AUC 对比**
 
-<!-- 这是一张图片，ocr 内容为： -->
 ![](figures/auc_432.png)
 
 **图 4-4 对比实验：不同随机种子下的 F1-score 对比**
 
-<!-- 这是一张图片，ocr 内容为： -->
 ![](figures/f1_432.png)
 
 如图 4-2、4-3、4-4 所示，MSTC 模型在不同的随机种子设定下表现出了高度的一致性。在 Accuracy、AUC 与 F1-score 的对比中，MSTC 模型在绝大多数实验轮次中均稳居首位。这种稳定的实验表现证明，MSTC 模型能够捕捉到众筹数据中影响筹款结果的本质特征，而非仅仅拟合了特定数据子集的随机噪声。这种稳健性对于模型在实际生产环境中的复现与部署至关重要。
@@ -648,9 +644,9 @@ MDL 模型的结构特点是：
 | 模型名称 | 序列编码器 | 位置编码 | 顺序是否保留 | 池化方式 |
 | --- | --- | --- | --- | --- |
 | Attn-Pool | 无 | 无 | 保留 | 单 query 注意力池化 |
-| NoPos-MSTC | Transformer Encoder | 无 | 保留 | masked mean |
-| Shuffled-MSTC | Transformer Encoder | 正弦位置编码 | 置乱 | masked mean |
-| MSTC | Transformer Encoder | 正弦位置编码 | 保留 | masked mean |
+| NoPos-MSTC | Transformer | 无 | 保留 | 屏蔽均值池化 |
+| Shuffled-MSTC | Transformer | 正弦位置编码 | 置乱 | 屏蔽均值池化 |
+| MSTC | Transformer | 正弦位置编码 | 保留 | 屏蔽均值池化 |
 
 
 表 4-5 与图 4-5 共同报告了各场景下的实验结果，同样取五次实验结果的算数平均值：
@@ -659,32 +655,28 @@ MDL 模型的结构特点是：
 
 | 模型名称 | Accuracy | Precision | Recall | F1-score | AUC |
 | --- | --- | --- | --- | --- | --- |
-| Attn-Pool | 0.8165 | 0.7754 | **0.8900** | 0.8287 | 0.9088 |
+| Attn-Pool | 0.8165 | 0.7754 | 0.8900 | 0.8287 | 0.9088 |
 | NoPos-MSTC | 0.8269 | 0.7986 | 0.8748 | 0.8345 | 0.9131 |
 | Shuffled-MSTC | 0.8324 | 0.8059 | 0.8751 | 0.8390 | 0.9183 |
-| MSTC | **0.8331** | **0.8066** | 0.8766 | **0.8398** | **0.9198** |
+| MSTC | 0.8331 | 0.8066 | 0.8766 | 0.8398 | 0.9198 |
 
 
 **图 4-5 顺序消融实验：五次实验平均性能对比**
 
-<!-- 这是一张图片，ocr 内容为： -->
 ![](figures/441.png)
 
 五次独立重复实验的详细结果如图 4-6、4-7、4-8 所示：
 
 **图 4-6 顺序消融实验：不同随机种子下的准确率对比**
 
-<!-- 这是一张图片，ocr 内容为： -->
 ![](figures/accuracy_441.png)
 
 **图 4-7 顺序消融实验：不同随机种子下的 AUC 对比**
 
-<!-- 这是一张图片，ocr 内容为： -->
 ![](figures/auc_441.png)
 
 **图 4-8 顺序消融实验：不同随机种子下的 F1-score 对比**
 
-<!-- 这是一张图片，ocr 内容为： -->
 ![](figures/f1_441.png)
 
 在不同随机种子驱动的绝大多数实验轮次中，MSTC 模型表现最优，各指标与平均性能评估结果高度一致，验证了实验结果的稳健性。
@@ -710,28 +702,25 @@ MDL 模型的结构特点是：
 
 | 模型配置 | Accuracy | Precision | Recall | F1-score | AUC |
 | --- | --- | --- | --- | --- | --- |
-| NoAttr-MSTC | 0.8310 | 0.8022 | **0.8785** | 0.8383 | 0.9193 |
-| MSTC | **0.8331** | **0.8066** | 0.8766 | **0.8398** | **0.9198** |
+| NoAttr-MSTC | 0.8310 | 0.8022 | 0.8785 | 0.8383 | 0.9193 |
+| MSTC | 0.8331 | 0.8066 | 0.8766 | 0.8398 | 0.9198 |
 
 
 **图 4-9 视觉密度消融实验：五次实验平均性能对比**
 
-<!-- 这是一张图片，ocr 内容为： -->
 ![](figures/442.png)
 
 为了进一步验证视觉密度属性带来的增益是否具备统计意义上的稳健性，图 4-10、4-11 与 4-12 展示了在五次独立重复实验中，两个模型在核心指标上的波动对比： 
 
-**图 4-10 视觉密度消融实验：不同随机种子下的准确率对比**<!-- 这是一张图片，ocr 内容为： -->
+**图 4-10 视觉密度消融实验：不同随机种子下的准确率对比**
 ![](figures/accuracy_442.png)
 
 **图 4-11 视觉密度消融实验：不同随机种子下的 AUC 对比**
 
-<!-- 这是一张图片，ocr 内容为： -->
 ![](figures/auc_442.png)
 
 **图 4-12 视觉密度消融实验：不同随机种子下的 F1-score 对比**
 
-<!-- 这是一张图片，ocr 内容为： -->
 ![](figures/f1_442.png)
 
 实验结果显示，全量属性的 MSTC 模型在 Accuracy、Precision 和 F1-score 上均优于 NoAttr-MSTC。尽管受限于预训练模型本身已具备极强的表征能力，加入视觉密度属性在数值上的绝对增幅较小，但在不同随机种子（42-46）的测试轮次中，该增益表现出了高度的稳定性。这种跨实验的一致性有力地排除了指标提升源于随机偏差的可能性，证实了视觉密度特征对于提升预测精度的真实边际贡献。
@@ -740,7 +729,7 @@ MDL 模型的结构特点是：
 
 首先，引入视觉密度属性虽然扩充了模型的输入信息，但也相应地增加了特征空间的维度与复杂度。在种子 44 所对应的特定样本分布中，部分项目的视觉排版特征（如极端的文字长度或图片占比）可能与项目真实的成功标签之间存在噪声干扰。MSTC 模型在学习过程中可能过度拟合了这些非普适性的视觉规律，导致在测试集上的泛化能力受到局部削弱。
 
-其次， 在众筹成功预测任务中，内容的语义表征始终占据主导地位。在某些特定数据子集中，若内容的语义信号与视觉密度信号呈现出不一致的指向，模型对辅助特征的关注可能会在一定程度上干扰对核心语义的准确判断。
+其次，在众筹成功预测任务中，内容的语义表征始终占据主导地位。在某些特定数据子集中，若内容的语义信号与视觉密度信号呈现出不一致的指向，模型对辅助特征的关注可能会在一定程度上干扰对核心语义的准确判断。
 
 然而从全局视角来看，此类性能回调仅属于偶发性的局部波动。MSTC 在其余多数轮次中的稳定领先地位表明，视觉密度属性在统计意义上能够提供正向的判别增益。这种在特定随机划分下的性能震荡，也反映出未来在融合多维特征时，需要在项目筛选和特征工程上做更精细的工作，以规避在极端数据分布下的过拟合风险。
 
@@ -788,7 +777,7 @@ MDL 模型的结构特点是：
 第三，多模态特征提取的精细度仍可提升。目前模型主要依赖 CLIP 模型提取的语义特征和基于物理属性的视觉密度，这种建模方式虽然高效，但存在特征提取不够细腻的问题。首先，众筹场景下的图文语义分布可能和 CLIP 预训练时所使用的图像及文本存在差异，未来研究可尝试使用众筹领域特有的图文数据对 CLIP 进行微调，使模型能够学习到众筹场景下的专业词汇与视觉逻辑，从而提取更具判别力的语义特征。其次，除图文语义信息之外，图文的质量属性也是叙事质量的重要组成部分。未来可引入专业的美学评估模型量化图像的视觉吸引力指标，也可利用大语言模型对文本质量（如流畅度、可读性等）进行深度评估，更全面地刻画众筹项目的叙事质量。
 
 # 参考文献
-[1] Mitra T, Gilbert E. The language that gets people to give: Phrases that predict success on kickstarter[C]//Proceedings of the 17th ACM conference on Computer suppofrted cooperative work & social computing. 2014: 49-61.
+[1] Mitra T, Gilbert E. The language that gets people to give: Phrases that predict success on Kickstarter[C]//Proceedings of the 17th ACM Conference on Computer Supported Cooperative Work & Social Computing. 2014: 49-61.
 
 [2] Yuan H, Lau R Y K, Xu W. The determinants of crowdfunding success: A semantic text analytics approach[J]. Decision Support Systems, 2016, 91: 67-76.
 
@@ -808,85 +797,81 @@ MDL 模型的结构特点是：
 
 [10] Li Y, Rakesh V, Reddy C K. Project success prediction in crowdfunding environments[C]//Proceedings of the ninth ACM international conference on web search and data mining. 2016: 247-256.
 
-[11] Yuan H, Lau R Y K, Xu W. The determinants of crowdfunding success: A semantic text analytics approach[J]. Decision Support Systems, 2016, 91: 67-76.
+[11] Kaminski J C, Hopp C. Predicting outcomes in crowdfunding campaigns with textual, visual, and linguistic signals[J]. Small Business Economics, 2020, 55(3): 627-649.
 
-[12] Kaminski J C, Hopp C. Predicting outcomes in crowdfunding campaigns with textual, visual, and linguistic signals[J]. Small Business Economics, 2020, 55(3): 627-649.
+[12] Cheng C, Tan F, Hou X, et al. Success Prediction on Crowdfunding with Multimodal Deep Learning[C]//IJCAI. 2019: 2158-2164.
 
-[13] Cheng C, Tan F, Hou X, et al. Success Prediction on Crowdfunding with Multimodal Deep Learning[C]//IJCAI. 2019: 2158-2164.
+[13] Tang Z, Yang Y, Li W, et al. Deep cross-attention network for crowdfunding success prediction[J]. IEEE Transactions on Multimedia, 2022, 25: 1306-1319.
 
-[14] Tang Z, Yang Y, Li W, et al. Deep cross-attention network for crowdfunding success prediction[J]. IEEE Transactions on Multimedia, 2022, 25: 1306-1319.
+[14] Cai Z, Ding H, Xu M, et al. Multimodal dynamic graph convolutional network for crowdfunding success prediction[J]. Applied Soft Computing, 2024, 154: 111313.
 
-[15] Cai Z, Ding H, Xu M, et al. Multimodal dynamic graph convolutional network for crowdfunding success prediction[J]. Applied Soft Computing, 2024, 154: 111313.
+[15] Li J, Xu X, Li Y, et al. Commonality Augmented Disentanglement for Multimodal Crowdfunding Success Prediction[C]//ICASSP 2025-2025 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP). IEEE, 2025: 1-5.
 
-[16] Li J, Xu X, Li Y, et al. Commonality Augmented Disentanglement for Multimodal Crowdfunding Success Prediction[C]//ICASSP 2025-2025 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP). IEEE, 2025: 1-5.
+[16] Kao T W, Hsiao S H, Su H C, et al. Deriving execution effectiveness of crowdfunding projects from the fundraiser network[J]. Journal of Management Information Systems, 2022, 39(1): 276-301.
 
-[17] Kao T W, Hsiao S H, Su H C, et al. Deriving execution effectiveness of crowdfunding projects from the fundraiser network[J]. Journal of Management Information Systems, 2022, 39(1): 276-301.
+[17] 李清香,王念新,吕爽,等.发起人与出资者的在线交互对众筹项目成功的影响[J].管理工程学报,2020,34(01):118-126.
 
-[18] 李清香,王念新,吕爽,等.发起人与出资者的在线交互对众筹项目成功的影响[J].管理工程学报,2020,34(01):118-126.
+[18] 王念新,吕爽,周园,等.连续发起人的经验对众筹成功的影响:经验相关性的调节效应分析[J].管理工程学报,2020,34(04):89-100.
 
-[19] 王念新,吕爽,周园,等.连续发起人的经验对众筹成功的影响:经验相关性的调节效应分析[J].管理工程学报,2020,34(04):89-100.
+[19] Carradini S, Fleischmann C. The effects of multimodal elements on success in Kickstarter crowdfunding campaigns[J]. Journal of Business and Technical Communication, 2023, 37(1): 1-27.
 
-[20] Carradini S, Fleischmann C. The effects of multimodal elements on success in Kickstarter crowdfunding campaigns[J]. Journal of Business and Technical Communication, 2023, 37(1): 1-27.
+[20] Raab M, Schlauderer S, Overhage S, et al. More than a feeling: Investigating the contagious effect of facial emotional expressions on investment decisions in reward-based crowdfunding[J]. Decision Support Systems, 2020, 135: 113326.
 
-[21] Raab M, Schlauderer S, Overhage S, et al. More than a feeling: Investigating the contagious effect of facial emotional expressions on investment decisions in reward-based crowdfunding[J]. Decision Support Systems, 2020, 135: 113326.
+[21] Costello F J, Lee K C. Exploring investors' expectancies and its impact on project funding success likelihood in crowdfunding by using text analytics and Bayesian networks[J]. Decision Support Systems, 2022, 154: 113695.
 
-[22] Costello F J, Lee K C. Exploring investors' expectancies and its impact on project funding success likelihood in crowdfunding by using text analytics and Bayesian networks[J]. Decision Support Systems, 2022, 154: 113695.
+[22] Chen S, Wang H, Fang Y, et al. Informational and emotional appeals of cover image in crowdfunding platforms and the moderating role of campaign outputs[J]. Decision Support Systems, 2023, 171: 113975.
 
-[23] Chen S, Wang H, Fang Y, et al. Informational and emotional appeals of cover image in crowdfunding platforms and the moderating role of campaign outputs[J]. Decision Support Systems, 2023, 171: 113975.
+[23] Song C, Luo J, Hölttä-Otto K, et al. Crowdfunding for design innovation: prediction model with critical factors[J]. IEEE Transactions on Engineering Management, 2020, 69(4): 1565-1576.
 
-[24] Song C, Luo J, Hölttä-Otto K, et al. Crowdfunding for design innovation: prediction model with critical factors[J]. IEEE Transactions on Engineering Management, 2020, 69(4): 1565-1576.
+[24] Bao L, Wang Z, Zhao H. Who said what: Mining semantic features for success prediction in reward-based crowdfunding[J]. Electronic Commerce Research and Applications, 2022, 53: 101156.
 
-[25] Bao L, Wang Z, Zhao H. Who said what: Mining semantic features for success prediction in reward-based crowdfunding[J]. Electronic Commerce Research and Applications, 2022, 53: 101156.
+[25] Blanchard S J, Noseworthy T J, Pancer E, et al. Extraction of visual information to predict crowdfunding success[J]. Production and Operations Management, 2023, 32(12): 4172-4189.
 
-[26] Blanchard S J, Noseworthy T J, Pancer E, et al. Extraction of visual information to predict crowdfunding success[J]. Production and Operations Management, 2023, 32(12): 4172-4189.
+[26] 徐琳.多模态数据驱动的众筹项目成功率预测研究[D].合肥工业大学,2022.
 
-[27] 徐琳.多模态数据驱动的众筹项目成功率预测研究[D].合肥工业大学,2022.
+[27] Al-Qershi O M, Kwon J, Zhao S, et al. Predicting crowdfunding success with visuals and speech in video ads and text ads[J]. European Journal of Marketing, 2022, 56(6): 1610-1649.
 
-[28] Al-Qershi O M, Kwon J, Zhao S, et al. Predicting crowdfunding success with visuals and speech in video ads and text ads[J]. European Journal of Marketing, 2022, 56(6): 1610-1649.
+[28] Zhang Z, Lau R Y K. Exploiting multimodal features and deep learning for predicting crowdfunding successes[C]//2024 IEEE International Conference on Omni-layer Intelligent Systems (COINS). IEEE, 2024: 1-6.
 
-[29] Zhang Z, Lau R Y K. Exploiting multimodal features and deep learning for predicting crowdfunding successes[C]//2024 IEEE International Conference on Omni-layer Intelligent Systems (COINS). IEEE, 2024: 1-6.
+[29] Sweller J. Cognitive load theory[M]//Psychology of learning and motivation. Academic Press, 2011, 55: 37-76.
 
-[30] Sweller J. Cognitive load theory[M]//Psychology of learning and motivation. Academic Press, 2011, 55: 37-76.
+[30] 何旭, 郭春彦. 视觉工作记忆的容量与资源分配[J]. 心理科学进展, 2013, 21(10): 1741.
 
-[31] 何旭, 郭春彦. 视觉工作记忆的容量与资源分配[J]. 心理科学进展, 2013, 21(10): 1741.
+[31] 车敬上, 孙海龙, 肖晨洁, 等. 为什么信息超载损害决策? 基于有限认知资源的解释[J]. 心理科学进展, 2019, 27(10): 1758-1768.
 
-[32] 车敬上, 孙海龙, 肖晨洁, 等. 为什么信息超载损害决策? 基于有限认知资源的解释[J]. 心理科学进展, 2019, 27(10): 1758-1768.
+[32] Djamasbi S, Siegel M, Tullis T. Visual hierarchy and viewing behavior: An eye tracking study[C]//International conference on human-computer interaction. Berlin, Heidelberg: Springer Berlin Heidelberg, 2011: 331-340.
 
-[33] Djamasbi S, Siegel M, Tullis T. Visual hierarchy and viewing behavior: An eye tracking study[C]//International conference on human-computer interaction. Berlin, Heidelberg: Springer Berlin Heidelberg, 2011: 331-340.
+[33] Liang X, Hu X, Jiang J. Research on the effects of information description on crowdfunding success within a sustainable economy—the perspective of information communication[J]. Sustainability, 2020, 12(2): 650.
 
-[34] Liang X, Hu X, Jiang J. Research on the effects of information description on crowdfunding success within a sustainable economy—the perspective of information communication[J]. Sustainability, 2020, 12(2): 650.
+[34] Alter A L, Oppenheimer D M. Uniting the tribes of fluency to form a metacognitive nation[J]. Personality and social psychology review, 2009, 13(3): 219-235.
 
-[35] Alter A L, Oppenheimer D M. Uniting the tribes of fluency to form a metacognitive nation[J]. Personality and social psychology review, 2009, 13(3): 219-235.
+[35] Hogarth R M, Einhorn H J. Order effects in belief updating: The belief-adjustment model[J]. Cognitive psychology, 1992, 24(1): 1-55.
 
-[36] Hogarth R M, Einhorn H J. Order effects in belief updating: The belief-adjustment model[J]. Cognitive psychology, 1992, 24(1): 1-55.
+[36] Joshi A, Mathur G. The inverted pyramid approach in user interface design for interactive information retrieval[C]//Proceedings of the EASY3 (CHI South India) Annual Conference. CiteSeerX. 2004.
 
-[37] Joshi A, Mathur G. The inverted pyramid approach in user interface design for interactive information retrieval[C]//Proceedings of the EASY3 (CHI South India) Annual Conference. CiteSeerX. 2004.
+[37] Tjärnhage A, Söderström U, Norberg O, et al. The impact of scrollytelling on the reading experience of long-form journalism[C]//Proceedings of the European Conference on Cognitive Ergonomics 2023. 2023: 1-9.
 
-[38] Tjärnhage A, Söderström U, Norberg O, et al. The impact of scrollytelling on the reading experience of long-form journalism[C]//Proceedings of the European Conference on Cognitive Ergonomics 2023. 2023: 1-9.
+[38] Lee J E, Shin E, Kincade D H. The Effects of Presentation Order of Apparel Product Images on Consumers’ Information Processing Style and Purchase Intentions[C]//International Textile and Apparel Association Annual Conference Proceedings. Iowa State University Digital Press, 2019, 76(1).
 
-[39] Lee J E, Shin E, Kincade D H. The Effects of Presentation Order of Apparel Product Images on Consumers’ Information Processing Style and Purchase Intentions[C]//International Textile and Apparel Association Annual Conference Proceedings. Iowa State University Digital Press, 2019, 76(1).
+[39] Lee J E, Shin E, Kincade D H. Presentation-Order Effect of Product Images on Consumers’ Evaluations in Online Shopping[C]//International Textile and Apparel Association Annual Conference Proceedings. Iowa State University Digital Press, 2020, 77(1).
 
-[40] Lee J E, Shin E, Kincade D H. Presentation-Order Effect of Product Images on Consumers’ Evaluations in Online Shopping[C]//International Textile and Apparel Association Annual Conference Proceedings. Iowa State University Digital Press, 2020, 77(1).
+[40] Razak N A, Asma’Amran S N. Effective language use in advertising in the most visible online stores: 2 Case Studies[J]. International Journal of Education and Learning Systems, 2017, 2: 30-38.
 
-[41] Razak N A, Asma’Amran S N. Effective language use in advertising in the most visible online stores: 2 Case Studies[J]. International Journal of Education and Learning Systems, 2017, 2: 30-38.
+[41] Green M C, Brock T C. The role of transportation in the persuasiveness of public narratives[J]. Journal of personality and social psychology, 2000, 79(5): 701.
 
-[42] Green M C, Brock T C. The role of transportation in the persuasiveness of public narratives[J]. Journal of personality and social psychology, 2000, 79(5): 701.
+[42] Xu Y, Li M, Cui L, et al. Layoutlm: Pre-training of text and layout for document image understanding[C]//Proceedings of the 26th ACM SIGKDD international conference on knowledge discovery & data mining. 2020: 1192-1200.
 
-[43] Xu Y, Li M, Cui L, et al. Layoutlm: Pre-training of text and layout for document image understanding[C]//Proceedings of the 26th ACM SIGKDD international conference on knowledge discovery & data mining. 2020: 1192-1200.
+[43] Xu Y, Xu Y, Lv T, et al. Layoutlmv2: Multi-modal pre-training for visually-rich document understanding[C]//Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing (Volume 1: Long Papers). 2021: 2579-2591.
 
-[44] Xu Y, Xu Y, Lv T, et al. Layoutlmv2: Multi-modal pre-training for visually-rich document understanding[C]//Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing (Volume 1: Long Papers). 2021: 2579-2591.
+[44] Cui X, Lu W, Tong Y, et al. Diffusion-based multi-modal synergy interest network for click-through rate prediction[C]//Proceedings of the 48th International ACM SIGIR Conference on Research and Development in Information Retrieval. 2025: 581-591.
 
-[45] Cui X, Lu W, Tong Y, et al. Diffusion-based multi-modal synergy interest network for click-through rate prediction[C]//Proceedings of the 48th International ACM SIGIR Conference on Research and Development in Information Retrieval. 2025: 581-591.
+[45] Paivio A. Mental representations: A dual coding approach[M]. Oxford university press, 1990.
 
-[46] Paivio A. Mental representations: A dual coding approach[M]. Oxford university press, 1990.
+[46] Radford A, Kim J W, Hallacy C, et al. Learning transferable visual models from natural language supervision[C]//International conference on machine learning. PmLR, 2021: 8748-8763.
 
-[47] Radford A, Kim J W, Hallacy C, et al. Learning transferable visual models from natural language supervision[C]//International conference on machine learning. PmLR, 2021: 8748-8763.
+[47] 刘婷, 侯文军. 基于视觉行为的手机新闻 App 图文布局设计研究[J]. 北京邮电大学学报 (社会科学版), 2016, 18(3): 6.
 
-[48] 刘婷, 侯文军. 基于视觉行为的手机新闻 App 图文布局设计研究[J]. 北京邮电大学学报 (社会科学版), 2016, 18(3): 6.
-
-[49] Chai S, Chang Y, Li Y. Image-Left, Text-Right: The Horizontal Sequence Effect of Images and Text on Consumer Responses to in-Feed News[J]. Psychology & Marketing, 2025.
-
-[50] Kaminski J C, Hopp C. Predicting outcomes in crowdfunding campaigns with textual, visual, and linguistic signals[J]. Small Business Economics, 2020, 55(3): 627-649.
+[48] Chai S, Chang Y, Li Y. Image-Left, Text-Right: The Horizontal Sequence Effect of Images and Text on Consumer Responses to in-Feed News[J]. Psychology & Marketing, 2025.
 
 
 # 致谢

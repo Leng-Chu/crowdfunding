@@ -31,7 +31,6 @@
 \usepackage{booktabs}
 \usepackage{multirow}
 \usepackage{geometry}
-\usepackage{appendix}
 \usepackage{hyperref}
 \usepackage{enumerate}
 \usepackage{enumitem}
@@ -71,15 +70,16 @@
 \usepackage{makecell}
 \usepackage{bibspacing}
 \newcommand{\fixdisplayspacing}{%
-  \setlength{\abovedisplayskip}{0pt}%
-  \setlength{\belowdisplayskip}{4pt}%
-  \setlength{\abovedisplayshortskip}{0pt}%
-  \setlength{\belowdisplayshortskip}{4pt}%
+  \setlength{\abovedisplayskip}{1pt}%
+  \setlength{\belowdisplayskip}{5pt}%
+  \setlength{\abovedisplayshortskip}{1pt}%
+  \setlength{\belowdisplayshortskip}{5pt}%
 }
 \setlength{\bibspacing}{0\baselineskip}
 \setlist[enumerate]{itemsep=0pt,parsep=0pt,topsep=4pt,partopsep=0pt}
 \setlist[itemize]{itemsep=0pt,parsep=0pt,topsep=4pt,partopsep=0pt}
 \setlength{\parskip}{0pt}
+\setlength{\emergencystretch}{2em}
 \fixdisplayspacing
 \makeatletter
 \g@addto@macro\normalsize{\fixdisplayspacing}
@@ -91,8 +91,8 @@
 \setlength{\floatsep}{8pt plus 2pt minus 2pt}
 \AtBeginEnvironment{tabular}{\renewcommand{\arraystretch}{1.5}\setlength{\extrarowheight}{1pt}}
 \AtBeginEnvironment{tabularx}{\renewcommand{\arraystretch}{1.5}\setlength{\extrarowheight}{1pt}}
-\BeforeBeginEnvironment{figure}{\par\Needspace{10\baselineskip}}
-\BeforeBeginEnvironment{table}{\par\Needspace{10\baselineskip}}
+% \BeforeBeginEnvironment{figure}{\par\Needspace{6\baselineskip}}
+% \BeforeBeginEnvironment{table}{\par\Needspace{6\baselineskip}}
 
 \usepackage{afterpage}
 \newcommand\myemptypage{
@@ -165,10 +165,10 @@ citecolor=black
 
 
 %添加封面
-\include{textfiles/Cover}
+\input{textfiles/title_page}
 
 %%添加摘要
-\include{textfiles/0Abstract}
+\input{textfiles/abstract}
 
 % \myemptypage
 
@@ -227,20 +227,14 @@ citecolor=black
 \setlength{\baselineskip}{20pt}
 \fixdisplayspacing
 
-\input{textfiles/1Introduction}
-\input{textfiles/2Related_work}
-\input{textfiles/3FirstResearch}
-\input{textfiles/4SecondResearch}
-\input{textfiles/5ThirdResearch}
+\input{textfiles/chapter1_introduction}
+\input{textfiles/chapter2_literature_review}
+\input{textfiles/chapter3_model_construction}
+\input{textfiles/chapter4_experiments_and_analysis}
+\input{textfiles/chapter5_conclusion}
 
-\input{textfiles/References}
+\input{textfiles/reference_list}
 
-\input{textfiles/7Acknowledgement}
-
-
-% %% 添加附录
-%\appendix
-%\include{textfiles/附录}
-
+\input{textfiles/acknowledgements}
 \end{document}
 

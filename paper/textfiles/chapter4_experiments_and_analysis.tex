@@ -58,14 +58,20 @@
 \centering
 \caption{元数据特征}
 \label{tab:exp4_1}
-\begin{tabular}{@{}p{1.8cm}p{4.0cm}p{6.0cm}p{1.3cm}@{}}
+\renewcommand{\arraystretch}{1.0}
+\setlength{\extrarowheight}{0pt}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{1.7cm}>{\raggedright\arraybackslash}p{5.5cm}>{\raggedright\arraybackslash}p{4.3cm}>{\raggedright\arraybackslash}p{1.3cm}@{}}
 \toprule
 \textbf{特征类别} & \textbf{特征名称} & \textbf{处理方式} & \textbf{维度} \\ \midrule
-离散特征 & 项目类别 / category & One-hot 编码 & 117 维 \\
+\multirow[t]{3}{*}{离散特征} & 项目类别 / category & One-hot 编码 & 117 维 \\
  & 国家 / country & One-hot 编码 & 22 维 \\
  & 币种 / currency & One-hot 编码 & 14 维 \\
-数值特征 & \makecell[l]{\rule{0pt}{5.2ex}项目持续时间 /\\ duration\_days} & \makecell[l]{以天为单位，\\并进行标准化处理} & 1 维 \\
- & \makecell[l]{\rule{0pt}{5.2ex}项目目标金额 /\\ log\_usd\_goal} & \makecell[l]{以美元为基准进行对数变换，\\并进行标准化处理} & 1 维 \\
+\cmidrule(lr){2-4}
+\multirow[t]{2}{*}{数值特征} & 项目持续时间 / duration\_days & \parbox[t]{\linewidth}{\rule{0pt}{1.0ex}以天为单位，标准化处理} & 1 维 \\
+ & 目标金额 / log\_usd\_goal & \parbox[t]{\linewidth}{\rule{0pt}{1.0ex}以美元为基准，进行\newline 对数变换和标准化处理} & 1 维 \\
+\addlinespace[2pt]
+\midrule
 总计 & -- & -- & 155 维 \\ \bottomrule
 \end{tabular}
 \end{table}
@@ -89,16 +95,20 @@
 \centering
 \caption{实验环境}
 \label{tab:exp4_2}
-\begin{tabular}{@{}p{1.8cm}p{3.1cm}p{6.3cm}@{}}
+\renewcommand{\arraystretch}{1.0}
+\setlength{\extrarowheight}{0pt}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{1.8cm}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{6.1cm}@{}}
 \toprule
 \textbf{环境类别} & \textbf{参数项} & \textbf{环境说明} \\ \midrule
 操作系统 & OS & Ubuntu 24.04.1 LTS \\
-硬件环境 & CPU & Intel(R) Xeon(R) Silver 4116 CPU @ 2.10GHz \\
+\multirow[t]{3}{*}{硬件环境} & CPU & Intel(R) Xeon(R) Silver 4116 CPU @ 2.10GHz \\
  & GPU & NVIDIA GeForce RTX 3090 (24GB VRAM) \\
  & 内存 & 256 GB \\
-软件环境 & Python版本 & 3.11.14 \\
+\cmidrule(lr){2-3}
+\multirow[t]{3}{*}{软件环境} & Python版本 & 3.11.14 \\
  & 深度学习框架 & PyTorch 2.9.1 (CUDA 12.8) \\
- & 核心依赖库 & \makecell[l]{Transformers, DrissionPage,\\ BeautifulSoup4, Pillow 等} \\ \bottomrule
+ & 核心依赖库 & \parbox[t]{\linewidth}{\rule{0pt}{1.0ex}Transformers, DrissionPage,\newline BeautifulSoup4, Pillow 等} \\ \bottomrule
 \end{tabular}
 \end{table}
 
@@ -175,8 +185,8 @@
 其结构层级如下：
 
 \begin{itemize}
-  \item 输入层：接收预训练模型提取的图像特征 $ v \in \mathbb{R}^{N \times d_v} $ 与文本特征 $ t \in \mathbb{R}^{N \times d_t} $
-  \item 特征对齐层：通过线性变换将不同维度的模态特征映射至统一的隐空间。
+  \item 输入层：接收预训练模型提取的图像特征与文本特征。
+  \item 特征对齐层：通过线性变换将不同维度的特征映射至统一隐空间。
   \item 池化层：对输入序列中的 Token 进行逐元素求和并取均值，从而压缩得到全局静态表示。
   \item 预测层：全局向量送入多层感知机（MLP）进行二分类预测。
 \end{itemize}
@@ -188,7 +198,7 @@
 MDL 模型的结构特点是：
 
 \begin{itemize}
-  \item 图像与文本分支：采用并行的一维卷积编码器（1D-CNN）。通过设置不同尺寸的卷积核对输入序列进行滑动窗口扫描，以捕获多模态数据内部的局部模式，随后衔接最大池化层（Max-pooling）提取最显著特征。
+  \item 图像与文本分支：采用并行的一维卷积编码器（1D-CNN）。通过设置不同尺寸的卷积核对输入序列进行滑动窗口扫描来捕获多模态数据的局部模式，随后衔接最大池化层（Max-pooling）提取最显著特征。
   \item 元数据分支：对于众筹项目相关的数值型与类别型元数据，通过全连接层将高维稀疏特征映射到低维连续向量空间。
   \item 融合层：采取晚期融合策略，将图像、文本和元数据三个独立分支产生的特征向量进行水平拼接。
   \item 预测层：融合后的全局向量送入多层感知机（MLP）进行二分类预测。
@@ -201,23 +211,23 @@ MDL 模型的结构特点是：
 其与 MSTC 的主要区别在于：
 
 \begin{itemize}
-  \item 双塔序列架构：不同于 MSTC 构造的统一图文 Token 序列，Late-MSTC 采用并行的双塔结构分别处理图像序列与文本序列。虽然两分支仍沿用模态投影、属性注入与正弦位置编码，但在进入 Transformer 前并未合并。
+  \item 双塔序列架构：不同于 MSTC 构造的统一图文 Token 序列，Late-MSTC 采用并行的双塔结构分别处理图像序列与文本序列，两分支仍沿用模态投影、属性注入与正弦位置编码。
   \item 模态内自注意力交互：Transformer 编码器仅在各模态内部独立执行自注意力计算。这意味着图像 Token 仅能感知视觉叙事顺序，文本 Token 仅能感知语义上下文，模态间在特征提取阶段完全解耦。
-  \item 向量级晚期融合：模型分别对图像与文本序列执行屏蔽均值池化（Masked Mean Pooling），提取各自的全局表示。随后，模型将两个模态的特征向量与元数据向量进行拼接，并在最终的分类头处实现高层语义聚合。
+  \item 向量级晚期融合：模型分别对图像与文本序列执行屏蔽均值池化（Masked\hspace{0pt} Mean\hspace{0pt} Pooling），提取各自的全局表示。随后，模型将两个模态的特征向量与元数据向量进行拼接，并在最终的分类头处实现高层语义聚合。
 \end{itemize}
 
 为严格控制实验变量并确保对比的公正性，Late-MSTC 采用参数共享的双塔 Transformer 架构，图像与文本分支共用同一套编码器权重，使得模型在总参数量与计算容量上与本研究 MSTC 模型保持严格一致。在该设计下，两者的核心差异仅在于是否允许模态间进行 Token 级的交互映射，而其余超参数设定（如层数、隐层维度及注意力头数等）完全相同。此举旨在排除模型容量差异带来的性能干扰，从而验证细粒度跨模态交互在众筹成功性预测中的必要性。
 \end{enumerate}
 
 \subsubsection{实验结果与分析}
-表 4-3 与图 4-1 共同展示了各模型在测试集上的综合表现，汇报数据取五次实验结果的算术平均值。
+表 4-3 与图 4-1 共同展示了各模型在测试集上的综合表现，汇报数据取五次实验结果的算术平均值：
 
 
 \begin{table}[H]
 \centering
 \caption{对比实验：五次实验平均性能对比}
 \label{tab:exp4_3}
-\begin{tabular}{@{}llllll@{}}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.7cm}*{5}{>{\raggedright\arraybackslash}p{1.75cm}}@{}}
 \toprule
 \textbf{模型名称} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-score} & \textbf{AUC} \\ \midrule
 Mean-Pool & 0.8205 & 0.7897 & 0.8734 & 0.8293 & 0.9086 \\
@@ -229,37 +239,40 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 
 
 
-\begin{figure}[htbp]
+% 局部压缩图 4-1 上方空白，并保持图后正文间距基本不变。
+\begingroup
+\begin{figure}[H]
   \centering
-  \includegraphics[width=0.88\textwidth]{figures/432.png}
+  \includegraphics[width=0.95\textwidth]{figures/432.png}
   \caption{对比实验：五次实验平均性能对比}
   \label{fig:exp4_1}
 \end{figure}
+\endgroup
 
 实验结果显示，本研究提出的 MSTC 模型在 Accuracy、F1-score 和 AUC 等核心评价维度上均显著优于其他基准模型。值得注意的是，MSTC 模型并没有取得最高的 Recall，然而在所有模型中，MSTC 模型的 Precision 和 Recall 最为平衡且 F1-score 最高，这表明其他模型倾向于过度预测项目成功来换取更高的召回率。对于众筹平台而言，这样的模型会产生大量的假阳性（将失败项目误判为成功），不稳定的决策会增加平台的运营风险。
 
 为排除数据随机划分对实验结论的干扰，本研究进行了五次独立重复实验，通过变换数据集随机种子（42-46）来观察模型性能波动情况。
 
 
-\begin{figure}[htbp]
+\begin{figure}[H]
   \centering
-  \includegraphics[width=0.88\textwidth]{figures/accuracy_432.png}
+  \includegraphics[width=0.8\textwidth]{figures/accuracy_432.png}
   \caption{对比实验：不同随机种子下的准确率对比}
   \label{fig:exp4_2}
 \end{figure}
 
 
-\begin{figure}[htbp]
+\begin{figure}[H]
   \centering
-  \includegraphics[width=0.88\textwidth]{figures/auc_432.png}
+  \includegraphics[width=0.8\textwidth]{figures/auc_432.png}
   \caption{对比实验：不同随机种子下的 AUC 对比}
   \label{fig:exp4_3}
 \end{figure}
 
 
-\begin{figure}[htbp]
+\begin{figure}[H]
   \centering
-  \includegraphics[width=0.88\textwidth]{figures/f1_432.png}
+  \includegraphics[width=0.8\textwidth]{figures/f1_432.png}
   \caption{对比实验：不同随机种子下的 F1-score 对比}
   \label{fig:exp4_4}
 \end{figure}
@@ -277,7 +290,7 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 为了深入探究图文排列顺序所表征的叙事逻辑对众筹成功预测的贡献，本节通过构建三种反事实场景进行消融实验，验证图文排列顺序的价值：
 
 \begin{enumerate}[label=(\arabic*)]
-  \item 全局注意力池化（Attn-Pool）：该变体模型在无序集合的基础上引入全局注意力机制，为不同内容块分配静态权重，旨在验证页面的判别力是否仅仅源于某些特定内容块（如某张精美图片）的加权贡献，而与展示顺序无关。
+  \item 全局注意力池化（Attn-Pool）：该变体模型在无序集合的基础上引入全局注意力，为不同内容块分配静态权重，旨在验证页面的判别力是否仅仅源于某些特定内容块（如某张精美图片）的加权贡献，而与展示顺序无关。
   \item 移除位置感知（NoPos-MSTC）：该变体模型完全剥离了 MSTC 中的位置编码，NoPos-MSTC 依靠 Transformer 架构能够捕捉 Token 间的复杂非线性交互（如局部图文节奏），但由于缺乏位置编码，无法感知全局叙事顺序。设计该对照的目的是区分模型容量提升与顺序信息引入的差异化贡献。
   \item 叙事崩塌假设（Shuffled-MSTC）：该变体保持与 MSTC 完全一致的网络架构与参数规模，但对每个样本的内容块序列进行随机置乱，并对置乱后的序列重新赋予位置编码，从而破坏位置与真实顺序的一致性。通过人工置乱原本有序的页面，构建“内容相同但逻辑破碎”的反事实场景，验证真实呈现顺序的边际价值。
 \end{enumerate}
@@ -289,13 +302,14 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 \centering
 \caption{顺序消融实验：基线模型结构差异}
 \label{tab:exp4_4}
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}X>{\centering\arraybackslash}p{1.4cm}>{\centering\arraybackslash}p{2.1cm}>{\raggedright\arraybackslash}p{2.5cm}@{}}
+\renewcommand{\tabularxcolumn}[1]{p{#1}}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{2.9cm}>{\raggedright\arraybackslash}p{2.3cm}>{\raggedright\arraybackslash}p{2.5cm}>{\raggedright\arraybackslash}p{2.0cm}>{\raggedright\arraybackslash}X@{}}
 \toprule
 \textbf{模型名称} & \textbf{序列编码器} & \textbf{位置编码} & \textbf{顺序是否保留} & \textbf{池化方式} \\ \midrule
-Attn-Pool & 无 & 无 & 保留 & \makecell[l]{单 query\\注意力池化} \\
-NoPos-MSTC & Transformer Encoder & 无 & 保留 & masked mean \\
-Shuffled-MSTC & Transformer Encoder & 正弦位置编码 & 置乱 & masked mean \\
-MSTC & Transformer Encoder & 正弦位置编码 & 保留 & masked mean \\ \bottomrule
+Attn-Pool & 无 & 无 & 保留 & \parbox[t]{\linewidth}{单 query\newline 注意力池化} \\
+NoPos-MSTC & Transformer & 无 & 保留 & 屏蔽均值池化 \\
+Shuffled-MSTC & Transformer & 正弦位置编码 & 置乱 & 屏蔽均值池化 \\
+MSTC & Transformer & 正弦位置编码 & 保留 & 屏蔽均值池化 \\ \bottomrule
 \end{tabularx}
 \end{table}
 
@@ -307,7 +321,7 @@ MSTC & Transformer Encoder & 正弦位置编码 & 保留 & masked mean \\ \botto
 \centering
 \caption{顺序消融实验：五次实验平均性能对比}
 \label{tab:exp4_5}
-\begin{tabular}{@{}llllll@{}}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.7cm}*{5}{>{\raggedright\arraybackslash}p{1.75cm}}@{}}
 \toprule
 \textbf{模型名称} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-score} & \textbf{AUC} \\ \midrule
 Attn-Pool & 0.8165 & 0.7754 & 0.8900 & 0.8287 & 0.9088 \\
@@ -319,9 +333,9 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 
 
 
-\begin{figure}[htbp]
+\begin{figure}[H]
   \centering
-  \includegraphics[width=0.88\textwidth]{figures/441.png}
+  \includegraphics[width=0.95\textwidth]{figures/441.png}
   \caption{顺序消融实验：五次实验平均性能对比}
   \label{fig:exp4_5}
 \end{figure}
@@ -329,28 +343,22 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 五次独立重复实验的详细结果如图 4-6、4-7、4-8 所示：
 
 
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=0.88\textwidth]{figures/accuracy_441.png}
-  \caption{顺序消融实验：不同随机种子下的准确率对比}
-  \label{fig:exp4_6}
-\end{figure}
-
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=0.88\textwidth]{figures/auc_441.png}
-  \caption{顺序消融实验：不同随机种子下的 AUC 对比}
-  \label{fig:exp4_7}
-\end{figure}
-
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=0.88\textwidth]{figures/f1_441.png}
-  \caption{顺序消融实验：不同随机种子下的 F1-score 对比}
-  \label{fig:exp4_8}
-\end{figure}
+% 图 4-6 至图 4-8 改为同页非浮动图块，避免连续 [H] 浮动体提前断页。
+\begin{samepage}
+\centering
+\includegraphics[width=0.8\textwidth]{figures/accuracy_441.png}
+\captionsetup{type=figure,hypcap=false}
+\caption{顺序消融实验：不同随机种子下的准确率对比}
+\label{fig:exp4_6}
+\includegraphics[width=0.8\textwidth]{figures/auc_441.png}
+\captionsetup{type=figure,hypcap=false}
+\caption{顺序消融实验：不同随机种子下的 AUC 对比}
+\label{fig:exp4_7}
+\includegraphics[width=0.8\textwidth]{figures/f1_441.png}
+\captionsetup{type=figure,hypcap=false}
+\caption{顺序消融实验：不同随机种子下的 F1-score 对比}
+\label{fig:exp4_8}
+\end{samepage}
 
 在不同随机种子驱动的绝大多数实验轮次中，MSTC 模型表现最优，各指标与平均性能评估结果高度一致，验证了实验结果的稳健性。
 
@@ -360,7 +368,7 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 
 第二，静态注意力机制在建模叙事逻辑方面存在局限，采用静态注意力池化机制的 Attn-Pool 模型效果不佳，这有力地证明了众筹页面的组织效力并非源于某些关键内容块，而是源于块与块之间动态的叙事交互。相比于简单的加权求和，Transformer 架构所捕捉的长距离依赖特征更契合众筹页面的复杂叙事结构。
 
-第三，真实呈现顺序蕴含着符合认知规律的线性信息。MSTC 相较于 Shuffled-MSTC 的性能提升较小但可复现，这表明真实呈现顺序确实提供了可用的判别信息。虽然提升幅度受限于模型处理窗口的长度，但这一可复现的增益证实了众筹页面存在符合浏览者认知心理的线性叙事规律。一旦真实的图文逻辑序列被置乱，模型对资助者决策行为的模拟精度就会受损，这有力支撑了本研究将分析焦点转向展示逻辑的必要性。
+第三，真实呈现顺序蕴含着符合认知规律的线性信息。MSTC 相较于 Shuffled\hspace{0pt}-\hspace{0pt}MSTC 的性能提升较小但可复现，这表明真实呈现顺序确实提供了可用的判别信息。虽然提升幅度受限于模型处理窗口的长度，但这一可复现的增益证实了众筹页面存在符合浏览者认知心理的线性叙事规律。一旦真实的图文逻辑序列被置乱，模型对资助者决策行为的模拟精度就会受损，这有力支撑了本研究将分析焦点转向展示逻辑的必要性。
 
 第四，位置编码本身同样带来收益。实验结果显示，引入了位置编码的 Shuffled-MSTC 明显优于 NoPos-MSTC，说明位置编码的收益并不完全依赖正确顺序；即使在序列置乱的状态下，位置编码依然充当了内容块的“空间指纹”，赋予了模型区分不同位置块属性的能力，从而学到更丰富的跨模态交互模式。
 
@@ -376,7 +384,7 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 \centering
 \caption{视觉密度消融实验：五次实验平均性能对比}
 \label{tab:exp4_6}
-\begin{tabular}{@{}llllll@{}}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.7cm}*{5}{>{\raggedright\arraybackslash}p{1.75cm}}@{}}
 \toprule
 \textbf{模型配置} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-score} & \textbf{AUC} \\ \midrule
 NoAttr-MSTC & 0.8310 & 0.8022 & 0.8785 & 0.8383 & 0.9193 \\
@@ -386,37 +394,35 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 
 
 
-\begin{figure}[htbp]
+\begin{figure}[H]
   \centering
-  \includegraphics[width=0.88\textwidth]{figures/442.png}
+  \includegraphics[width=0.95\textwidth]{figures/442.png}
   \caption{视觉密度消融实验：五次实验平均性能对比}
   \label{fig:exp4_9}
 \end{figure}
 
 为了进一步验证视觉密度属性带来的增益是否具备统计意义上的稳健性，图 4-10、4-11 与 4-12 展示了在五次独立重复实验中，两个模型在核心指标上的波动对比：
 
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=0.88\textwidth]{figures/accuracy_442.png}
-  \caption{视觉密度消融实验：不同随机种子下的准确率对比}
-  \label{fig:exp4_10}
-\end{figure}
+% 图 4-10 至图 4-12 改为同页非浮动图块，并在前两张图后保留少量间距。
+\noindent\begin{minipage}{\textwidth}
+\centering
+\includegraphics[width=0.8\textwidth]{figures/accuracy_442.png}
+\captionsetup{hypcap=false}
+\captionof{figure}{视觉密度消融实验：不同随机种子下的准确率对比}
+\label{fig:exp4_10}
+\vspace{6pt}
 
+\includegraphics[width=0.8\textwidth]{figures/auc_442.png}
+\captionsetup{hypcap=false}
+\captionof{figure}{视觉密度消融实验：不同随机种子下的 AUC 对比}
+\label{fig:exp4_11}
+\vspace{6pt}
 
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=0.88\textwidth]{figures/auc_442.png}
-  \caption{视觉密度消融实验：不同随机种子下的 AUC 对比}
-  \label{fig:exp4_11}
-\end{figure}
-
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=0.88\textwidth]{figures/f1_442.png}
-  \caption{视觉密度消融实验：不同随机种子下的 F1-score 对比}
-  \label{fig:exp4_12}
-\end{figure}
+\includegraphics[width=0.8\textwidth]{figures/f1_442.png}
+\captionsetup{hypcap=false}
+\captionof{figure}{视觉密度消融实验：不同随机种子下的 F1-score 对比}
+\label{fig:exp4_12}
+\end{minipage}
 
 实验结果显示，全量属性的 MSTC 模型在 Accuracy、Precision 和 F1-score 上均优于 NoAttr-MSTC。尽管受限于预训练模型本身已具备极强的表征能力，加入视觉密度属性在数值上的绝对增幅较小，但在不同随机种子（42-46）的测试轮次中，该增益表现出了高度的稳定性。这种跨实验的一致性有力地排除了指标提升源于随机偏差的可能性，证实了视觉密度特征对于提升预测精度的真实边际贡献。
 
