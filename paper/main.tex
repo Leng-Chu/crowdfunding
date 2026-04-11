@@ -41,6 +41,8 @@
 \usepackage{hyperref}
 \usepackage{enumerate}
 \usepackage{enumitem}
+\usepackage{needspace}
+\usepackage[section]{placeins}
 \usepackage{threeparttable}
 \usepackage{fancyhdr}
 \usepackage{setspace}
@@ -75,7 +77,22 @@
 \usepackage{subfig}
 \usepackage{makecell}
 \usepackage{bibspacing}
+\newcommand{\fixdisplayspacing}{%
+  \setlength{\abovedisplayskip}{2pt}%
+  \setlength{\belowdisplayskip}{6pt}%
+  \setlength{\abovedisplayshortskip}{2pt}%
+  \setlength{\belowdisplayshortskip}{6pt}%
+}
 \setlength{\bibspacing}{0\baselineskip}
+\fixdisplayspacing
+\makeatletter
+\g@addto@macro\normalsize{\fixdisplayspacing}
+\makeatother
+\everydisplay{\fixdisplayspacing}
+\setlength{\jot}{3pt}
+\setlength{\textfloatsep}{8pt plus 2pt minus 2pt}
+\setlength{\intextsep}{8pt plus 2pt minus 2pt}
+\setlength{\floatsep}{8pt plus 2pt minus 2pt}
 
 \usepackage{fancyhdr}
 \usepackage{afterpage}
@@ -97,7 +114,7 @@
 \renewcommand {\thetable} {\thesection{}-\arabic{table}}
 \renewcommand {\thefigure} {\thesection{}-\arabic{figure}}
 \numberwithin{equation}{section}
-\renewcommand{\theequation}{\thesection-\arabic{equation}}
+\renewcommand {\theequation} {\thesection{}-\arabic{equation}}
 \makeatletter
 \@addtoreset{table}{section}
 \@addtoreset{figure}{section}
@@ -109,6 +126,9 @@
 \DeclareCaptionLabelSeparator{twospace}{\ ~}  
 \captionsetup{labelsep=twospace}
 \setlength{\parindent}{2em}
+\AtBeginEnvironment{tabular}{\renewcommand{\arraystretch}{1.2}}
+\AtBeginEnvironment{tabularx}{\renewcommand{\arraystretch}{1.2}}
+\AtBeginEnvironment{longtable}{\renewcommand{\arraystretch}{1.2}}
 \newcommand{\plainitemlabel}[1]{#1\hspace{0.5em}}
 \setlist[enumerate,1]{
     label=(\arabic*),
@@ -137,10 +157,6 @@
     parsep=0pt,
     itemsep=0pt
 }
-\renewcommand{\[}{\begin{equation}}
-\renewcommand{\]}{\end{equation}}
-
-
 \renewcommand{\algorithmicrequire}{\textbf{输入:}}  
 \renewcommand{\algorithmicensure}{\textbf{输出:}}  
 \floatname{algorithm}{算法}
@@ -182,6 +198,7 @@ citecolor=black
 }
 
 \begin{document}
+\raggedbottom
 
 \newcommand\dunderline[3][-1pt]{{%
   \setbox0=\hbox{#3}

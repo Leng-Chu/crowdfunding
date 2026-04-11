@@ -45,17 +45,18 @@
 \item
   项目持续时间：持续时间以天为单位定义为：
 \end{enumerate}
-
-\[\text{duration\_days}=\frac{\text{deadline}-\text{launched\_at}}{86400}\]
-
+\begin{equation}
+\text{duration\_days}=\frac{\text{deadline}-\text{launched\_at}}{86400}
+\end{equation}
 \begin{enumerate}
 \def\labelenumi{(\arabic{enumi})}
 \setcounter{enumi}{1}
 \item
   项目目标金额：以美元为基准并做对数变换以平滑数据分布：
 \end{enumerate}
-
-\[\text{log\_usd\_goal}=\log(1+\text{usd\_goal})\]
+\begin{equation}
+\text{log\_usd\_goal}=\log(1+\text{usd\_goal})
+\end{equation}
 
 最终元数据特征维度为 155 维，包括项目类别 117 维，国家 22 维，币种 14 维，数值特征 2 维。这些特征通过独立分支编码后，在分类头处与序列特征进行融合预测。
 
@@ -63,10 +64,9 @@
 \centering
 \caption{元数据特征}
 \label{tab:exp4_1}
-\renewcommand{\arraystretch}{1.0}
 \setlength{\extrarowheight}{0pt}
 \setlength{\tabcolsep}{4pt}
-\begin{tabular}{@{}>{\raggedright\arraybackslash}p{1.7cm}>{\raggedright\arraybackslash}p{5.5cm}>{\raggedright\arraybackslash}p{4.3cm}>{\raggedright\arraybackslash}p{1.3cm}@{}}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{1.7cm}>{\raggedright\arraybackslash}p{5.9cm}>{\raggedright\arraybackslash}p{4.6cm}>{\raggedright\arraybackslash}p{1.3cm}@{}}
 \toprule
 \textbf{特征类别} & \textbf{特征名称} & \textbf{处理方式} & \textbf{维度} \\ \midrule
 \multirow[t]{3}{*}{离散特征} & 项目类别 / category & One-hot 编码 & 117 维 \\
@@ -108,7 +108,6 @@
 \centering
 \caption{实验环境}
 \label{tab:exp4_2}
-\renewcommand{\arraystretch}{1.0}
 \setlength{\extrarowheight}{0pt}
 \setlength{\tabcolsep}{5pt}
 \begin{tabular}{@{}>{\raggedright\arraybackslash}p{1.8cm}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{6.1cm}@{}}
@@ -129,9 +128,9 @@
 
 \begin{itemize}
 \item
-  优化算法与学习率：初始学习率 \(\eta_0\) 设定为 \(5\times10^{-4}\)，并采用余弦退火策略逐步衰减至最小学习率 \(\eta_{min}=10^{-5}\)。
+  优化算法与学习率：初始学习率 $ \eta_0 $ 设定为 $ 5\times10^{-4} $，并采用余弦退火策略逐步衰减至最小学习率 $ \eta_{min}=10^{-5} $。
 \item
-  正则化与批处理：为防止模型过拟合，权重衰减（Weight Decay）系数设定为 \(4\times 10^{-4}\)；批处理大小（Batch Size）统一设定为 256。
+  正则化与批处理：为防止模型过拟合，权重衰减（Weight Decay）系数设定为 $ 4\times 10^{-4} $；批处理大小（Batch Size）统一设定为 256。
 \item
   迭代轮数：最大训练轮数设定为 80 Epochs，以确保模型充分收敛。
 \end{itemize}
@@ -170,11 +169,12 @@
   假负例（False Negative, FN）：模型错误预测为``失败''的成功项目数量（即假阴性）。
 \end{enumerate}
 
-对于给定的分类阈值 \(\tau\)，模型根据如下指示函数来预测项目是否成功：
+对于给定的分类阈值 $ \tau $，模型根据如下指示函数来预测项目是否成功：
+\begin{equation}
+\hat{y}(\tau)=\mathbb{I}[\hat{p}\ge\tau]
+\end{equation}
 
-\[\hat{y}(\tau)=\mathbb{I}[\hat{p}\ge \tau]\]
-
-其中，\(\hat{p}\)为模型输出的预测概率。当概率大于或等于阈值\(\tau\)时，判定项目为成功，否则判定为失败。
+其中，$ \hat{p} $为模型输出的预测概率。当概率大于或等于阈值$ \tau $时，判定项目为成功，否则判定为失败。
 
 基于上述混淆矩阵计数，本研究定义的评价指标及其计算公式如下：
 
@@ -183,41 +183,43 @@
 \item
   准确率（Accuracy, Acc）：代表模型预测正确的样本（包括成功和失败）占总样本的比例，反映了模型的整体判别能力。其公式为：
 \end{enumerate}
-
-\[\mathrm{Acc}(\tau)=\frac{TP(\tau)+TN(\tau)}{TP(\tau)+FP(\tau)+FN(\tau)+TN(\tau)}\]
-
+\begin{equation}
+\mathrm{Acc}(\tau)=\frac{TP(\tau)+TN(\tau)}{TP(\tau)+FP(\tau)+FN(\tau)+TN(\tau)}
+\end{equation}
 \begin{enumerate}
 \def\labelenumi{(\arabic{enumi})}
 \setcounter{enumi}{1}
 \item
   精确率（Precision, P）：又称查准率，代表在模型预测为``成功''的所有样本中，真正成功的项目所占的比例。其公式为：
 \end{enumerate}
-
-\[\mathrm{P}(\tau)=\frac{TP(\tau)}{TP(\tau)+FP(\tau)}\]
-
+\begin{equation}
+\mathrm{P}(\tau)=\frac{TP(\tau)}{TP(\tau)+FP(\tau)}
+\end{equation}
 \begin{enumerate}
 \def\labelenumi{(\arabic{enumi})}
 \setcounter{enumi}{2}
 \item
   召回率（Recall, R）：又称查全率，代表在所有真实的成功项目中，被模型正确预测出来的比例。其公式为：
 \end{enumerate}
-
-\[\mathrm{R}(\tau)=\frac{TP(\tau)}{TP(\tau)+FN(\tau)}\]
-
+\begin{equation}
+\mathrm{R}(\tau)=\frac{TP(\tau)}{TP(\tau)+FN(\tau)}
+\end{equation}
 \begin{enumerate}
 \def\labelenumi{(\arabic{enumi})}
 \setcounter{enumi}{3}
 \item
   F1 分数（F1-score）：由于精确率与召回率存在权衡冲突，F1 分数作为两者的调和平均数，能够综合评价模型在查准和查全两方面的平衡表现。其公式为：
 \end{enumerate}
-
-\[\mathrm{F1}(\tau)=\frac{2\mathrm{P}(\tau)\mathrm{R}(\tau)}{\mathrm{P}(\tau)+\mathrm{R}(\tau)}=\frac{2TP(\tau)}{2TP(\tau)+FP(\tau)+FN(\tau)}\]
+\begin{equation}
+\mathrm{F1}(\tau)=\frac{2\mathrm{P}(\tau)\mathrm{R}(\tau)}{\mathrm{P}(\tau)+\mathrm{R}(\tau)}=\frac{2TP(\tau)}{2TP(\tau)+FP(\tau)+FN(\tau)}
+\end{equation}
 
 除了上述与阈值相关的指标外，本研究还引入了阈值无关指标 AUC（Area Under Curve）。AUC 的物理意义可以解释为：随机抽取一个正样本和负样本，正样本得分大于负样本得分的概率。其公式为：
+\begin{equation}
+\mathrm{AUC}=\Pr(\hat{p}^+>\hat{p}^-)+\frac{1}{2}\Pr(\hat{p}^+=\hat{p}^-)
+\end{equation}
 
-\[\mathrm{AUC}=\Pr(\hat{p}^+>\hat{p}^-)+\frac{1}{2}\Pr(\hat{p}^+=\hat{p}^-)\]
-
-在实验的模型选择与评估阶段，本研究采取分步策略：首先，以验证集的 AUC 最大化为标准，选择模型训练过程中的最优轮次，以保证模型具有最强的排序能力。在最佳轮次确定后，本研究不直接采用 0.5 作为判断项目是否成功的阈值，而是在验证集概率分布上进行动态搜索，找到使验证集 F1 分数最大化的最优阈值\(\tau^*\)。最后，用 \(\tau^*\) 计算测试集上的准确率、精确率、召回率与 F1 分数，作为最终汇报的模型性能指标。
+在实验的模型选择与评估阶段，本研究采取分步策略：首先，以验证集的 AUC 最大化为标准，选择模型训练过程中的最优轮次，以保证模型具有最强的排序能力。在最佳轮次确定后，本研究不直接采用 0.5 作为判断项目是否成功的阈值，而是在验证集概率分布上进行动态搜索，找到使验证集 F1 分数最大化的最优阈值$ \tau^* $。最后，用 $ \tau^* $ 计算测试集上的准确率、精确率、召回率与 F1 分数，作为最终汇报的模型性能指标。
 
 \subsection{对比实验}
 
@@ -235,7 +237,7 @@
 
 \begin{itemize}
 \item
-  输入层：接收预训练模型提取的图像特征 \(v \in \mathbb{R}^{N \times d_v}\) 与文本特征 \(t \in \mathbb{R}^{N \times d_t}\)
+  输入层：接收预训练模型提取的图像特征 $ v \in \mathbb{R}^{N \times d_v} $ 与文本特征 $ t \in \mathbb{R}^{N \times d_t} $
 \item
   特征对齐层：通过线性变换将不同维度的模态特征映射至统一的隐空间。
 \item
@@ -308,7 +310,7 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{figures/432.png}
+\includegraphics[width=1\textwidth]{figures/432.png}
 \caption{对比实验：五次实验平均性能对比}
 \end{figure}
 
@@ -318,20 +320,20 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{figures/accuracy_432.png}
+\includegraphics[width=0.8\textwidth]{figures/accuracy_432.png}
 \caption{对比实验：不同随机种子下的准确率对比}
 \end{figure}
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{figures/auc_432.png}
+\includegraphics[width=0.8\textwidth]{figures/auc_432.png}
 \caption{对比实验：不同随机种子下的 AUC 对比}
 \end{figure}
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{figures/f1_432.png}
-\caption{对比实验：不同随机种子下的 F1-score 对比}
+\includegraphics[width=0.8\textwidth]{figures/f1_432.png}
+\caption{对比实验：不同随机种子下的 F1 分数对比}
 \end{figure}
 
 如图 4-2、4-3、4-4 所示，MSTC 模型在不同的随机种子设定下表现出了高度的一致性。在 Accuracy、AUC 与 F1-score 的对比中，MSTC 模型在绝大多数实验轮次中均稳居首位。这种稳定的实验表现证明，MSTC 模型能够捕捉到众筹数据中影响筹款结果的本质特征，而非仅仅拟合了特定数据子集的随机噪声。这种稳健性对于模型在实际生产环境中的复现与部署至关重要。
@@ -365,10 +367,10 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 \caption{顺序消融实验：基线模型结构差异}
 \label{tab:exp4_4}
 \renewcommand{\tabularxcolumn}[1]{p{#1}}
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{2.9cm}>{\raggedright\arraybackslash}p{2.3cm}>{\raggedright\arraybackslash}p{2.5cm}>{\raggedright\arraybackslash}p{2.0cm}>{\raggedright\arraybackslash}X@{}}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{2.9cm}>{\raggedright\arraybackslash}p{2.3cm}>{\raggedright\arraybackslash}p{2.8cm}>{\raggedright\arraybackslash}p{1.5cm}>{\raggedright\arraybackslash}X@{}}
 \toprule
 \textbf{模型名称} & \textbf{序列编码器} & \textbf{位置编码} & \textbf{顺序是否保留} & \textbf{池化方式} \\ \midrule
-Attn-Pool & 无 & 无 & 保留 & \parbox[t]{\linewidth}{单 query\newline 注意力池化} \\
+Attn-Pool & 无 & 无 & 保留 & \parbox[t]{\linewidth}{全局注意力池化} \\
 NoPos-MSTC & Transformer & 无 & 保留 & 屏蔽均值池化 \\
 Shuffled-MSTC & Transformer & 正弦位置编码 & 置乱 & 屏蔽均值池化 \\
 MSTC & Transformer & 正弦位置编码 & 保留 & 屏蔽均值池化 \\ \bottomrule
@@ -381,7 +383,7 @@ MSTC & Transformer & 正弦位置编码 & 保留 & 屏蔽均值池化 \\ \bottom
 \centering
 \caption{顺序消融实验：五次实验平均性能对比}
 \label{tab:exp4_5}
-\begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.7cm}*{5}{>{\raggedright\arraybackslash}p{1.75cm}}@{}}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{3.0cm}*{5}{>{\raggedright\arraybackslash}p{1.75cm}}@{}}
 \toprule
 \textbf{模型名称} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-score} & \textbf{AUC} \\ \midrule
 Attn-Pool & 0.8165 & 0.7754 & 0.8900 & 0.8287 & 0.9088 \\
@@ -393,7 +395,7 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{figures/441.png}
+\includegraphics[width=1\textwidth]{figures/441.png}
 \caption{顺序消融实验：五次实验平均性能对比}
 \end{figure}
 
@@ -401,20 +403,20 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{figures/accuracy_441.png}
+\includegraphics[width=0.8\textwidth]{figures/accuracy_441.png}
 \caption{顺序消融实验：不同随机种子下的准确率对比}
 \end{figure}
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{figures/auc_441.png}
+\includegraphics[width=0.8\textwidth]{figures/auc_441.png}
 \caption{顺序消融实验：不同随机种子下的 AUC 对比}
 \end{figure}
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{figures/f1_441.png}
-\caption{顺序消融实验：不同随机种子下的 F1-score 对比}
+\includegraphics[width=0.8\textwidth]{figures/f1_441.png}
+\caption{顺序消融实验：不同随机种子下的 F1 分数对比}
 \end{figure}
 
 在不同随机种子驱动的绝大多数实验轮次中，MSTC 模型表现最优，各指标与平均性能评估结果高度一致，验证了实验结果的稳健性。
@@ -451,7 +453,7 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{figures/442.png}
+\includegraphics[width=1\textwidth]{figures/442.png}
 \caption{视觉密度消融实验：五次实验平均性能对比}
 \end{figure}
 
@@ -459,20 +461,20 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{figures/accuracy_442.png}
+\includegraphics[width=0.8\textwidth]{figures/accuracy_442.png}
 \caption{视觉密度消融实验：不同随机种子下的准确率对比}
 \end{figure}
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{figures/auc_442.png}
+\includegraphics[width=0.8\textwidth]{figures/auc_442.png}
 \caption{视觉密度消融实验：不同随机种子下的 AUC 对比}
 \end{figure}
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{figures/f1_442.png}
-\caption{视觉密度消融实验：不同随机种子下的 F1-score 对比}
+\includegraphics[width=0.8\textwidth]{figures/f1_442.png}
+\caption{视觉密度消融实验：不同随机种子下的 F1 分数对比}
 \end{figure}
 
 实验结果显示，融合视觉密度属性的 MSTC 模型在 Accuracy、AUC 和 F1-score 上均优于不加入视觉密度属性的 NoAttr-MSTC 模型。对五次独立重复实验的进一步观察发现， 在绝大多数随机种子下 MSTC 模型优于 NoAttr-MSTC。实验中出现的极少数性能回调呈现出明显的非系统性特征，Accuracy、AUC 和 F1-score 分别在不同的随机种子节点上出现了微幅波动，这种分散且偶发的数值浮动通常归因于验证集与测试集数据分布的随机差异，而非模型架构或特征引入导致的系统性偏差。
