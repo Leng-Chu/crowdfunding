@@ -12,7 +12,7 @@
 %   3. 修改、使用、发布本文档请务必遵循 LaTeX Project Public License
 %   4. 不需要的注释可以尽情删除
 %*********************************************************************
-\documentclass[12pt,UTF8,oneside]{ctexart}
+\documentclass[12pt,UTF8,twoside]{ctexart}
 
 \usepackage{amsthm}
 \newtheoremstyle{mystyle}{}{}{\upshape}{}{\bfseries}{:}{.5em}{}
@@ -22,34 +22,38 @@
 \newtheorem{property}{性质}
 \newtheorem{lemma}{引理}
 
+
 \usepackage{amsmath,amssymb,amsfonts}
+\usepackage{amsthm,amsmath,amssymb}
+\usepackage{amsmath}
+\usepackage{amssymb,amsfonts}
 \usepackage{algpseudocode}
 \usepackage{float}
 \usepackage{cite}
 \usepackage{listings}
 \usepackage{graphicx}
+\usepackage{epstopdf}
 \usepackage{booktabs}
+\usepackage{longtable}
 \usepackage{multirow}
 \usepackage{geometry}
+\usepackage{appendix}
 \usepackage{hyperref}
 \usepackage{enumerate}
-\usepackage{enumitem}
-\usepackage{needspace}
-\usepackage[section]{placeins}
 \usepackage{threeparttable}
 \usepackage{fancyhdr}
 \usepackage{setspace}
+\usepackage[T1]{fontenc}
 %\usepackage{mathptmx}%Times New Roman字体
 \usepackage{titletoc}
 \usepackage{fontspec}
-\setmainfont{Times New Roman}
 \usepackage{pdfpages}
 \usepackage{tikz}
 \usepackage{etoolbox}
 \usepackage{xcolor}
 \usepackage{caption}
 \usepackage{array}
-\usepackage{tabularx}
+\usepackage{calc}
 \usepackage{titlesec}
 %\usepackage{subfigure}
 \usepackage{diagbox}
@@ -69,31 +73,9 @@
 \usepackage{subfig}
 \usepackage{makecell}
 \usepackage{bibspacing}
-\newcommand{\fixdisplayspacing}{%
-  \setlength{\abovedisplayskip}{1pt}%
-  \setlength{\belowdisplayskip}{5pt}%
-  \setlength{\abovedisplayshortskip}{1pt}%
-  \setlength{\belowdisplayshortskip}{5pt}%
-}
 \setlength{\bibspacing}{0\baselineskip}
-\setlist[enumerate]{itemsep=0pt,parsep=0pt,topsep=4pt,partopsep=0pt}
-\setlist[itemize]{itemsep=0pt,parsep=0pt,topsep=4pt,partopsep=0pt}
-\setlength{\parskip}{0pt}
-\setlength{\emergencystretch}{2em}
-\fixdisplayspacing
-\makeatletter
-\g@addto@macro\normalsize{\fixdisplayspacing}
-\makeatother
-\everydisplay{\fixdisplayspacing}
-\setlength{\jot}{3pt}
-\setlength{\textfloatsep}{8pt plus 2pt minus 2pt}
-\setlength{\intextsep}{8pt plus 2pt minus 2pt}
-\setlength{\floatsep}{8pt plus 2pt minus 2pt}
-\AtBeginEnvironment{tabular}{\renewcommand{\arraystretch}{1.5}\setlength{\extrarowheight}{1pt}}
-\AtBeginEnvironment{tabularx}{\renewcommand{\arraystretch}{1.5}\setlength{\extrarowheight}{1pt}}
-% \BeforeBeginEnvironment{figure}{\par\Needspace{6\baselineskip}}
-% \BeforeBeginEnvironment{table}{\par\Needspace{6\baselineskip}}
 
+\usepackage{fancyhdr}
 \usepackage{afterpage}
 \newcommand\myemptypage{
     \null
@@ -112,10 +94,16 @@
 
 \renewcommand {\thetable} {\thesection{}-\arabic{table}}
 \renewcommand {\thefigure} {\thesection{}-\arabic{figure}}
-\numberwithin{equation}{section}
-\renewcommand {\theequation} {\thesection{}-\arabic{equation}}
+\makeatletter
+\@addtoreset{table}{section}
+\@addtoreset{figure}{section}
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\makeatother
+\setkeys{Gin}{width=\maxwidth,keepaspectratio}
+\setlength{\LTleft}{0pt}
+\setlength{\LTright}{0pt}
 \DeclareCaptionLabelSeparator{twospace}{\ ~}  
-\captionsetup{labelsep=twospace,skip=6pt}
+\captionsetup{labelsep=twospace}
 
 
 \renewcommand{\algorithmicrequire}{\textbf{输入:}}  
@@ -135,7 +123,9 @@
 % 装订线（T）：0.5 cm
 % 装订线位置（T）：左
 
-\geometry{a4paper,left = 3.5cm,right = 3cm,top = 4.5cm,bottom = 4cm}
+\geometry{a4paper,left = 3.5cm,right = 3cm,top = 3.0cm,bottom= 4cm}
+\geometry{textheight=21.2cm,textwidth=14.5cm}
+\setlength{\headheight}{15pt}
 
 
 % 页眉：学校标志（教务处主页提供下载）：
@@ -157,7 +147,6 @@ citecolor=black
 }
 
 \begin{document}
-\raggedbottom
 
 \newcommand\dunderline[3][-1pt]{{%
   \setbox0=\hbox{#3}
@@ -183,34 +172,16 @@ citecolor=black
 \rhead{}
 \lfoot{}
 \rfoot{}
-\fancyfoot[L,C]{}
-\fancyfoot[R]{\footnotesize \thepage}
-\setlength{\headheight}{14.5pt}
+\fancyfoot[LO, RE]{}
+\fancyfoot[OR, LE]{\footnotesize \thepage}
 \setlength{\topskip}{0pt}
 \renewcommand\contentsname{目\ 录}
 \renewcommand\listfigurename{图\ 目\ 录}
 \renewcommand\listtablename{表\ 目\ 录}
-\makeatletter
-\renewcommand*\l@section[2]{%
-  \ifnum \c@tocdepth >\z@
-    \addpenalty\@secpenalty
-    \addvspace{1.0em \@plus\p@}%
-    \settowidth\@tempdima{第10章\quad}%
-    \begingroup
-      \parindent \z@ \rightskip \@pnumwidth
-      \parfillskip -\@pnumwidth
-      \leavevmode \bfseries
-      \def\numberline##1{\hb@xt@\@tempdima{第##1章\hfil}}%
-      \advance\leftskip\@tempdima
-      \hskip -\leftskip
-      #1\nobreak\hfil
-      \nobreak\hb@xt@\@pnumwidth{\hss #2\kern-\p@\kern\p@}\par
-    \endgroup
-  \fi}
-\makeatother
 \tableofcontents
 \newpage
 \listoffigures
+\newpage
 \listoftables
 \newpage
 
@@ -223,27 +194,26 @@ citecolor=black
 \pagestyle{fancy}
 \renewcommand{\headrulewidth}{.5pt}
 \lhead{}
-\chead{\songti\zihao{5}基于多模态数据的众筹结果预测研究}
+\chead{基于多模态数据的众筹结果预测研究}
 \rhead{}
 \lfoot{}
 \rfoot{}
-\fancyfoot[L,C]{}
-\fancyfoot[R]{\footnotesize \thepage}
+\fancyfoot[LO, RE]{}
+\fancyfoot[OR, LE]{\footnotesize \thepage}
 % \rfoot{\footnotesize \thepage }
 % 按照自然段依次排列，每段起行空两格，回行顶格。12号宋体字，（重点文句，12号宋体字，加粗），倍行距20pt。
 %正文、注释双面打印，编排页码，自第1页起，设置页眉。
 %大标题(第1章)       黑体小二号（18pt），占六行（按宋体小四号计）居中
-\titleformat{\section}[block]{\centering\heiti\fontsize{18pt}{20pt}\selectfont}{第\arabic{section}章}{1em}{}[]
+\titleformat{\section}[block]{\centering\heiti\LARGE\bfseries}{第\arabic{section}章}{1em}{}[]
 \titlespacing{\section}{0pt}{27pt}{27pt}
 %一级节标题（1.1）    黑体小三号（14pt），占四行（按宋体小四号计）顶头
-\titleformat{\subsection}[block]{\heiti\fontsize{14pt}{20pt}\selectfont}{\arabic{section}.\arabic{subsection}}{1em}{}[]
+\titleformat{\subsection}[block]{\heiti\Large}{\arabic{section}.\arabic{subsection}}{1em}{}[]
 \titlespacing{\subsection}{0pt}{17pt}{17pt}
 %二级节标题（1.1.1）  黑体小四号（12pt），占两行（按宋体小四号计）顶头
-\titleformat{\subsubsection}[block]{\heiti\fontsize{12pt}{20pt}\selectfont}{\arabic{section}.\arabic{subsection}.\arabic{subsubsection}}{1em}{}[]
+\titleformat{\subsubsection}[block]{\heiti\large}{\arabic{section}.\arabic{subsection}.\arabic{subsubsection}}{1em}{}[]
 \titlespacing{\subsubsection}{0pt}{6pt}{6pt}
 %倍间距20pt
 \setlength{\baselineskip}{20pt}
-\fixdisplayspacing
 
 \input{textfiles/chapter1_introduction}
 \input{textfiles/chapter2_literature_review}
@@ -251,12 +221,14 @@ citecolor=black
 \input{textfiles/chapter4_experiments_and_analysis}
 \input{textfiles/chapter5_conclusion}
 
+%%参考文献
 \input{textfiles/reference_list}
 
 \input{textfiles/acknowledgements}
-\clearpage
-\thispagestyle{empty}
-\null
-\newpage
-\end{document}
 
+
+% %% 添加附录
+%\appendix
+%\include{textfiles/附录}
+
+\end{document}

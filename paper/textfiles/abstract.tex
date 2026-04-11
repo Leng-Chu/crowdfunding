@@ -5,28 +5,27 @@
 \fancyfoot{}
 \lfoot{}
 \rfoot{}
-\renewcommand{\abstractname}{{\Large \heiti 摘要}}
+\renewcommand{\abstractname}{\textbf{\Large \heiti 摘要}}
 \setlength{\topskip}{90pt}
 \renewenvironment{abstract}{%
     \par
-    \noindent\mbox{}\hfill{\abstractname}\hfill\mbox{}\par
+    \noindent\mbox{}\hfill{\bfseries \abstractname}\hfill\mbox{}\par
     \vskip 2.5ex}{\par\vskip 2.5ex}
+\setcounter{page}{1}
+\pagenumbering{Roman}
+\fancyfoot[LO, RE]{}
+\fancyfoot[OR, LE]{\footnotesize \thepage}
 \begin{abstract}
 \setlength{\baselineskip}{20pt}
 \vspace{30pt}
-随着众筹平台的蓬勃发展，如何在项目上线前准确预测其能否成功，已成为平台风险管理、资源分配与发起人项目设计中的关键问题。然而，现有研究在处理众筹页面信息时存在明显的局限性：大多数模型主要聚焦于文本或图像等单一模态信息，或采用简单的多模态晚期融合方法。这类方法将不同模态视作独立的特征向量进行拼接，却忽略了项目描述区图文依序呈现、交织互动所蕴含的叙事传输效应。本研究基于叙事传输理论，创新性地在深度学习建模中引入了“内容呈现结构”这一核心维度，认为高质量的众筹叙事需在呈现顺序上具备严谨的递进逻辑，并在视觉密度上保持平衡的叙述节奏，从而降低投资者认知负荷、提升众筹绩效。
+随着众筹平台的蓬勃发展，如何在项目上线前准确预测其能否成功，已成为平台风险管理、资源分配与发起人项目设计中的关键问题。然而，现有研究在处理众筹页面信息时存在明显的局限性：大多数模型主要聚焦于文本或图像等单一模态信息，或采用简单的多模态融合方法。这类方法将不同模态视作独立的特征向量进行拼接，却忽略了项目描述区图文依序呈现、交织互动所蕴含的叙事传输效应。本研究基于叙事传输理论，创新性地在深度学习建模中引入了``内容呈现结构''这一核心维度，认为高质量的众筹叙事需在呈现顺序上具备严谨的递进逻辑，并在视觉密度上保持平衡的叙述节奏，从而降低投资者认知负荷、提升众筹绩效。
 
 基于此，本研究将复杂的页面内容呈现结构解构为两个可量化的子维度：由图文排列顺序表征的项目叙事逻辑，以及由图文物理属性表征的视觉密度，并以此构建了基于统一序列建模范式的多模态深度学习模型 MSTC（Multimodal Sequential Transformer for Crowdfunding）。首先，利用 HTML DOM 树解析技术还原项目页面的真实物理展示顺序，并使用预训练 CLIP 模型实现跨模态语义对齐，奠定序列化输入基础。其次，在模型架构层面，通过 Transformer 编码器配合正弦位置编码显式捕捉叙事逻辑中的顺序特征，模拟投资者的线性阅读过程；同时提取文本长度与图片面积等标量属性并进行投影嵌入，量化页面浏览中的视觉密度节奏。最后，通过多路并行分支建模项目的元数据信息，将捕获的图文序列特征和元数据特征进行深度融合，实现对众筹结果的精准预测。
 
-基于 Kickstarter 真实数据集的实验结果显示，本研究提出的 MSTC 模型在准确率、F1 分数及 AUC 等核心指标上均显著优于传统的无序集合模型、卷积融合模型及晚期融合模型。消融实验进一步证实了内容呈现结构的判别价值：明确的图文顺序所体现的叙事逻辑能够提供显著的性能增益，而视觉密度属性则通过表征认知负荷，为语义信息提供了稳健的补充。本研究不仅提升了众筹预测的精度，更通过实验验证了多模态内容呈现结构在众筹领域的信号作用，实现了从“关注各模态内容语义”到“关注模态内容组织形式”的转变，为众筹项目质量评估提供了新视角。
+基于 Kickstarter 真实数据集的实验结果显示，本研究提出的 MSTC 模型在准确率、F1 分数及 AUC 等核心指标上均显著优于传统的全局特征聚合模型、卷积融合模型及晚期融合模型。消融实验进一步证实了内容呈现结构的判别价值：明确的图文顺序所体现的叙事逻辑能够提供显著的性能增益，而视觉密度属性则通过表征认知负荷，为语义信息提供了稳健的补充。本研究不仅提升了众筹预测的精度，更通过实验验证了多模态内容呈现结构在众筹领域的信号作用，实现了从``关注各模态内容语义''到``关注模态内容组织形式''的转变，为众筹项目质量评估提供了新视角。
 
-{\heiti 关键词：}众筹结果预测；多模态深度学习；叙事传输理论
-
+\textbf{\heiti 关键词：}众筹结果预测；多模态深度学习；叙事传输理论
 \end{abstract}
-\setcounter{page}{1}
-\pagenumbering{Roman}
-\fancyfoot[L,C]{}
-\fancyfoot[R]{\footnotesize \thepage}
 \newpage
 
 \newcommand{\enabstractname}{\textbf{\Large Abstract}}
@@ -38,16 +37,11 @@
 \begin{enabstract}
 \setlength{\baselineskip}{20pt}
 \vspace{30pt}
-With the rapid expansion of crowdfunding platforms, accurately predicting project success before launch has become a critical issue for platform risk management, resource allocation, and project design by originators. However, existing research exhibits significant limitations in processing crowdfunding page information: most models focus primarily on single-modal data, such as text or images, or employ simple late-fusion multimodal methods. These approaches treat different modalities as independent feature vectors for concatenation, thereby neglecting the narrative transportation effect inherent in the sequential presentation and interplay of text and graphics within project descriptions. Grounded in Narrative Transportation Theory, this study innovatively introduces "content presentation structure" as a core dimension in deep learning modeling. We posit that high-quality crowdfunding narratives must possess a rigorous progressive logic in their presentation order and maintain a balanced narrative rhythm in terms of visual density, thereby reducing investor cognitive load and enhancing crowdfunding performance.
+With the rapid expansion of crowdfunding platforms, accurately predicting project success before launch has become a critical issue for platform risk management, resource allocation, and project design by originators. However, existing research exhibits significant limitations in processing crowdfunding page information: most models primarily focus on single-modal information, such as text or images, or employ simplistic multimodal fusion methods. These approaches treat different modalities as independent feature vectors for concatenation, thereby neglecting the narrative transportation effect inherent in the sequential presentation and interplay of text and graphics within project descriptions. Grounded in Narrative Transportation Theory, this study innovatively introduces ``content presentation structure'' as a core dimension in deep learning modeling. We posit that high-quality crowdfunding narratives must possess a rigorous progressive logic in their presentation order and maintain a balanced narrative rhythm in terms of visual density, thereby reducing investor cognitive load and enhancing crowdfunding performance.
 
 Based on this premise, this research deconstructs the complex content presentation structure into two quantifiable sub-dimensions: narrative logic, represented by the arrangement order of text and images, and visual density, represented by their physical attributes. Consequently, a multimodal deep learning model, MSTC (Multimodal Sequential Transformer for Crowdfunding), is constructed based on a unified sequence modeling paradigm. First, HTML DOM tree parsing is utilized to reconstruct the authentic physical display order of the project page, while a pre-trained CLIP model is used to achieve cross-modal semantic alignment, establishing the foundation for sequential input. Second, at the architectural level, a Transformer encoder paired with sinusoidal positional encoding is employed to explicitly capture sequential features within the narrative logic, simulating the linear reading process of investors. Simultaneously, scalar attributes such as text length and image area are extracted and projected as embeddings to quantify the rhythm of visual density during page browsing. Finally, the model utilizes multi-path parallel branches to model project metadata, deeply fusing the captured multimodal sequence features with metadata features to achieve precise prediction of crowdfunding outcomes.
 
-Experimental results based on a real-world Kickstarter dataset demonstrate that the proposed MSTC model significantly outperforms traditional unordered set models, convolutional fusion models, and late-fusion models across core metrics including Accuracy, F1-score, and AUC. Ablation studies further confirm the discriminative value of the content presentation structure: the narrative logic reflected in a clear text-image sequence provides substantial performance gains, while visual density attributes offer a robust complement to semantic information by characterizing cognitive load. This research not only improves the precision of crowdfunding prediction but also empirically validates the signaling role of multimodal content presentation structures. It marks a paradigm shift from "focusing on modal semantic content" to "focusing on the organizational form of modal content," providing a novel perspective for the quality assessment of crowdfunding projects.
+Experimental results based on a real-world Kickstarter dataset demonstrate that the proposed MSTC model significantly outperforms traditional unordered set models, convolutional fusion models, and late-fusion models across core metrics including Accuracy, F1-score, and AUC. Ablation studies further confirm the discriminative value of the content presentation structure: the narrative logic reflected in a clear text-image sequence provides substantial performance gains, while visual density attributes offer a robust complement to semantic information by characterizing cognitive load. This research not only improves the precision of crowdfunding prediction but also empirically validates the signaling role of multimodal content presentation structures. It marks a paradigm shift from ``focusing on modal semantic content'' to ``focusing on the organizational form of modal content,'' providing a novel perspective for the quality assessment of crowdfunding projects.
 
-\textbf{Keywords: }Crowdfunding success prediction; Multimodal deep learning; Narrative transportation theory
-
+\textbf{Keywords:} Crowdfunding success prediction; Multimodal deep learning; Narrative transportation theory
 \end{enabstract}
-
-\newpage
-\setcounter{table}{0}
-\setcounter{figure}{0}

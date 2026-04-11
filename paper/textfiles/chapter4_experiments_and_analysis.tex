@@ -1,280 +1,371 @@
-\newpage
-\setcounter{table}{0}
-\setcounter{figure}{0}
 \section{实验过程及结果分析}
-本章旨在验证本研究提出的图文统一序列建模范式在众筹成功性预测任务中的有效性，在统一的输入契约与训练评估口径下汇报实验结果，所有模型在数据表示与训练流程上保持一致。
 
-实验分为两部分：首先，通过与主流建模范式的对比，验证本研究模型的整体优势。其次，通过顺序维度的消融实验，探究呈现结构与叙事逻辑的判别效力；通过属性维度的消融实验，量化图文物理属性（如文本长度、图片尺寸）所表征的视觉密度对预测性能的影响。
+本研究将众筹成功预测定义为一个二分类任务，即通过建模项目的内容呈现结构与元数据特征，判定项目在筹款期结束时能否达成预设目标。本章旨在通过一系列对照实验，验证 MSTC 模型在处理该任务时的判别效力与泛化性能。
+
+实验分为两部分：首先，通过与主流建模范式的对比，验证本研究模型的整体优势。其次，通过顺序维度的消融实验，探究呈现结构与叙事逻辑的判别效力；通过属性维度的消融实验，量化图文物理属性（如文本长度、图片尺寸）所表征的视觉密度对预测性能的影响。所有模型在统一的输入契约与训练评估口径下汇报实验结果，以确保对比的公正性。
 
 \subsection{数据采集与预处理}
+
 \subsubsection{数据来源}
-本研究数据来源于全球领先的奖励式众筹平台 Kickstarter。Kickstarter作为全球最大的奖励式众筹平台，其数据被广泛应用于众筹预测研究，该平台具有以下特点：
+
+本研究的数据来源于全球领先的奖励式众筹平台 Kickstarter。Kickstarter 作为全球最大的奖励式众筹平台，拥有海量历史项目数据，被广泛应用于众筹结果预测研究。该平台项目状态明确，便于训练监督学习模型；同时，项目描述页采用高度灵活的图文混排模式，为研究项目内容呈现方式提供了理想的实验样本。因此，本研究选取该平台作为数据来源，并设计了一套能够提取项目内容呈现结构的数据预处理管线。
+
+数据采集过程分为元数据抓取与多模态叙事序列构建两个阶段，具体细节如下：
+
+在元数据抓取阶段，研究基于 Web Robots 平台提供的 Kickstarter 公开数据集提取项目 URL、众筹状态、目标金额等核心字段，为后续模型训练提供准确的监督标签与元数据特征。特征维度的筛选严格遵循``项目上线前预测''的实际应用场景。虽然既有研究表明社交互动信号（如点赞数、分享数）和动态筹资数据（如即时支持者规模、实时评论反馈）对预测结果具有显著影响，但此类特征具有明显的滞后性，仅在项目发布后随时间推移而产生。因此，模型主动剔除了所有上线后产生的动态特征，仅依赖项目上线前即可确定的静态元数据、文本图像的语义和排版等先验信息，这种特征准入机制确保了 MSTC 模型在实际业务场景中的前瞻性与实用价值。
+
+在多模态叙事序列构建阶段，依据各项目 URL，研究构建了基于 DrissionPage 的自动化爬虫管线。该系统通过模拟真实浏览器环境访问项目主页，利用 BeautifulSoup 对抓取的页面源代码进行解析，通过解析 HTML DOM 结构定位项目背景描述区域。在解析过程中，系统严格按照元素的物理展示顺序依次提取文本与图像块，从而在数据层面还原了投资者的线性阅读路径。为了支持后续对视觉密度的量化分析，管线在提取语义内容的同时，还同步捕获了内容块的物理属性，包括文本长度以及通过 Pillow 库测量的图像面积。最终，这些多源信息被整合为结构化的 JSON 序列档案，从而完成了从非结构化网页内容到可计算叙事序列的转化。
+
+\subsubsection{样本清洗与数据集构建}
+
+本研究以项目为样本单位，对样本标签的定义采用 Kickstarter 平台通用的``全有或全无（All-or-Nothing）''筹资规则：若项目在众筹期限结束时，其实际筹得金额大于或等于预设的目标金额，则项目成功；否则，项目被标注为失败。
+
+研究取得的样本数据按以下原则进行筛选与清洗：
 
 \begin{itemize}
-  \item 规模大：拥有海量的历史项目数据，支持大规模模型训练。
-  \item 模态丰富：包含项目描述、图片、视频、更新、评论等多种信息。
-  \item 标注清晰：项目状态明确，便于监督学习。
-  \item 时间跨度长：可研究长期趋势变化。
-\end{itemize}
-
-因此，本研究基于 Web Robots 平台提供的 Kickstarter 公开数据集进行元数据解析，提取项目 URL、众筹状态、目标金额等核心字段。依据各项目 URL，研究构建了基于 DrissionPage 的自动化爬虫管线。该系统通过模拟真实浏览器环境访问项目主页，利用 BeautifulSoup 对抓取的页面源代码进行解析，通过解析 HTML DOM 结构定位项目背景描述区域，按照 HTML 元素的物理排列顺序，依次提取文本块与图像 URL，形成反映界面呈现逻辑的原始多模态序列。在资源下载阶段，本研究利用图像处理库 Pillow 对图片格式校验与尺寸测量，并将图文顺序、图片大小和文本长度一并存入结构化的 JSON 档案中，用于后续图文序列构建。
-
-\subsubsection{样本清洗}
-本研究以项目为样本单位，按以下原则进行项目筛选与清洗：
-
-\begin{itemize}
-  \item 只保留状态为 successful 和 failed 的项目，移除 canceled / live / suspended 等进行中或异常状态的记录。
-  \item 剔除正文为空、封面图片缺失或无法解析的无效样本。
-  \item 剔除持续时间过短的项目（小于5天）。
-  \item 剔除出现次数过低的类别（国家、币种出现次数小于100，类别出现次数小于50），减少长尾类别带来的极端稀疏特征。
+\item
+  状态筛选：只保留状态为 successful 和 failed 的项目，移除 canceled / live / suspended 等进行中或异常状态的记录。
+\item
+  有效性检验：剔除正文为空、封面图片缺失或因为 HTML 结构异常而无法解析的无效样本。
+\item
+  业务逻辑过滤：剔除筹资持续时间小于 5 天的极端项目。同时为缓解特征稀疏性，剔除出现次数过低的长尾类别样本（国家、币种出现次数小于100，类别出现次数小于50）。
 \end{itemize}
 
 最终构建的可训练数据集包含 31586 个项目，样本时间范围覆盖 2023-01-01 至 2025-12-11。本研究通过对多数类样本进行随机下采样，实现了正负样本的严格均衡，成功样本与失败样本各 15793 个。标签由项目状态映射得到，successful 记为 1，failed 记为 0。
 
-\subsubsection{元数据特征提取}
-在内容嵌入之外，本研究还引入了结构化元数据以增强模型表征能力。元数据包含三类离散特征与两类数值特征。
+\subsubsection{元数据特征工程}
 
-离散特征为项目类别、国家与币种，均采用 One-hot 编码。
+研究选用的元数据特征包含三类离散特征与两类数值特征，均为项目上线前即可确定的静态数据。离散特征包括项目类别、国家与币种，采用 One-hot 编码；数值特征包括以下部分，采用训练集统计量做标准化：
 
-数值特征为：
-
-\begin{enumerate}[label=(\arabic*)]
-  \item 项目持续时间：持续时间以天为单位定义为
-  \begin{equation}
-  \text{duration\_days}=\frac{\text{deadline}-\text{launched\_at}}{86400}.
-  \end{equation}
-  \item 项目目标金额：以美元为基准并做对数变换以平滑数据分布
-  \begin{equation}
-  \text{log\_usd\_goal}=\log(1+\text{usd\_goal}).
-  \end{equation}
+\begin{enumerate}
+\def\labelenumi{(\arabic{enumi})}
+\item
+  项目持续时间：持续时间以天为单位定义为：
 \end{enumerate}
 
-以上数值特征采用训练集统计量做标准化。
+\[\text{duration\_days}=\frac{\text{deadline}-\text{launched\_at}}{86400}\]
+
+\begin{enumerate}
+\def\labelenumi{(\arabic{enumi})}
+\setcounter{enumi}{1}
+\item
+  项目目标金额：以美元为基准并做对数变换以平滑数据分布：
+\end{enumerate}
+
+\[\text{log\_usd\_goal}=\log(1+\text{usd\_goal})\]
 
 最终元数据特征维度为 155 维，包括项目类别 117 维，国家 22 维，币种 14 维，数值特征 2 维。这些特征通过独立分支编码后，在分类头处与序列特征进行融合预测。
 
-
-\begin{table}[H]
-\centering
-\caption{元数据特征}
-\label{tab:exp4_1}
-\renewcommand{\arraystretch}{1.0}
-\setlength{\extrarowheight}{0pt}
-\setlength{\tabcolsep}{4pt}
-\begin{tabular}{@{}>{\raggedright\arraybackslash}p{1.7cm}>{\raggedright\arraybackslash}p{5.5cm}>{\raggedright\arraybackslash}p{4.3cm}>{\raggedright\arraybackslash}p{1.3cm}@{}}
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.2500}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.2500}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.2500}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.2500}}@{}}
+\caption{元数据特征}\tabularnewline
 \toprule
-\textbf{特征类别} & \textbf{特征名称} & \textbf{处理方式} & \textbf{维度} \\ \midrule
-\multirow[t]{3}{*}{离散特征} & 项目类别 / category & One-hot 编码 & 117 维 \\
- & 国家 / country & One-hot 编码 & 22 维 \\
- & 币种 / currency & One-hot 编码 & 14 维 \\
-\cmidrule(lr){2-4}
-\multirow[t]{2}{*}{数值特征} & 项目持续时间 / duration\_days & \parbox[t]{\linewidth}{\rule{0pt}{1.0ex}以天为单位，标准化处理} & 1 维 \\
- & 目标金额 / log\_usd\_goal & \parbox[t]{\linewidth}{\rule{0pt}{1.0ex}以美元为基准，进行\newline 对数变换和标准化处理} & 1 维 \\
-\addlinespace[2pt]
+\begin{minipage}[b]{\linewidth}\raggedright
+特征类别
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+特征名称
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+处理方式
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+维度
+\end{minipage} \\
 \midrule
-总计 & -- & -- & 155 维 \\ \bottomrule
-\end{tabular}
-\end{table}
-
+\endfirsthead
+\toprule
+\begin{minipage}[b]{\linewidth}\raggedright
+特征类别
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+特征名称
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+处理方式
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+维度
+\end{minipage} \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+离散特征 & 项目类别 / category & One-hot 编码 & 117 维 \\
+& 国家 / country & One-hot 编码 & 22 维 \\
+& 币种 / currency & One-hot 编码 & 14 维 \\
+数值特征 & 项目持续时间 / duration\_days & 以天为单位，标准化处理 & 1 维 \\
+& 目标金额 / log\_usd\_goal & 以美元为基准，进行对数变换和标准化处理 & 1 维 \\
+总计 & -- & -- & 155 维 \\
+\end{longtable}
 
 \subsection{实验设置与评价口径}
+
 \subsubsection{实验设置}
-\begin{enumerate}[label=(\arabic*)]
-  \item 数据划分策略
+
+\begin{enumerate}
+\def\labelenumi{(\arabic{enumi})}
+\item
+  数据划分策略
+\end{enumerate}
 
 为确保实验对比的公平性、稳定性和结果的可复现性，本研究采用多轮随机实验取平均值的评估方案。所有模型均在五个不同的随机种子下进行独立训练与测试，最终汇报五次实验结果的算术平均值。通过在每一轮实验中严格对齐种子，各模型使用的训练集、验证集、测试集划分完全一致（划分比例为 6:2:2），从而排除了数据采样差异对性能评估的干扰。
 
-  \item 训练配置
+\begin{enumerate}
+\def\labelenumi{(\arabic{enumi})}
+\setcounter{enumi}{1}
+\item
+  训练配置
+\end{enumerate}
 
 本研究在统一的计算环境下配置了各模型的训练参数，以排除工程实现差异对模型性能的影响。
 
 实验环境如表 4-2 所示：
 
-
-\begin{table}[H]
-\centering
-\caption{实验环境}
-\label{tab:exp4_2}
-\renewcommand{\arraystretch}{1.0}
-\setlength{\extrarowheight}{0pt}
-\setlength{\tabcolsep}{5pt}
-\begin{tabular}{@{}>{\raggedright\arraybackslash}p{1.8cm}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{6.1cm}@{}}
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}@{}}
+\caption{实验环境}\tabularnewline
 \toprule
-\textbf{环境类别} & \textbf{参数项} & \textbf{环境说明} \\ \midrule
+\begin{minipage}[b]{\linewidth}\raggedright
+环境类别
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+参数项
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+环境说明
+\end{minipage} \\
+\midrule
+\endfirsthead
+\toprule
+\begin{minipage}[b]{\linewidth}\raggedright
+环境类别
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+参数项
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+环境说明
+\end{minipage} \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
 操作系统 & OS & Ubuntu 24.04.1 LTS \\
-\multirow[t]{3}{*}{硬件环境} & CPU & Intel(R) Xeon(R) Silver 4116 CPU @ 2.10GHz \\
- & GPU & NVIDIA GeForce RTX 3090 (24GB VRAM) \\
- & 内存 & 256 GB \\
-\cmidrule(lr){2-3}
-\multirow[t]{3}{*}{软件环境} & Python版本 & 3.11.14 \\
- & 深度学习框架 & PyTorch 2.9.1 (CUDA 12.8) \\
- & 核心依赖库 & \parbox[t]{\linewidth}{\rule{0pt}{1.0ex}Transformers, DrissionPage,\newline BeautifulSoup4, Pillow 等} \\ \bottomrule
-\end{tabular}
-\end{table}
-
+硬件环境 & CPU & Intel(R) Xeon(R) Silver 4116 CPU @ 2.10GHz \\
+& GPU & NVIDIA GeForce RTX 3090 (24GB VRAM) \\
+& 内存 & 256 GB \\
+软件环境 & Python版本 & 3.11.14 \\
+& 深度学习框架 & PyTorch 2.9.1 (CUDA 12.8) \\
+& 核心依赖库 & Transformers, DrissionPage, BeautifulSoup4, Pillow 等 \\
+\end{longtable}
 
 具体的超参数设定如下：
 
 \begin{itemize}
-  \item 优化算法与学习率：初始学习率 $ \eta_0 $ 设定为 $ 5\times10^{-4} $，并采用余弦退火策略逐步衰减至最小学习率 $ \eta_{min}=10^{-5} $。
-  \item 正则化与批处理：为防止模型过拟合，权重衰减（Weight Decay）系数设定为 $ 4\times 10^{-4} $；批处理大小（Batch Size）统一设定为 256。
-  \item 迭代轮数：最大训练轮数设定为 80 Epochs，以确保模型充分收敛。
+\item
+  优化算法与学习率：初始学习率 \(\eta_0\) 设定为 \(5\times10^{-4}\)，并采用余弦退火策略逐步衰减至最小学习率 \(\eta_{min}=10^{-5}\)。
+\item
+  正则化与批处理：为防止模型过拟合，权重衰减（Weight Decay）系数设定为 \(4\times 10^{-4}\)；批处理大小（Batch Size）统一设定为 256。
+\item
+  迭代轮数：最大训练轮数设定为 80 Epochs，以确保模型充分收敛。
 \end{itemize}
 
-  \item 多模态输入约定
+\begin{enumerate}
+\def\labelenumi{(\arabic{enumi})}
+\setcounter{enumi}{2}
+\item
+  多模态输入约定
+\end{enumerate}
 
 为了公平地评估不同建模范式对众筹项目内容的表征能力，所有模型均共享相同的内容输入窗口：
 
 \begin{itemize}
-  \item 图文表征：图像与文本均使用预训练的 CLIP 模型离线提取 512 维嵌入向量，并统一投影映射至 256 维。
-  \item 样本构成：每个项目由标题、简介、封面图与正文内容块共同表示，其中正文部分按照 HTML DOM 树中真实的物理展示顺序进行图文交替排列。
-  \item 截断策略：为模拟用户关注页面前部信息的浏览行为、控制计算量并保证对照公平，内容块长度上限固定为 40，并统一取页面前部窗口。
+\item
+  图文表征：图像与文本均使用预训练的 CLIP 模型离线提取 512 维嵌入向量，并统一投影映射至 256 维。
+\item
+  样本构成：每个项目由标题、简介、封面图与正文内容块共同表示，其中正文部分按照 HTML DOM 树中真实的物理展示顺序进行图文交替排列。
+\item
+  截断策略：为模拟用户关注页面前部信息的浏览行为、控制计算量并保证对照公平，内容块长度上限固定为 40，并统一取页面前部窗口。
 \end{itemize}
-\end{enumerate}
 
 \subsubsection{评价口径}
+
 为全面客观地评估各模型在众筹成功性预测任务中的表现，本研究采用了二分类任务中通用的评价指标。这些评价指标的计算基于二分类任务的混淆矩阵，混淆矩阵通过对比模型预测结果与真实标签，将样本划分为以下四个基础维度：
 
-\begin{enumerate}[label=(\arabic*)]
-  \item 真正例（True Positive, TP）：模型正确预测为“成功”的成功项目数量。
-  \item 假正例（False Positive, FP）：模型错误预测为“成功”的失败项目数量（即假阳性）。
-  \item 真负例（True Negative, TN）：模型正确预测为“失败”的失败项目数量。
-  \item 假负例（False Negative, FN）：模型错误预测为“失败”的成功项目数量（即假阴性）。
+\begin{enumerate}
+\def\labelenumi{(\arabic{enumi})}
+\item
+  真正例（True Positive, TP）：模型正确预测为``成功''的成功项目数量。
+\item
+  假正例（False Positive, FP）：模型错误预测为``成功''的失败项目数量（即假阳性）。
+\item
+  真负例（True Negative, TN）：模型正确预测为``失败''的失败项目数量。
+\item
+  假负例（False Negative, FN）：模型错误预测为``失败''的成功项目数量（即假阴性）。
 \end{enumerate}
 
-对于给定的分类阈值 $ \tau $，模型根据如下指示函数来预测项目是否成功：
-\begin{equation}
-\hat{y}(\tau)=\mathbb{I}[\hat{p}\ge\tau],
-\end{equation}
-其中，$ \hat{p} $为模型输出的预测概率。当概率大于或等于阈值$ \tau $时，判定项目为成功，否则判定为失败。
+对于给定的分类阈值 \(\tau\)，模型根据如下指示函数来预测项目是否成功：
+
+\[\hat{y}(\tau)=\mathbb{I}[\hat{p}\ge\tau].\]
+
+其中，\(\hat{p}\)为模型输出的预测概率。当概率大于或等于阈值\(\tau\)时，判定项目为成功，否则判定为失败。
 
 基于上述混淆矩阵计数，本研究定义的评价指标及其计算公式如下：
 
-\begin{enumerate}[label=(\arabic*)]
-  \item 准确率（Accuracy, Acc）：代表模型预测正确的样本（包括成功和失败）占总样本的比例，反映了模型的整体判别能力。其公式为：
-  \begin{equation}
-  \mathrm{Acc}(\tau)=\frac{TP(\tau)+TN(\tau)}{TP(\tau)+FP(\tau)+FN(\tau)+TN(\tau)}.
-  \end{equation}
-  \item 精确率（Precision, P）：又称查准率，代表在模型预测为“成功”的所有样本中，真正成功的项目所占的比例。其公式为：
-  \begin{equation}
-  \mathrm{P}(\tau)=\frac{TP(\tau)}{TP(\tau)+FP(\tau)}.
-  \end{equation}
-  \item 召回率（Recall, R）：又称查全率，代表在所有真实的成功项目中，被模型正确预测出来的比例。其公式为：
-  \begin{equation}
-  \mathrm{R}(\tau)=\frac{TP(\tau)}{TP(\tau)+FN(\tau)}.
-  \end{equation}
-  \item F1 分数（F1-score）：由于精确率与召回率存在权衡冲突，F1 分数作为两者的调和平均数，能够综合评价模型在查准和查全两方面的平衡表现。其公式为：
-  \begin{equation}
-  \mathrm{F1}(\tau)=\frac{2\mathrm{P}(\tau)\mathrm{R}(\tau)}{\mathrm{P}(\tau)+\mathrm{R}(\tau)}=\frac{2TP(\tau)}{2TP(\tau)+FP(\tau)+FN(\tau)}.
-  \end{equation}
+\begin{enumerate}
+\def\labelenumi{(\arabic{enumi})}
+\item
+  准确率（Accuracy, Acc）：代表模型预测正确的样本（包括成功和失败）占总样本的比例，反映了模型的整体判别能力。其公式为：
 \end{enumerate}
 
+\[\mathrm{Acc}(\tau)=\frac{TP(\tau)+TN(\tau)}{TP(\tau)+FP(\tau)+FN(\tau)+TN(\tau)}\]
+
+\begin{enumerate}
+\def\labelenumi{(\arabic{enumi})}
+\setcounter{enumi}{1}
+\item
+  精确率（Precision, P）：又称查准率，代表在模型预测为``成功''的所有样本中，真正成功的项目所占的比例。其公式为：
+\end{enumerate}
+
+\[\mathrm{P}(\tau)=\frac{TP(\tau)}{TP(\tau)+FP(\tau)}\]
+
+\begin{enumerate}
+\def\labelenumi{(\arabic{enumi})}
+\setcounter{enumi}{2}
+\item
+  召回率（Recall, R）：又称查全率，代表在所有真实的成功项目中，被模型正确预测出来的比例。其公式为：
+\end{enumerate}
+
+\[\mathrm{R}(\tau)=\frac{TP(\tau)}{TP(\tau)+FN(\tau)}\]
+
+\begin{enumerate}
+\def\labelenumi{(\arabic{enumi})}
+\setcounter{enumi}{3}
+\item
+  F1 分数（F1-score）：由于精确率与召回率存在权衡冲突，F1 分数作为两者的调和平均数，能够综合评价模型在查准和查全两方面的平衡表现。其公式为：
+\end{enumerate}
+
+\[\mathrm{F1}(\tau)=\frac{2\mathrm{P}(\tau)\mathrm{R}(\tau)}{\mathrm{P}(\tau)+\mathrm{R}(\tau)}=\frac{2TP(\tau)}{2TP(\tau)+FP(\tau)+FN(\tau)}\]
+
 除了上述与阈值相关的指标外，本研究还引入了阈值无关指标 AUC（Area Under Curve）。AUC 的物理意义可以解释为：随机抽取一个正样本和负样本，正样本得分大于负样本得分的概率。其公式为：
-\begin{equation}
-\mathrm{AUC}=\Pr(\hat{p}^+>\hat{p}^-)+\frac{1}{2}\Pr(\hat{p}^+=\hat{p}^-).
-\end{equation}
-在实验的模型选择与评估阶段，本研究采取分步策略：首先，以验证集的 AUC 最大化为标准，选择模型训练过程中的最优轮次，以保证模型具有最强的排序能力。在最佳轮次确定后，本研究不直接采用 0.5 作为判断项目是否成功的阈值，而是在验证集概率分布上进行动态搜索，找到使验证集 F1 分数最大化的最优阈值$ \tau^* $。最后，用 $ \tau^* $ 计算测试集上的准确率、精确率、召回率与 F1 分数，作为最终汇报的模型性能指标。
+
+\[\mathrm{AUC}=\Pr(\hat{p}^+>\hat{p}^-)+\frac{1}{2}\Pr(\hat{p}^+=\hat{p}^-).\]
+
+在实验的模型选择与评估阶段，本研究采取分步策略：首先，以验证集的 AUC 最大化为标准，选择模型训练过程中的最优轮次，以保证模型具有最强的排序能力。在最佳轮次确定后，本研究不直接采用 0.5 作为判断项目是否成功的阈值，而是在验证集概率分布上进行动态搜索，找到使验证集 F1 分数最大化的最优阈值\(\tau^*\)。最后，用 \(\tau^*\) 计算测试集上的准确率、精确率、召回率与 F1 分数，作为最终汇报的模型性能指标。
 
 \subsection{对比实验}
+
 \subsubsection{基线模型介绍}
-为了全面评估本研究提出的 MSTC（Multimodal Sequential Transformer for Crowdfunding）模型的有效性，本节挑选了三种代表性的建模范式，覆盖了简单全局统计、局部特征提取和晚期融合序列建模三种类型，作为基线模型（Baseline）与本研究模型进行对比。
 
-\begin{enumerate}[label=(\arabic*)]
-  \item 无序集合范式（Mean-Pool）：该模型假设页面信息为离散模块的无序堆砌，完全忽略了模块间的空间与逻辑关联。
+为了全面评估本研究提出的 MSTC（Multimodal Sequential Transformer for Crowdfunding）模型的有效性，本节挑选了三种代表性的建模范式，覆盖了简单全局聚合、局部特征提取和晚期融合序列建模三种类型，作为基线模型（Baseline）与本研究模型进行对比。
 
-其结构层级如下：
+\begin{enumerate}
+\def\labelenumi{(\arabic{enumi})}
+\item
+  全局特征聚合范式（Mean-Pool）：该范式代表了多模态学习中一种经典的、基于内容统计聚合的建模路径。其核心逻辑在于将众筹项目描述视为由多个离散语义单位组成的无序集合，认为最终的预测结果取决于各内容块语义特征的平均贡献，而非模块间的排列逻辑。
+\end{enumerate}
+
+该模型结构层级如下：
 
 \begin{itemize}
-  \item 输入层：接收预训练模型提取的图像特征与文本特征。
-  \item 特征对齐层：通过线性变换将不同维度的特征映射至统一隐空间。
-  \item 池化层：对输入序列中的 Token 进行逐元素求和并取均值，从而压缩得到全局静态表示。
-  \item 预测层：全局向量送入多层感知机（MLP）进行二分类预测。
+\item
+  输入层：接收预训练模型提取的图像特征 \(v \in \mathbb{R}^{N \times d_v}\) 与文本特征 \(t \in \mathbb{R}^{N \times d_t}\)
+\item
+  特征对齐层：通过线性变换将不同维度的模态特征映射至统一的隐空间。
+\item
+  池化层：对输入序列中的 Token 进行逐元素求和并取均值，从而压缩得到全局静态表示。
+\item
+  预测层：全局向量送入多层感知机（MLP）进行二分类预测。
 \end{itemize}
 
-该基线不包含 Token 间的注意力交互，反映了仅依赖图文内容而无结构信息的性能下限。
+该基线模型作为一个独立的分类路径，不包含 Token 间的注意力交互，旨在评估在不考虑组织结构信息的情况下，仅依赖全局内容语义所能达到的分类表现。
 
-  \item 卷积融合范式（MDL）：该模型复现了先前论文中基于 CNN 的多分支融合模型，代表了具有优秀局部特征提取能力的建模范式。
+\begin{enumerate}
+\def\labelenumi{(\arabic{enumi})}
+\setcounter{enumi}{1}
+\item
+  卷积融合范式（MDL）：该模型复现了先前论文中基于 CNN 的多分支融合模型，代表了具有优秀局部特征提取能力的建模范式。
+\end{enumerate}
 
 MDL 模型的结构特点是：
 
 \begin{itemize}
-  \item 图像与文本分支：采用并行的一维卷积编码器（1D-CNN）。通过设置不同尺寸的卷积核对输入序列进行滑动窗口扫描来捕获多模态数据的局部模式，随后衔接最大池化层（Max-pooling）提取最显著特征。
-  \item 元数据分支：对于众筹项目相关的数值型与类别型元数据，通过全连接层将高维稀疏特征映射到低维连续向量空间。
-  \item 融合层：采取晚期融合策略，将图像、文本和元数据三个独立分支产生的特征向量进行水平拼接。
-  \item 预测层：融合后的全局向量送入多层感知机（MLP）进行二分类预测。
+\item
+  图像与文本分支：采用并行的一维卷积编码器（1D-CNN）。通过设置不同尺寸的卷积核对输入序列进行滑动窗口扫描，以捕获多模态数据内部的局部模式，随后衔接最大池化层（Max-pooling）提取最显著特征。
+\item
+  元数据分支：对于众筹项目相关的数值型与类别型元数据，通过全连接层将高维稀疏特征映射到低维连续向量空间。
+\item
+  融合层：采取晚期融合策略，将图像、文本和元数据三个独立分支产生的特征向量进行水平拼接。
+\item
+  预测层：融合后的全局向量送入多层感知机（MLP）进行二分类预测。
 \end{itemize}
 
 与本研究不同，MDL 不以 Transformer 显式建模序列，其表现将更多反映卷积结构对局部模式的表征能力。
 
-  \item 晚期融合范式（Late-MSTC）：该模型是 MSTC 模型的晚期融合变体，旨在通过剥离跨模态交互机制，验证 Token 级图文对齐的必要性。
+\begin{enumerate}
+\def\labelenumi{(\arabic{enumi})}
+\setcounter{enumi}{2}
+\item
+  晚期融合范式（Late-MSTC）：该模型是 MSTC 模型的晚期融合变体，旨在通过剥离跨模态交互机制，验证 Token 级图文对齐的必要性。
+\end{enumerate}
 
 其与 MSTC 的主要区别在于：
 
 \begin{itemize}
-  \item 双塔序列架构：不同于 MSTC 构造的统一图文 Token 序列，Late-MSTC 采用并行的双塔结构分别处理图像序列与文本序列，两分支仍沿用模态投影、属性注入与正弦位置编码。
-  \item 模态内自注意力交互：Transformer 编码器仅在各模态内部独立执行自注意力计算。这意味着图像 Token 仅能感知视觉叙事顺序，文本 Token 仅能感知语义上下文，模态间在特征提取阶段完全解耦。
-  \item 向量级晚期融合：模型分别对图像与文本序列执行屏蔽均值池化（Masked\hspace{0pt} Mean\hspace{0pt} Pooling），提取各自的全局表示。随后，模型将两个模态的特征向量与元数据向量进行拼接，并在最终的分类头处实现高层语义聚合。
+\item
+  双塔序列架构：不同于 MSTC 构造的统一图文 Token 序列，Late-MSTC 采用并行的双塔结构分别处理图像序列与文本序列。虽然两分支仍沿用模态投影、属性注入与正弦位置编码，但在进入 Transformer 前并未合并。
+\item
+  模态内自注意力交互：Transformer 编码器仅在各模态内部独立执行自注意力计算。这意味着图像 Token 仅能感知视觉叙事顺序，文本 Token 仅能感知语义上下文，模态间在特征提取阶段完全解耦。
+\item
+  向量级晚期融合：模型分别对图像与文本序列执行屏蔽均值池化（Masked Mean Pooling），提取各自的全局表示。随后，模型将两个模态的特征向量与元数据向量进行拼接，并在最终的分类头处实现高层语义聚合。
 \end{itemize}
 
 为严格控制实验变量并确保对比的公正性，Late-MSTC 采用参数共享的双塔 Transformer 架构，图像与文本分支共用同一套编码器权重，使得模型在总参数量与计算容量上与本研究 MSTC 模型保持严格一致。在该设计下，两者的核心差异仅在于是否允许模态间进行 Token 级的交互映射，而其余超参数设定（如层数、隐层维度及注意力头数等）完全相同。此举旨在排除模型容量差异带来的性能干扰，从而验证细粒度跨模态交互在众筹成功性预测中的必要性。
-\end{enumerate}
 
 \subsubsection{实验结果与分析}
-表 4-3 与图 4-1 共同展示了各模型在测试集上的综合表现，汇报数据取五次实验结果的算术平均值：
 
+表 4-3 与图 4-1 共同展示了各模型在测试集上的综合表现，汇报数据取五次实验结果的算术平均值。
 
-\begin{table}[H]
-\centering
-\caption{对比实验：五次实验平均性能对比}
-\label{tab:exp4_3}
-\begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.7cm}*{5}{>{\raggedright\arraybackslash}p{1.75cm}}@{}}
+\begin{longtable}[]{@{}llllll@{}}
+\caption{对比实验：五次实验平均性能对比}\tabularnewline
 \toprule
-\textbf{模型名称} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-score} & \textbf{AUC} \\ \midrule
+模型名称 & Accuracy & Precision & Recall & F1-score & AUC \\
+\midrule
+\endfirsthead
+\toprule
+模型名称 & Accuracy & Precision & Recall & F1-score & AUC \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
 Mean-Pool & 0.8205 & 0.7897 & 0.8734 & 0.8293 & 0.9086 \\
 MDL & 0.8243 & 0.7891 & 0.8843 & 0.8339 & 0.9101 \\
 Late-MSTC & 0.8285 & 0.7957 & 0.8830 & 0.8370 & 0.9164 \\
-MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
-\end{tabular}
-\end{table}
+MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\
+\end{longtable}
 
-
-
-% 局部压缩图 4-1 上方空白，并保持图后正文间距基本不变。
-\begingroup
 \begin{figure}[H]
-  \centering
-  \includegraphics[width=0.95\textwidth]{figures/432.png}
-  \caption{对比实验：五次实验平均性能对比}
-  \label{fig:exp4_1}
+\centering
+\includegraphics[width=0.9\textwidth]{figures/432.png}
+\caption{对比实验：五次实验平均性能对比}
 \end{figure}
-\endgroup
 
 实验结果显示，本研究提出的 MSTC 模型在 Accuracy、F1-score 和 AUC 等核心评价维度上均显著优于其他基准模型。值得注意的是，MSTC 模型并没有取得最高的 Recall，然而在所有模型中，MSTC 模型的 Precision 和 Recall 最为平衡且 F1-score 最高，这表明其他模型倾向于过度预测项目成功来换取更高的召回率。对于众筹平台而言，这样的模型会产生大量的假阳性（将失败项目误判为成功），不稳定的决策会增加平台的运营风险。
 
 为排除数据随机划分对实验结论的干扰，本研究进行了五次独立重复实验，通过变换数据集随机种子（42-46）来观察模型性能波动情况。
 
-
 \begin{figure}[H]
-  \centering
-  \includegraphics[width=0.8\textwidth]{figures/accuracy_432.png}
-  \caption{对比实验：不同随机种子下的准确率对比}
-  \label{fig:exp4_2}
+\centering
+\includegraphics[width=0.9\textwidth]{figures/accuracy_432.png}
+\caption{对比实验：不同随机种子下的准确率对比}
 \end{figure}
 
-
 \begin{figure}[H]
-  \centering
-  \includegraphics[width=0.8\textwidth]{figures/auc_432.png}
-  \caption{对比实验：不同随机种子下的 AUC 对比}
-  \label{fig:exp4_3}
+\centering
+\includegraphics[width=0.9\textwidth]{figures/auc_432.png}
+\caption{对比实验：不同随机种子下的 AUC 对比}
 \end{figure}
 
-
 \begin{figure}[H]
-  \centering
-  \includegraphics[width=0.8\textwidth]{figures/f1_432.png}
-  \caption{对比实验：不同随机种子下的 F1-score 对比}
-  \label{fig:exp4_4}
+\centering
+\includegraphics[width=0.9\textwidth]{figures/f1_432.png}
+\caption{对比实验：不同随机种子下的 F1-score 对比}
 \end{figure}
 
 如图 4-2、4-3、4-4 所示，MSTC 模型在不同的随机种子设定下表现出了高度的一致性。在 Accuracy、AUC 与 F1-score 的对比中，MSTC 模型在绝大多数实验轮次中均稳居首位。这种稳定的实验表现证明，MSTC 模型能够捕捉到众筹数据中影响筹款结果的本质特征，而非仅仅拟合了特定数据子集的随机噪声。这种稳健性对于模型在实际生产环境中的复现与部署至关重要。
@@ -286,163 +377,167 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
 其次，同为晚期融合模型，Late-MSTC 模型在绝大多数指标上均优于 MDL。这意味着 MSTC 系列模型通过引入位置编码与序列建模，捕捉到了众筹页面内图文顺序中蕴含的叙事逻辑关系，从而可以实现显著的性能提升。而 MDL 仅通过卷积提取局部模式，忽略了宏观的叙事逻辑，效果劣于 MSTC 模型甚至是 Late-MSTC 模型。这证明顺序建模是提升众筹预测精度的关键因素。
 
 \subsection{消融实验}
+
 \subsubsection{叙事逻辑价值}
+
 为了深入探究图文排列顺序所表征的叙事逻辑对众筹成功预测的贡献，本节通过构建三种反事实场景进行消融实验，验证图文排列顺序的价值：
 
-\begin{enumerate}[label=(\arabic*)]
-  \item 全局注意力池化（Attn-Pool）：该变体模型在无序集合的基础上引入全局注意力，为不同内容块分配静态权重，旨在验证页面的判别力是否仅仅源于某些特定内容块（如某张精美图片）的加权贡献，而与展示顺序无关。
-  \item 移除位置感知（NoPos-MSTC）：该变体模型完全剥离了 MSTC 中的位置编码，NoPos-MSTC 依靠 Transformer 架构能够捕捉 Token 间的复杂非线性交互（如局部图文节奏），但由于缺乏位置编码，无法感知全局叙事顺序。设计该对照的目的是区分模型容量提升与顺序信息引入的差异化贡献。
-  \item 叙事崩塌假设（Shuffled-MSTC）：该变体保持与 MSTC 完全一致的网络架构与参数规模，但对每个样本的内容块序列进行随机置乱，并对置乱后的序列重新赋予位置编码，从而破坏位置与真实顺序的一致性。通过人工置乱原本有序的页面，构建“内容相同但逻辑破碎”的反事实场景，验证真实呈现顺序的边际价值。
+\begin{enumerate}
+\def\labelenumi{(\arabic{enumi})}
+\item
+  全局注意力池化（Attn-Pool）：该变体模型在无序图文集合的基础上引入全局注意力机制，为不同内容块分配静态权重，旨在验证页面的判别力是否仅仅源于某些特定内容块（如某张精美图片）的加权贡献，而与展示顺序无关。
+\item
+  移除位置感知（NoPos-MSTC）：该变体模型完全剥离了 MSTC 中的位置编码，NoPos-MSTC 依靠 Transformer 架构能够捕捉 Token 间的复杂非线性交互（如局部图文节奏），但由于缺乏位置编码，无法感知全局叙事顺序。设计该对照的目的是区分模型容量提升与顺序信息引入的差异化贡献。
+\item
+  叙事崩塌假设（Shuffled-MSTC）：该变体保持与 MSTC 完全一致的网络架构与参数规模，但对每个样本的内容块序列进行随机置乱，并对置乱后的序列重新赋予位置编码，从而破坏位置与真实顺序的一致性。通过人工置乱原本有序的页面，构建``内容相同但逻辑破碎''的反事实场景，验证真实呈现顺序的边际价值。
 \end{enumerate}
 
 表 4-4 归纳了各基线模型的结构差异：
 
-
-\begin{table}[H]
-\centering
-\caption{顺序消融实验：基线模型结构差异}
-\label{tab:exp4_4}
-\renewcommand{\tabularxcolumn}[1]{p{#1}}
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{2.9cm}>{\raggedright\arraybackslash}p{2.3cm}>{\raggedright\arraybackslash}p{2.5cm}>{\raggedright\arraybackslash}p{2.0cm}>{\raggedright\arraybackslash}X@{}}
+\begin{longtable}[]{@{}lllll@{}}
+\caption{顺序消融实验：基线模型结构差异}\tabularnewline
 \toprule
-\textbf{模型名称} & \textbf{序列编码器} & \textbf{位置编码} & \textbf{顺序是否保留} & \textbf{池化方式} \\ \midrule
-Attn-Pool & 无 & 无 & 保留 & \parbox[t]{\linewidth}{单 query\newline 注意力池化} \\
+模型名称 & 序列编码器 & 位置编码 & 顺序是否保留 & 池化方式 \\
+\midrule
+\endfirsthead
+\toprule
+模型名称 & 序列编码器 & 位置编码 & 顺序是否保留 & 池化方式 \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+Attn-Pool & 无 & 无 & 保留 & 单 query 注意力池化 \\
 NoPos-MSTC & Transformer & 无 & 保留 & 屏蔽均值池化 \\
 Shuffled-MSTC & Transformer & 正弦位置编码 & 置乱 & 屏蔽均值池化 \\
-MSTC & Transformer & 正弦位置编码 & 保留 & 屏蔽均值池化 \\ \bottomrule
-\end{tabularx}
-\end{table}
-
+MSTC & Transformer & 正弦位置编码 & 保留 & 屏蔽均值池化 \\
+\end{longtable}
 
 表 4-5 与图 4-5 共同报告了各场景下的实验结果，同样取五次实验结果的算数平均值：
 
-
-\begin{table}[H]
-\centering
-\caption{顺序消融实验：五次实验平均性能对比}
-\label{tab:exp4_5}
-\begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.7cm}*{5}{>{\raggedright\arraybackslash}p{1.75cm}}@{}}
+\begin{longtable}[]{@{}llllll@{}}
+\caption{顺序消融实验：五次实验平均性能对比}\tabularnewline
 \toprule
-\textbf{模型名称} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-score} & \textbf{AUC} \\ \midrule
+模型名称 & Accuracy & Precision & Recall & F1-score & AUC \\
+\midrule
+\endfirsthead
+\toprule
+模型名称 & Accuracy & Precision & Recall & F1-score & AUC \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
 Attn-Pool & 0.8165 & 0.7754 & 0.8900 & 0.8287 & 0.9088 \\
 NoPos-MSTC & 0.8269 & 0.7986 & 0.8748 & 0.8345 & 0.9131 \\
 Shuffled-MSTC & 0.8324 & 0.8059 & 0.8751 & 0.8390 & 0.9183 \\
-MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
-\end{tabular}
-\end{table}
-
-
+MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\
+\end{longtable}
 
 \begin{figure}[H]
-  \centering
-  \includegraphics[width=0.95\textwidth]{figures/441.png}
-  \caption{顺序消融实验：五次实验平均性能对比}
-  \label{fig:exp4_5}
+\centering
+\includegraphics[width=0.9\textwidth]{figures/441.png}
+\caption{顺序消融实验：五次实验平均性能对比}
 \end{figure}
 
 五次独立重复实验的详细结果如图 4-6、4-7、4-8 所示：
 
-
-% 图 4-6 至图 4-8 改为同页非浮动图块，避免连续 [H] 浮动体提前断页。
-\begin{samepage}
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.8\textwidth]{figures/accuracy_441.png}
-\captionsetup{type=figure,hypcap=false}
+\includegraphics[width=0.9\textwidth]{figures/accuracy_441.png}
 \caption{顺序消融实验：不同随机种子下的准确率对比}
-\label{fig:exp4_6}
-\includegraphics[width=0.8\textwidth]{figures/auc_441.png}
-\captionsetup{type=figure,hypcap=false}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/auc_441.png}
 \caption{顺序消融实验：不同随机种子下的 AUC 对比}
-\label{fig:exp4_7}
-\includegraphics[width=0.8\textwidth]{figures/f1_441.png}
-\captionsetup{type=figure,hypcap=false}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/f1_441.png}
 \caption{顺序消融实验：不同随机种子下的 F1-score 对比}
-\label{fig:exp4_8}
-\end{samepage}
+\end{figure}
 
 在不同随机种子驱动的绝大多数实验轮次中，MSTC 模型表现最优，各指标与平均性能评估结果高度一致，验证了实验结果的稳健性。
 
 从实验结果可以得到四点与顺序问题直接相关的洞察：
 
-第一，MSTC 模型取得了最优性能，在 AUC、F1-score 和准确率上均领先于其他模型，这说明在统一内容块序列设定下，引入位置编码并使用正确顺序能够带来整体收益。这证明了众筹预测任务不仅取决于发起人说了什么，更取决于其展示的逻辑，图文排列顺序作为内容本身之外的关键变量，对资助者的决策心理具有重要的引导作用。
+第一，MSTC 模型取得了最优性能，在 AUC、F1-score 和 Accuracy 上均领先于其他模型，这说明在统一内容块序列设定下，引入位置编码并使用正确顺序能够带来整体收益。这证明了众筹预测任务不仅取决于发起人说了什么，更取决于其展示的逻辑，图文排列顺序作为内容本身之外的关键变量，对资助者的决策心理具有重要的引导作用。
 
 第二，静态注意力机制在建模叙事逻辑方面存在局限，采用静态注意力池化机制的 Attn-Pool 模型效果不佳，这有力地证明了众筹页面的组织效力并非源于某些关键内容块，而是源于块与块之间动态的叙事交互。相比于简单的加权求和，Transformer 架构所捕捉的长距离依赖特征更契合众筹页面的复杂叙事结构。
 
-第三，真实呈现顺序蕴含着符合认知规律的线性信息。MSTC 相较于 Shuffled\hspace{0pt}-\hspace{0pt}MSTC 的性能提升较小但可复现，这表明真实呈现顺序确实提供了可用的判别信息。虽然提升幅度受限于模型处理窗口的长度，但这一可复现的增益证实了众筹页面存在符合浏览者认知心理的线性叙事规律。一旦真实的图文逻辑序列被置乱，模型对资助者决策行为的模拟精度就会受损，这有力支撑了本研究将分析焦点转向展示逻辑的必要性。
+第三，真实呈现顺序蕴含着符合认知规律的线性信息。MSTC 相较于 Shuffled-MSTC 的性能提升较小但可复现，这表明真实呈现顺序确实提供了可用的判别信息。虽然提升幅度受限于模型处理窗口的长度，但这一可复现的增益证实了众筹页面存在符合浏览者认知心理的线性叙事规律。一旦真实的图文逻辑序列被置乱，模型对资助者决策行为的模拟精度就会受损，这有力支撑了本研究将分析焦点转向展示逻辑的必要性。
 
-第四，位置编码本身同样带来收益。实验结果显示，引入了位置编码的 Shuffled-MSTC 明显优于 NoPos-MSTC，说明位置编码的收益并不完全依赖正确顺序；即使在序列置乱的状态下，位置编码依然充当了内容块的“空间指纹”，赋予了模型区分不同位置块属性的能力，从而学到更丰富的跨模态交互模式。
+第四，位置编码本身同样带来收益。实验结果显示，引入了位置编码的 Shuffled-MSTC 明显优于 NoPos-MSTC，说明位置编码的收益并不完全依赖正确顺序；即使在序列置乱的状态下，位置编码依然充当了内容块的``空间指纹''，赋予了模型区分不同位置块属性的能力，从而学到更丰富的跨模态交互模式。
 
 \subsubsection{视觉密度价值}
+
 本研究认为，在众筹场景下，除了项目叙事内容本身，图文视觉密度也是影响用户感知与决策的关键因素。文字的冗长程度、图片的视觉占比等等，直接决定着潜在投资者的认知负荷与阅读意愿，本研究将这些特征统称为视觉密度属性。
 
 为量化视觉密度属性对预测效果的贡献，本节构建了 NoAttr-MSTC（移除密度属性）与 MSTC（保留完整属性）两种模型进行对比消融实验。两种模型架构完全相同，唯一的变量在于输入端是否保留视觉密度特征向量。
 
 表 4-6 与图 4-9 展示了两种模型的预测性能：
 
-
-\begin{table}[H]
-\centering
-\caption{视觉密度消融实验：五次实验平均性能对比}
-\label{tab:exp4_6}
-\begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.7cm}*{5}{>{\raggedright\arraybackslash}p{1.75cm}}@{}}
+\begin{longtable}[]{@{}llllll@{}}
+\caption{视觉密度消融实验：五次实验平均性能对比}\tabularnewline
 \toprule
-\textbf{模型配置} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-score} & \textbf{AUC} \\ \midrule
+模型配置 & Accuracy & Precision & Recall & F1-score & AUC \\
+\midrule
+\endfirsthead
+\toprule
+模型配置 & Accuracy & Precision & Recall & F1-score & AUC \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
 NoAttr-MSTC & 0.8310 & 0.8022 & 0.8785 & 0.8383 & 0.9193 \\
-MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
-\end{tabular}
-\end{table}
-
-
+MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\
+\end{longtable}
 
 \begin{figure}[H]
-  \centering
-  \includegraphics[width=0.95\textwidth]{figures/442.png}
-  \caption{视觉密度消融实验：五次实验平均性能对比}
-  \label{fig:exp4_9}
+\centering
+\includegraphics[width=0.9\textwidth]{figures/442.png}
+\caption{视觉密度消融实验：五次实验平均性能对比}
 \end{figure}
 
 为了进一步验证视觉密度属性带来的增益是否具备统计意义上的稳健性，图 4-10、4-11 与 4-12 展示了在五次独立重复实验中，两个模型在核心指标上的波动对比：
 
-% 图 4-10 至图 4-12 改为同页非浮动图块，并在前两张图后保留少量间距。
-\noindent\begin{minipage}{\textwidth}
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.8\textwidth]{figures/accuracy_442.png}
-\captionsetup{hypcap=false}
-\captionof{figure}{视觉密度消融实验：不同随机种子下的准确率对比}
-\label{fig:exp4_10}
-\vspace{6pt}
+\includegraphics[width=0.9\textwidth]{figures/accuracy_442.png}
+\caption{视觉密度消融实验：不同随机种子下的准确率对比}
+\end{figure}
 
-\includegraphics[width=0.8\textwidth]{figures/auc_442.png}
-\captionsetup{hypcap=false}
-\captionof{figure}{视觉密度消融实验：不同随机种子下的 AUC 对比}
-\label{fig:exp4_11}
-\vspace{6pt}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/auc_442.png}
+\caption{视觉密度消融实验：不同随机种子下的 AUC 对比}
+\end{figure}
 
-\includegraphics[width=0.8\textwidth]{figures/f1_442.png}
-\captionsetup{hypcap=false}
-\captionof{figure}{视觉密度消融实验：不同随机种子下的 F1-score 对比}
-\label{fig:exp4_12}
-\end{minipage}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/f1_442.png}
+\caption{视觉密度消融实验：不同随机种子下的 F1-score 对比}
+\end{figure}
 
-实验结果显示，全量属性的 MSTC 模型在 Accuracy、Precision 和 F1-score 上均优于 NoAttr-MSTC。尽管受限于预训练模型本身已具备极强的表征能力，加入视觉密度属性在数值上的绝对增幅较小，但在不同随机种子（42-46）的测试轮次中，该增益表现出了高度的稳定性。这种跨实验的一致性有力地排除了指标提升源于随机偏差的可能性，证实了视觉密度特征对于提升预测精度的真实边际贡献。
+实验结果显示，融合视觉密度属性的 MSTC 模型在 Accuracy、AUC 和 F1-score 上均优于不加入视觉密度属性的 NoAttr-MSTC 模型。对五次独立重复实验的进一步观察发现， 在绝大多数随机种子下 MSTC 模型优于 NoAttr-MSTC。实验中出现的极少数性能回调呈现出明显的非系统性特征，Accuracy、AUC 和 F1-score 分别在不同的随机种子节点上出现了微幅波动，这种分散且偶发的数值浮动通常归因于验证集与测试集数据分布的随机差异，而非模型架构或特征引入导致的系统性偏差。
 
-尽管 MSTC 模型在大多数实验轮次中展现出明显的优势，但在随机种子为 44 的特定数据划分下，该模型的表现出现了轻微下滑，甚至略低于未引入视觉密度属性的 NoAttr-MSTC。针对这一现象，本研究认为存在以下两点潜在原因：
+从全局视角来看，MSTC 模型在绝大多数实验轮次中保持领先，且在平均性能上取得稳健提升。尽管预训练模型本身已具备极强的语义表征能力，加入视觉密度属性在数值上的绝对增幅较小，但在不同随机种子的测试轮次中，物理属性的引入仍能在高基准之上实现稳健的边际收益。这种跨实验的一致性有力地排除了指标提升源于随机偏差的可能性，证实了视觉密度特征对于提升预测精度的贡献。
 
-首先，引入视觉密度属性虽然扩充了模型的输入信息，但也相应地增加了特征空间的维度与复杂度。在种子 44 所对应的特定样本分布中，部分项目的视觉排版特征（如极端的文字长度或图片占比）可能与项目真实的成功标签之间存在噪声干扰。MSTC 模型在学习过程中可能过度拟合了这些非普适性的视觉规律，导致在测试集上的泛化能力受到局部削弱。
-
-其次， 在众筹成功预测任务中，内容的语义表征始终占据主导地位。在某些特定数据子集中，若内容的语义信号与视觉密度信号呈现出不一致的指向，模型对辅助特征的关注可能会在一定程度上干扰对核心语义的准确判断。
-
-然而从全局视角来看，此类性能回调仅属于偶发性的局部波动。MSTC 在其余多数轮次中的稳定领先地位表明，视觉密度属性在统计意义上能够提供正向的判别增益。这种在特定随机划分下的性能震荡，也反映出未来在融合多维特征时，需要在项目筛选和特征工程上做更精细的工作，以规避在极端数据分布下的过拟合风险。
-
-综上所述，实验结果验证了本研究的理论假设，即模型通过 Transformer 的注意力机制，成功捕捉到了内容语义与页面视觉密度节奏之间的深层交互。这种对叙事传输过程的数字化模拟，使得模型能够更精准地识别出那些内容充实、排版符合投资者认知加工习惯的成功项目。
+综上所述，实验结果验证了本研究的理论假设，即模型通过将物理属性注入 Token 序列，成功捕捉到了内容语义与页面视觉节奏之间的深层交互。这种对叙事传输过程的量化模拟，使得模型能够更精准地识别出那些内容充实、排版符合投资者认知加工习惯的成功项目。
 
 \subsection{本章小结}
-本章通过一系列对比实验与消融实验，对本研究提出的序列化建模范式（MSTC）进行了全方位的性能评估。在已完成的对比实验中，MSTC 模型在 Accuracy、F1-score 以及 AUC 等核心评价指标上均显著优于传统的无序集合、卷积融合及晚期融合范式，体现出以下优势：
 
-\begin{enumerate}[label=(\arabic*)]
-  \item 早期融合的优越性：本研究提出的统一序列范式优于传统的晚期融合范式，说明跨模态 Token 级交互与统一序列组织方式能够带来额外收益，在特征提取早期进行图文融合能有效减少语义信息在压缩过程中的损失。
-  \item 宏观结构的预测效力：作为任务级参考的 MDL 模型连接了本研究与既有成果。Late-MSTC 与 MSTC 模型的表现普遍优于仅提取局部特征的 MDL 卷积模型，说明在众筹项目评估中，页面内容的宏观结构比局部的视觉或文本模式包含更强的预测信号，进一步验证了本研究方法相对传统方法的优势。
-  \item 决策稳健性与平衡性：在所有对比实验中，MSTC 模型的 Precision 与 Recall 最为均衡。相比之下，部分基准模型虽在 Recall 上表现尚可，但 Precision 较低。MSTC 范式通过对图文序列的深度对齐，有效缓解了 Precision 与 Recall 之间的权衡冲突，从而实现了最高的 F1 分数。这证明了序列化建模在处理众筹数据这种高噪声场景时，具有更强的鲁棒性和判别准确度。
+本章通过一系列对比实验与消融实验，对本研究提出的统一序列建模范式（MSTC）进行了全方位的性能评估。在已完成的对比实验中，MSTC 模型在 Accuracy、F1-score 以及 AUC 等核心评价指标上均显著优于传统的全局特征聚合、卷积融合及晚期融合范式，体现出以下优势：
+
+\begin{enumerate}
+\def\labelenumi{(\arabic{enumi})}
+\item
+  早期融合的优越性：本研究提出的统一序列范式优于传统的晚期融合范式，说明跨模态 Token 级交互与统一序列组织方式能够带来额外收益，在特征提取早期进行图文融合能有效减少语义信息在压缩过程中的损失。
+\item
+  宏观结构的预测效力：作为任务级参考的 MDL 模型连接了本研究与既有成果。Late-MSTC 与 MSTC 模型的表现普遍优于仅提取局部特征的 MDL 卷积模型，说明在众筹项目评估中，页面内容的宏观结构比局部的视觉或文本模式包含更强的预测信号，进一步验证了本研究方法相对传统方法的优势。
+\item
+  决策稳健性与平衡性：在所有对比实验中，MSTC 模型的 Precision 与 Recall 最为均衡。相比之下，部分基准模型虽在 Recall 上表现尚可，但 Precision 较低。MSTC 范式通过对图文序列的深度对齐，有效缓解了 Precision 与 Recall 之间的权衡冲突，从而实现了最高的 F1 分数。这证明了序列化建模在处理众筹数据这种高噪声场景时，具有更强的鲁棒性和判别准确度。
 \end{enumerate}
 
 针对顺序信息的消融实验进一步深化了上述结论。通过构建反事实场景，本研究证实了图文排列顺序所表征的叙事逻辑是影响众筹成败的关键变量。位置编码相对无位置的容量对照有明显收益，正确呈现顺序相对置乱顺序带来小幅但可复现的提升，说明正确的位置信息存在增益。这有力支撑了本研究的假设：众筹页面存在符合资助者认知心理的线性叙事规律，人为破坏这种逻辑一致性会导致模型预测精度的下降。
