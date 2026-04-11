@@ -40,6 +40,7 @@
 \usepackage{appendix}
 \usepackage{hyperref}
 \usepackage{enumerate}
+\usepackage{enumitem}
 \usepackage{threeparttable}
 \usepackage{fancyhdr}
 \usepackage{setspace}
@@ -53,6 +54,7 @@
 \usepackage{xcolor}
 \usepackage{caption}
 \usepackage{array}
+\usepackage{tabularx}
 \usepackage{calc}
 \usepackage{titlesec}
 %\usepackage{subfigure}
@@ -94,6 +96,8 @@
 
 \renewcommand {\thetable} {\thesection{}-\arabic{table}}
 \renewcommand {\thefigure} {\thesection{}-\arabic{figure}}
+\numberwithin{equation}{section}
+\renewcommand{\theequation}{\thesection-\arabic{equation}}
 \makeatletter
 \@addtoreset{table}{section}
 \@addtoreset{figure}{section}
@@ -104,6 +108,37 @@
 \setlength{\LTright}{0pt}
 \DeclareCaptionLabelSeparator{twospace}{\ ~}  
 \captionsetup{labelsep=twospace}
+\setlength{\parindent}{2em}
+\newcommand{\plainitemlabel}[1]{#1\hspace{0.5em}}
+\setlist[enumerate,1]{
+    label=(\arabic*),
+    labelindent=0pt,
+    leftmargin=0pt,
+    labelwidth=0pt,
+    labelsep=0pt,
+    itemindent=2em,
+    listparindent=0pt,
+    topsep=0pt,
+    partopsep=0pt,
+    parsep=0pt,
+    itemsep=0pt,
+    before=\let\makelabel\plainitemlabel
+}
+\setlist[itemize,1]{
+    label=\textbullet,
+    labelindent=2em,
+    labelwidth=1em,
+    labelsep=0.5em,
+    leftmargin=*,
+    itemindent=0pt,
+    listparindent=0pt,
+    topsep=0pt,
+    partopsep=0pt,
+    parsep=0pt,
+    itemsep=0pt
+}
+\renewcommand{\[}{\begin{equation}}
+\renewcommand{\]}{\end{equation}}
 
 
 \renewcommand{\algorithmicrequire}{\textbf{输入:}}  

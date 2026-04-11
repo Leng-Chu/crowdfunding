@@ -1,3 +1,6 @@
+\newpage
+\setcounter{table}{0}
+\setcounter{figure}{0}
 \section{实验过程及结果分析}
 
 本研究将众筹成功预测定义为一个二分类任务，即通过建模项目的内容呈现结构与元数据特征，判定项目在筹款期结束时能否达成预设目标。本章旨在通过一系列对照实验，验证 MSTC 模型在处理该任务时的判别效力与泛化性能。
@@ -56,45 +59,27 @@
 
 最终元数据特征维度为 155 维，包括项目类别 117 维，国家 22 维，币种 14 维，数值特征 2 维。这些特征通过独立分支编码后，在分类头处与序列特征进行融合预测。
 
-\begin{longtable}[]{@{}
-  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.2500}}
-  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.2500}}
-  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.2500}}
-  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.2500}}@{}}
-\caption{元数据特征}\tabularnewline
+\begin{table}[H]
+\centering
+\caption{元数据特征}
+\label{tab:exp4_1}
+\renewcommand{\arraystretch}{1.0}
+\setlength{\extrarowheight}{0pt}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{1.7cm}>{\raggedright\arraybackslash}p{5.5cm}>{\raggedright\arraybackslash}p{4.3cm}>{\raggedright\arraybackslash}p{1.3cm}@{}}
 \toprule
-\begin{minipage}[b]{\linewidth}\raggedright
-特征类别
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-特征名称
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-处理方式
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-维度
-\end{minipage} \\
+\textbf{特征类别} & \textbf{特征名称} & \textbf{处理方式} & \textbf{维度} \\ \midrule
+\multirow[t]{3}{*}{离散特征} & 项目类别 / category & One-hot 编码 & 117 维 \\
+ & 国家 / country & One-hot 编码 & 22 维 \\
+ & 币种 / currency & One-hot 编码 & 14 维 \\
+\cmidrule(lr){2-4}
+\multirow[t]{2}{*}{数值特征} & 项目持续时间 / duration\_days & \parbox[t]{\linewidth}{\rule{0pt}{1.0ex}以天为单位，标准化处理} & 1 维 \\
+ & 目标金额 / log\_usd\_goal & \parbox[t]{\linewidth}{\rule{0pt}{1.0ex}以美元为基准，进行\newline 对数变换和标准化处理} & 1 维 \\
+\addlinespace[2pt]
 \midrule
-\endfirsthead
-\toprule
-\begin{minipage}[b]{\linewidth}\raggedright
-特征类别
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-特征名称
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-处理方式
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-维度
-\end{minipage} \\
-\midrule
-\endhead
-\bottomrule
-\endlastfoot
-离散特征 & 项目类别 / category & One-hot 编码 & 117 维 \\
-& 国家 / country & One-hot 编码 & 22 维 \\
-& 币种 / currency & One-hot 编码 & 14 维 \\
-数值特征 & 项目持续时间 / duration\_days & 以天为单位，标准化处理 & 1 维 \\
-& 目标金额 / log\_usd\_goal & 以美元为基准，进行对数变换和标准化处理 & 1 维 \\
-总计 & -- & -- & 155 维 \\
-\end{longtable}
+总计 & -- & -- & 155 维 \\ \bottomrule
+\end{tabular}
+\end{table}
 
 \subsection{实验设置与评价口径}
 
@@ -119,41 +104,26 @@
 
 实验环境如表 4-2 所示：
 
-\begin{longtable}[]{@{}
-  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}
-  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}
-  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}@{}}
-\caption{实验环境}\tabularnewline
+\begin{table}[H]
+\centering
+\caption{实验环境}
+\label{tab:exp4_2}
+\renewcommand{\arraystretch}{1.0}
+\setlength{\extrarowheight}{0pt}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{1.8cm}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{6.1cm}@{}}
 \toprule
-\begin{minipage}[b]{\linewidth}\raggedright
-环境类别
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-参数项
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-环境说明
-\end{minipage} \\
-\midrule
-\endfirsthead
-\toprule
-\begin{minipage}[b]{\linewidth}\raggedright
-环境类别
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-参数项
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-环境说明
-\end{minipage} \\
-\midrule
-\endhead
-\bottomrule
-\endlastfoot
+\textbf{环境类别} & \textbf{参数项} & \textbf{环境说明} \\ \midrule
 操作系统 & OS & Ubuntu 24.04.1 LTS \\
-硬件环境 & CPU & Intel(R) Xeon(R) Silver 4116 CPU @ 2.10GHz \\
-& GPU & NVIDIA GeForce RTX 3090 (24GB VRAM) \\
-& 内存 & 256 GB \\
-软件环境 & Python版本 & 3.11.14 \\
-& 深度学习框架 & PyTorch 2.9.1 (CUDA 12.8) \\
-& 核心依赖库 & Transformers, DrissionPage, BeautifulSoup4, Pillow 等 \\
-\end{longtable}
+\multirow[t]{3}{*}{硬件环境} & CPU & Intel(R) Xeon(R) Silver 4116 CPU @ 2.10GHz \\
+ & GPU & NVIDIA GeForce RTX 3090 (24GB VRAM) \\
+ & 内存 & 256 GB \\
+\cmidrule(lr){2-3}
+\multirow[t]{3}{*}{软件环境} & Python版本 & 3.11.14 \\
+ & 深度学习框架 & PyTorch 2.9.1 (CUDA 12.8) \\
+ & 核心依赖库 & \parbox[t]{\linewidth}{\rule{0pt}{1.0ex}Transformers, DrissionPage,\newline BeautifulSoup4, Pillow 等} \\ \bottomrule
+\end{tabular}
+\end{table}
 
 具体的超参数设定如下：
 
@@ -202,7 +172,7 @@
 
 对于给定的分类阈值 \(\tau\)，模型根据如下指示函数来预测项目是否成功：
 
-\[\hat{y}(\tau)=\mathbb{I}[\hat{p}\ge\tau].\]
+\[\hat{y}(\tau)=\mathbb{I}[\hat{p}\ge \tau]\]
 
 其中，\(\hat{p}\)为模型输出的预测概率。当概率大于或等于阈值\(\tau\)时，判定项目为成功，否则判定为失败。
 
@@ -245,7 +215,7 @@
 
 除了上述与阈值相关的指标外，本研究还引入了阈值无关指标 AUC（Area Under Curve）。AUC 的物理意义可以解释为：随机抽取一个正样本和负样本，正样本得分大于负样本得分的概率。其公式为：
 
-\[\mathrm{AUC}=\Pr(\hat{p}^+>\hat{p}^-)+\frac{1}{2}\Pr(\hat{p}^+=\hat{p}^-).\]
+\[\mathrm{AUC}=\Pr(\hat{p}^+>\hat{p}^-)+\frac{1}{2}\Pr(\hat{p}^+=\hat{p}^-)\]
 
 在实验的模型选择与评估阶段，本研究采取分步策略：首先，以验证集的 AUC 最大化为标准，选择模型训练过程中的最优轮次，以保证模型具有最强的排序能力。在最佳轮次确定后，本研究不直接采用 0.5 作为判断项目是否成功的阈值，而是在验证集概率分布上进行动态搜索，找到使验证集 F1 分数最大化的最优阈值\(\tau^*\)。最后，用 \(\tau^*\) 计算测试集上的准确率、精确率、召回率与 F1 分数，作为最终汇报的模型性能指标。
 
@@ -322,23 +292,19 @@ MDL 模型的结构特点是：
 
 表 4-3 与图 4-1 共同展示了各模型在测试集上的综合表现，汇报数据取五次实验结果的算术平均值。
 
-\begin{longtable}[]{@{}llllll@{}}
-\caption{对比实验：五次实验平均性能对比}\tabularnewline
+\begin{table}[H]
+\centering
+\caption{对比实验：五次实验平均性能对比}
+\label{tab:exp4_3}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.7cm}*{5}{>{\raggedright\arraybackslash}p{1.75cm}}@{}}
 \toprule
-模型名称 & Accuracy & Precision & Recall & F1-score & AUC \\
-\midrule
-\endfirsthead
-\toprule
-模型名称 & Accuracy & Precision & Recall & F1-score & AUC \\
-\midrule
-\endhead
-\bottomrule
-\endlastfoot
+\textbf{模型名称} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-score} & \textbf{AUC} \\ \midrule
 Mean-Pool & 0.8205 & 0.7897 & 0.8734 & 0.8293 & 0.9086 \\
 MDL & 0.8243 & 0.7891 & 0.8843 & 0.8339 & 0.9101 \\
 Late-MSTC & 0.8285 & 0.7957 & 0.8830 & 0.8370 & 0.9164 \\
-MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\
-\end{longtable}
+MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
+\end{tabular}
+\end{table}
 
 \begin{figure}[H]
 \centering
@@ -394,43 +360,36 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\
 
 表 4-4 归纳了各基线模型的结构差异：
 
-\begin{longtable}[]{@{}lllll@{}}
-\caption{顺序消融实验：基线模型结构差异}\tabularnewline
+\begin{table}[H]
+\centering
+\caption{顺序消融实验：基线模型结构差异}
+\label{tab:exp4_4}
+\renewcommand{\tabularxcolumn}[1]{p{#1}}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{2.9cm}>{\raggedright\arraybackslash}p{2.3cm}>{\raggedright\arraybackslash}p{2.5cm}>{\raggedright\arraybackslash}p{2.0cm}>{\raggedright\arraybackslash}X@{}}
 \toprule
-模型名称 & 序列编码器 & 位置编码 & 顺序是否保留 & 池化方式 \\
-\midrule
-\endfirsthead
-\toprule
-模型名称 & 序列编码器 & 位置编码 & 顺序是否保留 & 池化方式 \\
-\midrule
-\endhead
-\bottomrule
-\endlastfoot
-Attn-Pool & 无 & 无 & 保留 & 单 query 注意力池化 \\
+\textbf{模型名称} & \textbf{序列编码器} & \textbf{位置编码} & \textbf{顺序是否保留} & \textbf{池化方式} \\ \midrule
+Attn-Pool & 无 & 无 & 保留 & \parbox[t]{\linewidth}{单 query\newline 注意力池化} \\
 NoPos-MSTC & Transformer & 无 & 保留 & 屏蔽均值池化 \\
 Shuffled-MSTC & Transformer & 正弦位置编码 & 置乱 & 屏蔽均值池化 \\
-MSTC & Transformer & 正弦位置编码 & 保留 & 屏蔽均值池化 \\
-\end{longtable}
+MSTC & Transformer & 正弦位置编码 & 保留 & 屏蔽均值池化 \\ \bottomrule
+\end{tabularx}
+\end{table}
 
 表 4-5 与图 4-5 共同报告了各场景下的实验结果，同样取五次实验结果的算数平均值：
 
-\begin{longtable}[]{@{}llllll@{}}
-\caption{顺序消融实验：五次实验平均性能对比}\tabularnewline
+\begin{table}[H]
+\centering
+\caption{顺序消融实验：五次实验平均性能对比}
+\label{tab:exp4_5}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.7cm}*{5}{>{\raggedright\arraybackslash}p{1.75cm}}@{}}
 \toprule
-模型名称 & Accuracy & Precision & Recall & F1-score & AUC \\
-\midrule
-\endfirsthead
-\toprule
-模型名称 & Accuracy & Precision & Recall & F1-score & AUC \\
-\midrule
-\endhead
-\bottomrule
-\endlastfoot
+\textbf{模型名称} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-score} & \textbf{AUC} \\ \midrule
 Attn-Pool & 0.8165 & 0.7754 & 0.8900 & 0.8287 & 0.9088 \\
 NoPos-MSTC & 0.8269 & 0.7986 & 0.8748 & 0.8345 & 0.9131 \\
 Shuffled-MSTC & 0.8324 & 0.8059 & 0.8751 & 0.8390 & 0.9183 \\
-MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\
-\end{longtable}
+MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
+\end{tabular}
+\end{table}
 
 \begin{figure}[H]
 \centering
@@ -478,21 +437,17 @@ MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\
 
 表 4-6 与图 4-9 展示了两种模型的预测性能：
 
-\begin{longtable}[]{@{}llllll@{}}
-\caption{视觉密度消融实验：五次实验平均性能对比}\tabularnewline
+\begin{table}[H]
+\centering
+\caption{视觉密度消融实验：五次实验平均性能对比}
+\label{tab:exp4_6}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.7cm}*{5}{>{\raggedright\arraybackslash}p{1.75cm}}@{}}
 \toprule
-模型配置 & Accuracy & Precision & Recall & F1-score & AUC \\
-\midrule
-\endfirsthead
-\toprule
-模型配置 & Accuracy & Precision & Recall & F1-score & AUC \\
-\midrule
-\endhead
-\bottomrule
-\endlastfoot
+\textbf{模型配置} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-score} & \textbf{AUC} \\ \midrule
 NoAttr-MSTC & 0.8310 & 0.8022 & 0.8785 & 0.8383 & 0.9193 \\
-MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\
-\end{longtable}
+MSTC & 0.8331 & 0.8066 & 0.8766 & 0.8398 & 0.9198 \\ \bottomrule
+\end{tabular}
+\end{table}
 
 \begin{figure}[H]
 \centering
