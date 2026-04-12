@@ -10,11 +10,11 @@
 
 # Abstract
 
-With the rapid expansion of crowdfunding platforms, accurately predicting project success before launch has become a critical issue for platform risk management, resource allocation, and project design by originators. However, existing research exhibits significant limitations in processing crowdfunding page information: most models primarily focus on single-modal information, such as text or images, or employ simplistic multimodal fusion methods. These approaches treat different modalities as independent feature vectors for concatenation, thereby neglecting the narrative transportation effect inherent in the sequential presentation and interplay of text and graphics within project descriptions. Grounded in Narrative Transportation Theory, this study innovatively introduces "content presentation structure" as a core dimension in deep learning modeling. We posit that high-quality crowdfunding narratives must possess a rigorous progressive logic in their presentation order and maintain a balanced narrative rhythm in terms of visual density, thereby reducing investor cognitive load and enhancing crowdfunding performance.
+With the rapid expansion of crowdfunding platforms, accurately predicting project success before launch has become a critical issue for platform risk management, resource allocation, and project design by originators. However, existing research exhibits significant limitations in processing crowdfunding page information: most models primarily focus on single-modal information, such as text or images, or employ simplistic multimodal fusion methods. These approaches treat different modalities as independent feature vectors for concatenation, thereby neglecting the narrative transportation effect inherent in the sequential presentation and interplay of text and graphics within project descriptions. Grounded in Narrative Transportation Theory, this study innovatively introduces “content presentation structure” as a core dimension in deep learning modeling. We posit that high-quality crowdfunding narratives must possess a rigorous progressive logic in their presentation order and maintain a balanced narrative rhythm in terms of visual density, thereby reducing investor cognitive load and enhancing crowdfunding performance.
 
 Based on this premise, this research deconstructs the complex content presentation structure into two quantifiable sub-dimensions: narrative logic, represented by the arrangement order of text and images, and visual density, represented by their physical attributes. Consequently, a multimodal deep learning model, MSTC (Multimodal Sequential Transformer for Crowdfunding), is constructed based on a unified sequence modeling paradigm. First, HTML DOM tree parsing is utilized to reconstruct the authentic physical display order of the project page, while a pre-trained CLIP model is used to achieve cross-modal semantic alignment, establishing the foundation for sequential input. Second, at the architectural level, a Transformer encoder paired with sinusoidal positional encoding is employed to explicitly capture sequential features within the narrative logic, simulating the linear reading process of investors. Simultaneously, scalar attributes such as text length and image area are extracted and projected as embeddings to quantify the rhythm of visual density during page browsing. Finally, the model utilizes multi-path parallel branches to model project metadata, deeply fusing the captured multimodal sequence features with metadata features to achieve precise prediction of crowdfunding outcomes.
 
-Experimental results based on a real-world Kickstarter dataset demonstrate that the proposed MSTC model significantly outperforms traditional unordered set models, convolutional fusion models, and late-fusion models across core metrics including Accuracy, F1-score, and AUC. Ablation studies further confirm the discriminative value of the content presentation structure: the narrative logic reflected in a clear text-image sequence provides substantial performance gains, while visual density attributes offer a robust complement to semantic information by characterizing cognitive load. This research not only improves the precision of crowdfunding prediction but also empirically validates the signaling role of multimodal content presentation structures. It marks a paradigm shift from "focusing on modal semantic content" to "focusing on the organizational form of modal content," providing a novel perspective for the quality assessment of crowdfunding projects.
+Experimental results based on a real-world Kickstarter dataset demonstrate that the proposed MSTC model significantly outperforms traditional unordered set models, convolutional fusion models, and late-fusion models across core metrics including Accuracy, F1-score, and AUC. Ablation studies further confirm the discriminative value of the content presentation structure: the narrative logic reflected in a clear text-image sequence provides substantial performance gains, while visual density attributes offer a robust complement to semantic information by characterizing cognitive load. This research not only improves the precision of crowdfunding prediction but also empirically validates the signaling role of multimodal content presentation structures. It marks a paradigm shift from “focusing on modal semantic content” to “focusing on the organizational form of modal content,” providing a novel perspective for the quality assessment of crowdfunding projects.
 
 **Keywords:** Crowdfunding success prediction; Multimodal deep learning; Narrative transportation theory
 
@@ -74,9 +74,9 @@ Experimental results based on a real-world Kickstarter dataset demonstrate that 
 
 ## 1.4 研究重点与创新点
 
-本研究的核心在于探究众筹项目内容呈现逻辑与众筹能否成功之间的内在关联，尝试将分析尺度从单一的多模态内容语义延伸至信息的组织与表达方式，即关注项目信息的呈现过程。具体而言，研究重点围绕两个核心维度展开： 一是对叙事逻辑的捕捉，即通过正弦位置编码刻画图文块的先后排列顺序，研究不同的叙述节奏如何构建出差异化的说服逻辑，进而影响投资者的决策反馈；二是对视觉密度的量化，通过提取文本长度、图片大小等非语义物理属性，建模潜在投资者在页面浏览过程中的视觉节奏与认知负荷，从而探索页面物理属性与筹资成功率之间的关系。
+本研究的核心在于探究众筹项目内容呈现逻辑与众筹能否成功之间的内在关联，尝试将分析尺度从单一的多模态内容语义延伸至信息的组织与表达方式，即关注项目信息的呈现过程。具体而言，研究重点围绕两个核心维度展开：一是对叙事逻辑的捕捉，即通过正弦位置编码刻画图文块的先后排列顺序，研究不同的叙述节奏如何构建出差异化的说服逻辑，进而影响投资者的决策反馈；二是对视觉密度的量化，通过提取文本长度、图片大小等非语义物理属性，建模潜在投资者在页面浏览过程中的视觉节奏与认知负荷，从而探索页面物理属性与筹资成功率之间的关系。
 
-基于上述研究重点，本研究从分析视角、特征工程与模型架构三个层面实现了对现有的众筹预测模型进行了改进与创新：
+基于上述研究重点，本研究从分析视角、特征工程与模型架构三个层面，对现有众筹预测模型进行了改进与创新：
 
 (1) 分析视角：传统研究将众筹项目视为文本集合和图片集合的简单组合，忽略了内容布局蕴含的价值。本研究首次将分析焦点从“内容是什么”转向了“内容如何被组织和展示”。该视角不仅关注内容本身，更关注其排列顺序、节奏密度与图文交替结构如何影响投资者决策，为众筹绩效预测提供了新颖的切入点。
 
@@ -102,7 +102,7 @@ Experimental results based on a real-world Kickstarter dataset demonstrate that 
 
 ## 2.1 众筹结果影响因素研究
 
-本次研究的研究对象为基于奖励的众筹市场，在该市场环境下，投资者与项目方信息不对称的现象普遍存在，因此项目方披露的信息对众筹结果至关重要，投资者往往基于此进行决策。现已有大量研究从实证角度探讨项目成功的影响因素，主要涵盖项目元信息、文本内容、视觉呈现与项目互动等维度。这些研究不仅揭示了众筹结果的内在影响因素，也为预测模型中的特征选择提供了理论指导。
+本研究的研究对象为基于奖励的众筹市场，在该市场环境下，投资者与项目方信息不对称的现象普遍存在，因此项目方披露的信息对众筹结果至关重要，投资者往往基于此进行决策。现已有大量研究从实证角度探讨项目成功的影响因素，主要涵盖项目元信息、文本内容、视觉呈现与项目互动等维度。这些研究不仅揭示了众筹结果的内在影响因素，也为预测模型中的特征选择提供了理论指导。
 
 在以往的研究范式中，众筹页面通常被抽象为一组高维的特征向量，通过统计学检验或机器学习方法建立变量与众筹结果之间的关联。
 
@@ -130,7 +130,7 @@ Experimental results based on a real-world Kickstarter dataset demonstrate that 
 
 ## 2.3 多模态内容呈现理论
 
-众筹项目的页面浏览本质上是一个高强度的信息摄取与决策过程。出资人在面对陌生项目时，既需处理项目本身的内在复杂性，又需、应对信息呈现方式所带来的外在认知负荷。因此，项目描述区的内容呈现直接决定了信息的传递效率与用户的决策行为。
+众筹项目的页面浏览本质上是一个高强度的信息摄取与决策过程。出资人在面对陌生项目时，既需处理项目本身的内在复杂性，又需应对信息呈现方式所带来的外在认知负荷。因此，项目描述区的内容呈现直接决定了信息的传递效率与用户的决策行为。
 
 首先，视觉密度深刻影响着用户的阅读意愿。视觉密度是指在给定界面空间内信息元素（包括文本、图像、图标及装饰性元素）的集中程度。认知负荷理论指出，人类的工作记忆容量有限，视觉密度的管理本质上是对用户有限的注意力资源进行调度。如果多模态界面视觉密度过高，单位面积内的信息量（如字数、图片）超出了工作记忆的承载范围，就会引发认知过载与逃离行为[34-36]。Djamasbi 等的眼动追踪研究进一步证实，Web 用户倾向于 F 型扫描，高密度文本会导致视线在垂直扫描中滑落[37]。Liang 等的研究也证明，在文本维度上，众筹项目的字数与融资成功率之间存在显著的“倒 U 型”关系[38]。字数一旦超过某个特定阈值，过剩的信息就会转化为外在负荷，形成理解负担，反而降低了投资者的支持意愿。在此基础上，加工流畅性理论进一步解释了这一现象[39]：文本长度、图片大小等视觉密度特征直接影响界面认知负荷，当页面呈现出较低的认知负荷时，投资者会产生更高的加工流畅性，这种轻松的心理感受往往会转化为对项目质量的直觉判断，进而提升投资意愿。这意味着众筹项目界面不应追求极端的信息堆砌，而应通过优化视觉密度来匹配投资者的认知能力。
 
@@ -180,9 +180,9 @@ Experimental results based on a real-world Kickstarter dataset demonstrate that 
 
 本研究将众筹项目的成功预测建模为一个二分类任务。给定一个众筹项目样本，预测目标为判断该项目在筹款周期结束后能否达到预定的筹资目标。这种任务表达形式遵循了主流奖励式众筹平台（如 Kickstarter 和 Indiegogo）所采用的“全有或全无（All-or-Nothing）”策略：只有当项目在规定期限内筹得的资金总额大于或等于预设的目标金额时，项目才会被判定为成功，发起者可以获得众筹资金；否则，资金将退还给投资者，项目也将被判定为失败。
 
-形式化表述如下：设标签为 $ y\in\{0,1\} $，其中 $ y=1 $ 表示项目成功（即最终筹款金额达到或超过筹资目标），$ y=0 $ 表示项目失败。模型的目标是学习一个映射函数，使预测值尽可能接近真实标签。具体而言，模型通过学习项目元数据、图片或文本中蕴含的多维特征，输出标量预测值 Logit $ z\in\mathbb{R} $，并最终通过 Sigmoid 激活函数将该值映射到$ (0,1) $区间，得到项目成功的预测概率：
+形式化表述如下：设标签为 $ y\in\{0,1\} $，其中 $ y=1 $ 表示项目成功（即最终筹款金额达到或超过筹资目标），$ y=0 $ 表示项目失败。模型的目标是学习一个映射函数，使预测值尽可能接近真实标签。具体而言，模型通过学习项目元数据、图片和文本中蕴含的多维特征，输出标量预测值 Logit $ z\in\mathbb{R} $，并最终通过 Sigmoid 激活函数将该值映射到 $ (0,1) $ 区间，得到项目成功的预测概率：
 
-$ \hat{p}=\sigma(z)=\frac{1}{1+\exp(-z)}. $
+$ \hat{p}=\sigma(z)=\frac{1}{1+\exp(-z)} $
 
 在模型训练阶段，预测概率与真实标签之间的差异通过二分类交叉熵（Binary Cross Entropy, BCE）损失函数进行度量。训练目标为最小化该损失函数，从而驱动模型捕捉众筹页面和元数据中与项目筹资结果相关的深层判别模式。
 
@@ -218,15 +218,15 @@ $ \hat{p}=\sigma(z)=\frac{1}{1+\exp(-z)}. $
 
 ### 3.3.2 视觉密度特征提取
 
-为了量化加工流畅性理论中的“视觉密度”特征，本研究为序列中的每个位置定义了辅助信息向量：对每个位置 $ i\in\{1,\ldots,L\} $，定义类型标识 $ t_i\in\{0,1\} $（文本为 0，图片为 1）、标量属性 $ a_i\in\mathbb{R} $。每个内容块的标量属性 $ a $ 为其结构信息，用于提供与视觉密度相关的粗粒度物理线索。针对不同模态，标量属性的计算方式如下：
+为了量化加工流畅性理论中的“视觉密度”特征，本研究为序列中的每个位置定义了辅助信息向量：对每个位置 $ i\in\{1,\ldots,L\} $，定义类型标识 $ t_i\in\{0,1\} $（文本为 0，图片为 1）、标量属性 $ a_i\in\mathbb{R} $。每个内容块的标量属性 $ a $ 作为其结构信息，用于提供与视觉密度相关的粗粒度物理线索。针对不同模态，标量属性的计算方式如下：
 
-(1) 对于文本块，令 $ \ell $ 为文本长度， 通过对数变换平滑长尾分布：
+(1) 对于文本块，令 $ \ell $ 为文本长度，通过对数变换平滑长尾分布：
 
-$ a=\log(\max(1,\ell)); $
+$ a=\log(\max(1,\ell)) $
 
 (2) 对于图片块，令 $ w,h $ 为图片的分辨率宽高，则其面积为 $ \text{area}=w\cdot h $，同理进行对数处理：
 
-$ a=\log(\max(1,\text{area})). $
+$ a=\log(\max(1,\text{area})) $
 
 通过将语义向量与上述结构属性相融合，模型能够同时感知“叙事内容”与“呈现节奏”，从而更精准地预测投资者的决策反馈。
 
@@ -234,7 +234,7 @@ $ a=\log(\max(1,\text{area})). $
 
 基于线性叙事理论，本研究放弃了传统的晚期融合范式，转而将页面内容抽象为符合人类浏览顺序的统一序列。序列由固定前缀与正文内容块组成，前缀包含标题、简介与封面图；随后按页面呈现顺序，即 HTML DOM 树中真实的物理展示顺序拼接正文中的图文块。
 
-为模拟用户在有限注意力下的前部窗口浏览行为，并平衡计算效率，本研究设定块长度上限为 40（ 即 $ L_{\max}=40 $），并固定取页面前部窗口。前缀长度固定为 3，设正文长度为 $ L_{\text{body}} $，则截断前序列长度为 $ 3+L_{\text{body}} $，统一后的序列实际长度为：
+为模拟用户在有限注意力下的前部窗口浏览行为，并平衡计算效率，本研究设定块长度上限为 40（即 $ L_{\max}=40 $），并固定取页面前部窗口。前缀长度固定为 3，设正文长度为 $ L_{\text{body}} $，则截断前序列长度为 $ 3+L_{\text{body}} $，统一后的序列实际长度为：
 
 $ L=\min(3+L_{\text{body}},L_{\max}) $
 
@@ -244,7 +244,7 @@ $ L=\min(3+L_{\text{body}},L_{\max}) $
 
 ### 3.4.1 Token 编码器
 
-为了将异构的语义向量、类型信息与物理属性整合为统一的隐藏层表示，本研究在模型的 Token 编码器模块构建了一套层次化的特征融合流程。
+为了将异构的语义向量、类型信息与物理属性整合为统一的隐藏层表示，本研究在模型的 Token 编码器模块中构建了一套层次化的特征融合流程。
 
 模态投影作为流程的起点，旨在消除不同原始模态间的量纲差异。设第 $ i $ 个位置的图像与文本嵌入向量分别为 $ e_i^{\text{img}}\in\mathbb{R}^{512} $ 与 $ e_i^{\text{txt}}\in\mathbb{R}^{512} $。模型首先对两种模态分别做线性投影并经 ReLU 激活：
 
@@ -292,7 +292,7 @@ $ x'_i=x_i+m_i\cdot \text{PE}(p=i-1). $
 
 ### 3.4.3 Transformer 序列编码器
 
-位置编码后的图文 Token 序列进入 Transformer 编码器。 该模块的设计核心在于利用多头自注意力机制捕捉序列内部的长距离依赖关系，从而在计算层面模拟读者在阅读众筹页面时，通过不断回溯上下文以印证图文逻辑一致性、构建整体项目印象的复杂认知行为。
+位置编码后的图文 Token 序列进入 Transformer 编码器。该模块的设计核心在于利用多头自注意力机制捕捉序列内部的长距离依赖关系，从而在计算层面模拟读者在阅读众筹页面时，通过不断回溯上下文以印证图文逻辑一致性、构建整体项目印象的复杂认知行为。
 
 编码器由两层结构相同的编码层堆叠构成，每层隐藏维度设定为$ d=256 $，多头数 $ H=4 $（每头维度 $ d_k=64 $），前馈网络中间维度 $ d_{\text{ff}}=512 $，并引入 Dropout 率为 0.1 的随机失活机制以提升模型的泛化能力。在架构设计上，模型采用了 Pre-LN（Pre-Layer Normalization） 结构，即在子层计算前执行层归一化，这种设计能有效缓解深层网络在训练初期的不稳定性，确保模型平稳收敛。
 
@@ -325,7 +325,7 @@ $ h=\frac{\sum_{i=1}^{L_{\max}} m_i z_i}{\sum_{i=1}^{L_{\max}} m_i}, $
 
 其中 $ z_i $ 表示 $ Z $ 在位置 $ i $ 的向量。该设计模拟了投资者在阅读完整个页面后形成的综合印象。
 
-除了页面内容呈现的叙事价值外，项目的先天背景（如目标金额、持续时间）也是影响决策的关键因素。本研究将 155 维的结构化元数据特征$ x_{\text{meta}}\in\mathbb{R}^{155} $， 输入一层多层感知机（MLP）进行非线性映射，得到元数据表示：
+除了页面内容呈现的叙事价值外，项目的先天背景（如目标金额、持续时间）也是影响决策的关键因素。本研究将 155 维的结构化元数据特征 $ x_{\text{meta}}\in\mathbb{R}^{155} $ 输入一层多层感知机（MLP）进行非线性映射，得到元数据表示：
 
 $ h_{\text{meta}}=\text{Dropout}\big(\text{ReLU}(W_{\text{meta}}x_{\text{meta}}+b_{\text{meta}})\big), $
 
@@ -341,7 +341,7 @@ $ \tilde{f}=\text{LN}(f),\quad
 g=\text{Dropout}\big(\text{ReLU}(W_f\tilde{f}+b_f)\big),\quad
 z=w^\top g+b, $
 
-其中 $ W_f $ 将输入映射到 512 维隐藏层， Dropout 率为 0.5，最终输出标量 Logit$ z $, 代表该众筹项目成功预测的原始得分。
+其中 $ W_f $ 将输入映射到 512 维隐藏层，Dropout 率为 0.5，最终输出标量 Logit $ z $，代表该众筹项目成功预测的原始得分。
 
 ### 3.4.5 模型总体结构
 
@@ -355,11 +355,11 @@ z=w^\top g+b, $
 
 ### 3.5.1 概率输出与损失函数
 
-本研究将众筹成功性预测建模为二分类任务。模型末层输出原始分数 Logit$ z $并通过 Sigmoid 函数映射为预测概率$ \hat{p}=\sigma(z) $。采用二分类交叉熵作为目标损失函数，以衡量预测分布与真实分布之间的差异：
+本研究将众筹成功性预测建模为二分类任务。模型末层输出原始分数 Logit $ z $，并通过 Sigmoid 函数映射为预测概率 $ \hat{p}=\sigma(z) $。采用二分类交叉熵作为目标损失函数，以衡量预测分布与真实分布之间的差异：
 
 $ \mathcal{L}=-\frac{1}{N}\sum_{i=1}^{N}\left(\tilde{y}_i\log \hat{p}_i+(1-\tilde{y}_i)\log(1-\hat{p}_i)\right), $
 
-其中 $ \tilde{y} $ 是经过标签平滑（Label Smoothing）处理后的软标签。传统的硬标签（0或1）容易导致模型在训练时过于自信，进而引发过拟合，降低验证集和测试集上的预测准确度。为缓解过拟合并提升模型表现，本研究采用平滑系数 $ \epsilon=0.05 $，对原始标签 $ y\in\{0,1\} $进行如下变换：
+其中 $ \tilde{y} $ 是经过标签平滑（Label Smoothing）处理后的软标签。传统的硬标签（0或1）容易导致模型在训练时过于自信，进而引发过拟合，降低验证集和测试集上的预测准确度。为缓解过拟合并提升模型表现，本研究采用平滑系数 $ \epsilon=0.05 $，对原始标签 $ y\in\{0,1\} $ 进行如下变换：
 
 $ \tilde{y}=(1-\epsilon)y+\frac{\epsilon}{2}. $
 
@@ -369,7 +369,7 @@ $ \tilde{y}=(1-\epsilon)y+\frac{\epsilon}{2}. $
 
 本研究采用了一系列策略以确保模型训练的收敛速度与推理阶段的稳定性：
 
-(1) 优化器选择：使用 AdamW 优化器作为模型训练的优化方案。在标准的 Adam 优化器中，$ L_2 $正则化项通常被直接合并至损失函数，正则与梯度更新耦合在一起。这种耦合会导致正则化项的实际强度随梯度变化产生波动，从而使正则化项失去预期的约束作用。
+(1) 优化器选择：使用 AdamW 优化器作为模型训练的优化方案。在标准的 Adam 优化器中，$ L_2 $ 正则化项通常被直接合并至损失函数，正则与梯度更新耦合在一起。这种耦合会导致正则化项的实际强度随梯度变化产生波动，从而使正则化项失去预期的约束作用。
 
 针对这一局限性，AdamW 算法显式地将权重衰减与梯度更新解耦，使其能够以恒定的速率作用于参数更新，能够更有效地防止模型参数过大，提升正则化效果。AdamW 的核心更新流程遵循以下公式：
 
@@ -395,7 +395,7 @@ $ \eta(t)=
 
 在预热期，学习率线性增加以避免梯度爆炸；在退火期，学习率按余弦曲线缓慢下降，有助于模型在损失函数表面的局部极小值附近进行精细搜索。
 
-(3) 全局梯度裁剪：在训练过程中，由于长序列数据高度复杂的特征交互，梯度在反向传播时可能出现数值过大的现象，即所谓的“梯度爆炸”。为解决这一问题，本研究使用了全局梯度裁剪技术，通过设定最大范数阈值$ L=1.0 $，对模型所有参数的梯度进行整体缩放。核心公式如下：
+(3) 全局梯度裁剪：在训练过程中，由于长序列数据高度复杂的特征交互，梯度在反向传播时可能出现数值过大的现象，即所谓的“梯度爆炸”。为解决这一问题，本研究使用了全局梯度裁剪技术，通过设定最大范数阈值 $ L=1.0 $，对模型所有参数的梯度进行整体缩放。核心公式如下：
 
 $ \hat{g} = g \cdot \min \left( 1, \frac{L}{\|g\|_2} \right) $
 
@@ -446,7 +446,7 @@ $ \tau^*=\arg\max_{\tau\in\mathcal{T}}\text{F1}(\tau), $
 
 (3) 模型架构设计：本研究构建的深度学习模型由 Token 编码器、Transformer 序列编码器和融合预测层三部分组成。Token 编码器融合 CLIP 提取的语义向量、模态类型及物理属性；Transformer 序列编码器利用多头自注意力机制捕捉跨模态交互特征；融合预测层聚合序列信息，并与项目元数据特征融合，最终输出预测概率。
 
-(4) 训练优化策略：本研究通过一系列优化策略确保模型在复杂多模态数据下的泛化能力与稳定性，包括多数类下采样、Label Smoothing、AdamW优化器、学习率调度策略、全局梯度裁剪、 指数滑动平均（EMA）技术、动态阈值搜索等。
+(4) 训练优化策略：本研究通过一系列优化策略确保模型在复杂多模态数据下的泛化能力与稳定性，包括多数类下采样、Label Smoothing、AdamW 优化器、学习率调度策略、全局梯度裁剪、指数滑动平均（EMA）技术、动态阈值搜索等。
 
 本章构建的模型将用于后续实验验证，通过对比实验和消融实验检验模型效果。
 
@@ -527,7 +527,7 @@ $ \text{log\_usd\_goal}=\log(1+\text{usd\_goal}) $
 | 硬件环境 | CPU          | Intel(R) Xeon(R) Silver 4116 CPU @ 2.10GHz            |
 |          | GPU          | NVIDIA GeForce RTX 3090 (24GB VRAM)                   |
 |          | 内存         | 256 GB                                                |
-| 软件环境 | Python版本   | 3.11.14                                               |
+| 软件环境 | Python 版本  | 3.11.14                                               |
 |          | 深度学习框架 | PyTorch 2.9.1 (CUDA 12.8)                             |
 |          | 核心依赖库   | Transformers, DrissionPage, BeautifulSoup4, Pillow 等 |
 
@@ -655,7 +655,7 @@ MDL 模型的结构特点是：
 
 ![](figures/auc_432.png)
 
-**图 4-4 对比实验：不同随机种子下的 F1-score 对比**
+**图 4-4 对比实验：不同随机种子下的 F1 分数对比**
 
 ![](figures/f1_432.png)
 
@@ -673,7 +673,7 @@ MDL 模型的结构特点是：
 
 为了深入探究图文排列顺序所表征的叙事逻辑对众筹成功预测的贡献，本节通过构建三种反事实场景进行消融实验，验证图文排列顺序的价值：
 
- (1) 全局注意力池化（Attn-Pool）：该变体模型在无序图文集合的基础上引入全局注意力机制，为不同内容块分配静态权重，旨在验证页面的判别力是否仅仅源于某些特定内容块（如某张精美图片）的加权贡献，而与展示顺序无关。
+(1) 全局注意力池化（Attn-Pool）：该变体模型在无序图文集合的基础上引入全局注意力机制，为不同内容块分配静态权重，旨在验证页面的判别力是否仅仅源于某些特定内容块（如某张精美图片）的加权贡献，而与展示顺序无关。
 
 (2) 移除位置感知（NoPos-MSTC）：该变体模型完全剥离了 MSTC 中的位置编码，NoPos-MSTC 依靠 Transformer 架构能够捕捉 Token 间的复杂非线性交互（如局部图文节奏），但由于缺乏位置编码，无法感知全局叙事顺序。设计该对照的目的是区分模型容量提升与顺序信息引入的差异化贡献。
 
@@ -685,12 +685,12 @@ MDL 模型的结构特点是：
 
 | 模型名称      | 序列编码器  | 位置编码     | 顺序是否保留 | 池化方式            |
 | ------------- | ----------- | ------------ | ------------ | ------------------- |
-| Attn-Pool     | 无          | 无           | 保留         | 单 query 注意力池化 |
+| Attn-Pool     | 无          | 无           | 保留         | 全局注意力池化      |
 | NoPos-MSTC    | Transformer | 无           | 保留         | 屏蔽均值池化        |
 | Shuffled-MSTC | Transformer | 正弦位置编码 | 置乱         | 屏蔽均值池化        |
 | MSTC          | Transformer | 正弦位置编码 | 保留         | 屏蔽均值池化        |
 
-表 4-5 与图 4-5 共同报告了各场景下的实验结果，同样取五次实验结果的算数平均值：
+表 4-5 与图 4-5 共同报告了各场景下的实验结果，同样取五次实验结果的算术平均值：
 
 **表 4-5 顺序消融实验：五次实验平均性能对比**
 
@@ -715,7 +715,7 @@ MDL 模型的结构特点是：
 
 ![](figures/auc_441.png)
 
-**图 4-8 顺序消融实验：不同随机种子下的 F1-score 对比**
+**图 4-8 顺序消融实验：不同随机种子下的 F1 分数对比**
 
 ![](figures/f1_441.png)
 
@@ -733,7 +733,7 @@ MDL 模型的结构特点是：
 
 ### 4.4.2 视觉密度价值
 
-本研究认为，在众筹场景下，除了项目叙事内容本身，图文视觉密度也是影响用户感知与决策的关键因素。文字的冗长程度、图片的视觉占比等等，直接决定着潜在投资者的认知负荷与阅读意愿，本研究将这些特征统称为视觉密度属性。
+本研究认为，在众筹场景下，除了项目叙事内容本身，图文视觉密度也是影响用户感知与决策的关键因素。文字的冗长程度、图片的视觉占比等，直接决定着潜在投资者的认知负荷与阅读意愿，本研究将这些特征统称为视觉密度属性。
 
 为量化视觉密度属性对预测效果的贡献，本节构建了 NoAttr-MSTC（移除密度属性）与 MSTC（保留完整属性）两种模型进行对比消融实验。两种模型架构完全相同，唯一的变量在于输入端是否保留视觉密度特征向量。
 
@@ -760,11 +760,11 @@ MDL 模型的结构特点是：
 
 ![](figures/auc_442.png)
 
-**图 4-12 视觉密度消融实验：不同随机种子下的 F1-score 对比**
+**图 4-12 视觉密度消融实验：不同随机种子下的 F1 分数对比**
 
 ![](figures/f1_442.png)
 
-实验结果显示，融合视觉密度属性的 MSTC 模型在 Accuracy、AUC 和 F1-score 上均优于不加入视觉密度属性的 NoAttr-MSTC 模型。对五次独立重复实验的进一步观察发现， 在绝大多数随机种子下 MSTC 模型优于 NoAttr-MSTC。实验中出现的极少数性能回调呈现出明显的非系统性特征，Accuracy、AUC 和 F1-score 分别在不同的随机种子节点上出现了微幅波动，这种分散且偶发的数值浮动通常归因于验证集与测试集数据分布的随机差异，而非模型架构或特征引入导致的系统性偏差。
+实验结果显示，融合视觉密度属性的 MSTC 模型在 Accuracy、AUC 和 F1-score 上均优于不加入视觉密度属性的 NoAttr-MSTC 模型。对五次独立重复实验的进一步观察发现，在绝大多数随机种子下 MSTC 模型优于 NoAttr-MSTC。实验中出现的极少数性能回调呈现出明显的非系统性特征，Accuracy、AUC 和 F1-score 分别在不同的随机种子节点上出现了微幅波动，这种分散且偶发的数值浮动通常归因于验证集与测试集数据分布的随机差异，而非模型架构或特征引入导致的系统性偏差。
 
 从全局视角来看，MSTC 模型在绝大多数实验轮次中保持领先，且在平均性能上取得稳健提升。尽管预训练模型本身已具备极强的语义表征能力，加入视觉密度属性在数值上的绝对增幅较小，但在不同随机种子的测试轮次中，物理属性的引入仍能在高基准之上实现稳健的边际收益。这种跨实验的一致性有力地排除了指标提升源于随机偏差的可能性，证实了视觉密度特征对于提升预测精度的贡献。
 
@@ -802,9 +802,9 @@ MDL 模型的结构特点是：
 
 首先，研究发现内容呈现结构在众筹情境下具有显著的信号作用。不同于以往研究多关注发起人背景及图文内容质量，本研究通过实验发现，页面内容的呈现形式本身也是反映众筹项目质量的关键判别信号。在奖励型众筹这种典型的信息不对称场景下，一套有序、严谨且符合逻辑的内容结构，反映了发起人在项目策划上的投入程度与专业性，进而影响了潜在投资者的出资意愿。这一发现拓展了众筹结果预测领域特征选择的边界，打破了过往研究只关注内容而不关注结构的局限性，为众筹项目质量评估提供了新视角。
 
-其次，在探究结构如何发挥作用的过程中，本研究为叙事传输理论提供了计算层面的工程实证方案，实现了从理论驱动到工程实践的闭环。这种闭环的建立源于对叙事传输质量在计算维度的建模：高质量的众筹界面不仅在顺序上需要有严谨的递进逻辑，同时在密度上需要保持具有呼吸感的叙述节奏。通过构建深度学习模型 MSTC，本研究量化了图文序列的叙事逻辑和视觉密度，通过消融实验证明了遵循真实展示顺序的序列建模能显著提升预测性能、视觉密度特征也能通过量化认知负荷实现稳健的判别增益。这一结果在计算层面有力地支撑了叙事传输机制在信息传播与说服过程中的作用，为多模态内容呈现理论在普惠金融领域的应用提供了量化参考。
+其次，在探究结构如何发挥作用的过程中，本研究为叙事传输理论提供了计算层面的工程实证方案，实现了从理论驱动到工程实践的闭环。这种闭环的建立源于对叙事传输质量在计算维度的建模：高质量的众筹界面不仅在顺序上需要有严谨的递进逻辑，同时在密度上需要保持具有呼吸感的叙述节奏。通过构建深度学习模型 MSTC，本研究量化了图文序列的叙事逻辑和视觉密度，并通过消融实验证明，遵循真实展示顺序的序列建模能显著提升预测性能，而视觉密度特征也能通过量化认知负荷实现稳健的判别增益。这一结果在计算层面有力地支撑了叙事传输机制在信息传播与说服过程中的作用，为多模态内容呈现理论在普惠金融领域的应用提供了量化参考。
 
-最后，本研究模型的有效性，为图文统一序列建模在模拟人类认知过程中的适用性提供了实证参考。基于双重编码理论，页面中的文字语义与视觉呈现并非孤立存在，而是具备深层的协同关系。研究结果证实，将文本与图像纳入统一序列进行 Token 级的深度融合，相较于传统的模态割裂建模，能够更真实地还原投资者在纵向浏览页面时的线性感知逻辑。对比实验表明，利用 Transformer 编码器实现的跨模态深度交互，其预测效能显著优于晚期融合与卷积神经网络模型，进一步凸显了捕捉模态间组织关系在复杂内容表征中的应用价值。
+最后，本研究模型的有效性为图文统一序列建模在模拟人类认知过程中的适用性提供了实证参考。基于双重编码理论，页面中的文字语义与视觉呈现并非孤立存在，而是具备深层的协同关系。研究结果证实，将文本与图像纳入统一序列进行 Token 级的深度融合，相较于传统的模态割裂建模，能够更真实地还原投资者在纵向浏览页面时的线性感知逻辑。对比实验表明，利用 Transformer 编码器实现的跨模态深度交互，其预测效能显著优于晚期融合与卷积神经网络模型，进一步凸显了捕捉模态间组织关系在复杂内容表征中的应用价值。
 
 ## 5.3 局限性与未来方向
 
@@ -916,7 +916,7 @@ MDL 模型的结构特点是：
 
 [49] Cui X, Lu W, Tong Y, et al. Diffusion-based multi-modal synergy interest network for click-through rate prediction[C]//Proceedings of the 48th International ACM SIGIR Conference on Research and Development in Information Retrieval. 2025: 581-591.
 
-[50] Chai S, Chang Y, Li Y. Image‐left, text‐right: The horizontal sequence effect of images and text on consumer responses to in‐feed news[J]. Psychology & Marketing, 2025, 42(8): 2121-2135.
+[50] Chai S, Chang Y, Li Y. Image-left, text-right: The horizontal sequence effect of images and text on consumer responses to in-feed news[J]. Psychology & Marketing, 2025, 42(8): 2121-2135.
 
 [51] Paivio A. Mental representations: A dual coding approach[M]. Oxford University Press, 1990.
 
