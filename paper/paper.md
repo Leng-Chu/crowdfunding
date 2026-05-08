@@ -10,11 +10,11 @@
 
 # Abstract
 
-With the rapid expansion of crowdfunding platforms, accurately predicting project success before launch has become a critical issue for platform risk management, resource allocation, and project design by originators. However, existing research exhibits significant limitations in processing crowdfunding page information: most models primarily focus on single-modal information, such as text or images, or employ simplistic multimodal fusion methods. These approaches treat different modalities as independent feature vectors for concatenation, thereby neglecting the narrative transportation effect inherent in the sequential presentation and interplay of text and graphics within project descriptions. Grounded in Narrative Transportation Theory, this study innovatively introduces “content presentation structure” as a core dimension in deep learning modeling. We posit that high-quality crowdfunding narratives must possess a rigorous progressive logic in their presentation order and maintain a balanced narrative rhythm in terms of visual density, thereby reducing investor cognitive load and enhancing crowdfunding performance.
+With the rapid development of crowdfunding platforms, accurately predicting project success prior to launch has become a critical issue for platform risk management, resource allocation, and project design for initiators. However, existing research exhibits certain limitations in processing information on crowdfunding pages: most models focus primarily on unimodal information—such as text or images—or employ simple multimodal fusion methods. These approaches treat different modalities as independent feature vectors for concatenation, thereby ignoring the narrative transportation effect inherent in the sequential presentation and intertwined interaction of text and images in the project description area. Grounded in  Narrative Transportation Theory , this study introduces "content presentation structure" as a core dimension in deep learning modeling. We argue that high-quality crowdfunding narratives require rigorous progressive logic in their presentation order and a balanced narrative rhythm in their visual density, which collectively reduce investors' cognitive load and enhance crowdfunding performance.
 
-Based on this premise, this research deconstructs the complex content presentation structure into two quantifiable sub-dimensions: narrative logic, represented by the arrangement order of text and images, and visual density, represented by their physical attributes. Consequently, a multimodal deep learning model, MSTC (Multimodal Sequential Transformer for Crowdfunding), is constructed based on a unified sequence modeling paradigm. First, HTML DOM tree parsing is utilized to reconstruct the authentic physical display order of the project page, while a pre-trained CLIP model is used to achieve cross-modal semantic alignment, establishing the foundation for sequential input. Second, at the architectural level, a Transformer encoder paired with sinusoidal positional encoding is employed to explicitly capture sequential features within the narrative logic, simulating the linear reading process of investors. Simultaneously, scalar attributes such as text length and image area are extracted and projected as embeddings to quantify the rhythm of visual density during page browsing. Finally, the model utilizes multi-path parallel branches to model project metadata, deeply fusing the captured multimodal sequence features with metadata features to achieve precise prediction of crowdfunding outcomes.
+Accordingly, this study deconstructs the complex content presentation structure into two quantifiable sub-dimensions:  project narrative logic , represented by the arrangement sequence of text and images, and  visual density , represented by their physical attributes. Based on this, we constructed  MSTC (Multimodal Sequential Transformer for Crowdfunding) , a multimodal deep learning model based on a unified sequence modeling paradigm. First, we utilized HTML DOM tree parsing technology to reconstruct the actual physical display order of the project page and employed the pre-trained CLIP model to achieve cross-modal semantic alignment, establishing the foundation for sequential input. Second, at the architectural level, a Transformer encoder combined with sinusoidal position encoding was used to explicitly capture the sequential features of narrative logic, simulating the linear reading process of investors. Simultaneously, scalar attributes such as text length and image area were extracted and projected as embeddings to quantify the rhythm of visual density during page browsing. Finally, the project’s metadata was modeled through multi-channel parallel branches, and the captured text-image sequence features were fused with metadata features to achieve accurate prediction of crowdfunding outcomes.
 
-Experimental results based on a real-world Kickstarter dataset demonstrate that the proposed MSTC model significantly outperforms traditional unordered set models, convolutional fusion models, and late-fusion models across core metrics including Accuracy, F1-score, and AUC. The main conclusions are as follows. First, the authentic presentation order of text and images provides stable incremental information for crowdfunding success prediction, indicating that page-level narrative logic has discriminative value. Second, visual density attributes, such as text length and image area, complement semantic features and improve the model's ability to characterize differences in cognitive load. Third, content presentation structure is a structural signal that should not be ignored in crowdfunding project quality assessment. These results suggest that crowdfunding prediction should consider not only modal semantic content but also the organizational form of multimodal content, thereby providing a more interpretable basis for pre-launch evaluation and platform resource allocation.
+Experimental results based on a real-world Kickstarter dataset demonstrate that the proposed MSTC model significantly outperforms traditional global feature aggregation models, convolutional fusion models, and late fusion models across core metrics such as Accuracy, F1-score, and AUC. The primary conclusions are as follows: First, the actual presentation order of text and image content provides stable incremental information for predicting success, indicating that page narrative logic possesses modelable discriminative value. Second, visual density attributes, such as text length and image area, complement semantic features and improve the model's ability to characterize differences in cognitive load. The results suggest that content presentation structure is a non-negligible structural signal in the quality assessment of crowdfunding projects. Crowdfunding prediction should not only focus on the semantics of unimodal content but should also incorporate the organizational form of multimodal content into the modeling framework, providing a more interpretable basis for pre-launch evaluation and platform resource allocation.
 
 **Keywords:** Crowdfunding success prediction; Multimodal deep learning; Narrative transportation theory
 
@@ -28,7 +28,7 @@ Experimental results based on a real-world Kickstarter dataset demonstrate that 
 
 本研究通过引入统一序列建模范式，将众筹页面的内容呈现结构纳入预测框架，具有重要的理论与实践意义。在理论层面，本研究打破了传统多模态模型“重内容、轻结构”的局限。通过引入位置编码和图文物理属性进行图文序列建模，尝试挖掘良好的呈现结构带来的叙事价值，并通过实验分析了图文顺序和视觉密度（如文字长度、图片尺寸）对众筹成功性预测的增量贡献。实验结果证明，引入内容呈现结构能有效提升预测模型的准确率、F1 分数以及 AUC 等核心指标，证实了图文排列顺序与视觉密度中蕴含着以往研究忽视的判别信息。这一发现为众筹预测技术提供了新的特征工程方向，证明了在构建众筹预测系统时，不仅应关注内容语义，还应将“如何呈现”作为关键的辅助维度纳入建模范畴，从而增强模型对真实复杂场景的表征能力。对于众筹平台而言，这意味着可以构建更准确的早期筛查模型，从而优化首页流量分配机制与风险预警系统。
 
-## 1.2 研究现状 
+## 1.2 研究现状
 
 众筹市场在持续发展的同时，也面临着低成功率的现实挑战，这使得众筹结果预测成为平台运营者、项目发起人和投资者共同关注的核心问题。
 
@@ -325,7 +325,7 @@ $ h=\frac{\sum_{i=1}^{L_{\max}} m_i z_i}{\sum_{i=1}^{L_{\max}} m_i}, $
 
 其中 $ z_i $ 表示 $ Z $ 在位置 $ i $ 的向量。该设计模拟了投资者在阅读完整个页面后形成的综合印象。
 
-除了页面内容呈现的叙事价值外，项目的先天背景（如目标金额、持续时间）也是影响决策的关键因素。本研究将 155 维的结构化元数据特征 $ x_{\text{meta}}\in\mathbb{R}^{155} $ 输入一层多层感知机（MLP）进行非线性映射，得到元数据表示：
+除了页面内容呈现的叙事价值外，项目的先天背景（如目标金额、持续时间）也是影响决策的关键因素。本研究将 155 维的结构化元数据特征 $ x_{\text{meta}}\in\mathbb{R}^{155} $ 输入一层全连接网络进行非线性映射，得到元数据表示：
 
 $ h_{\text{meta}}=\text{Dropout}\big(\text{ReLU}(W_{\text{meta}}x_{\text{meta}}+b_{\text{meta}})\big), $
 
@@ -409,7 +409,7 @@ $ \theta_{EMA}^{(t)} = \beta \cdot \theta_{EMA}^{(t-1)} + (1 - \beta) \cdot \the
 
 其中，$ \theta_t $为当前迭代步的模型参数，$ \beta $为衰减系数（本研究设定为 0.999）。
 
-由于深度学习的训练曲线往往存在随机噪声和局部震荡，模型在最后一个步长处的权重未必处于最优状态。EMA 通过对历史权重进行加权平均，能够过滤掉训练过程中的随机扰动，捕捉到更具代表性的全局特征。这种策略使得模型真实应用场景中表现得更加稳健，能够降低评价指标的波动性，提升模型在众筹成功预测任务中的评估效果。
+由于深度学习的训练曲线往往存在随机噪声和局部震荡，模型在最后一个步长处的权重未必处于最优状态。EMA 通过对历史权重进行加权平均，能够过滤掉训练过程中的随机扰动，捕捉到更具代表性的全局特征。这种策略使得模型在真实应用场景中表现得更加稳健，能够降低评价指标的波动性，提升模型在众筹成功预测任务中的评估效果。
 
 ### 3.5.3 模型选择与分类阈值确定
 
@@ -643,7 +643,7 @@ MDL 模型的结构特点是：
 
 ![](figures/432.png)
 
-实验结果显示，本研究提出的 MSTC 模型在 Accuracy、F1-score 和 AUC 等核心评价维度上均显著优于其他基准模型。值得注意的是，MSTC 模型并没有取得最高的 Recall，然而在所有模型中，MSTC 模型的 Precision 和 Recall 最为平衡且 F1-score 最高，这表明其他模型倾向于过度预测项目成功来换取更高的召回率。对于众筹平台而言，这样的模型会产生大量的假阳性（将失败项目误判为成功），不稳定的决策会增加平台的运营风险。
+实验结果显示，本研究提出的 MSTC 模型在 Accuracy、F1-score 和 AUC 等核心评价维度上整体优于其他基准模型。值得注意的是，MSTC 模型并没有取得最高的 Recall，然而在所有模型中，MSTC 模型的 Precision 和 Recall 最为平衡且 F1-score 最高，这表明其他模型倾向于过度预测项目成功来换取更高的召回率。对于众筹平台而言，这样的模型会产生大量的假阳性（将失败项目误判为成功），不稳定的决策会增加平台的运营风险。
 
 为排除数据随机划分对实验结论的干扰，本研究进行了五次独立重复实验，通过变换数据集随机种子（42-46）来观察模型性能波动情况。
 
@@ -683,12 +683,12 @@ MDL 模型的结构特点是：
 
 **表 4-4 顺序消融实验：基线模型结构差异**
 
-| 模型名称      | 序列编码器  | 位置编码     | 顺序是否保留 | 池化方式            |
-| ------------- | ----------- | ------------ | ------------ | ------------------- |
-| Attn-Pool     | 无          | 无           | 保留         | 全局注意力池化      |
-| NoPos-MSTC    | Transformer | 无           | 保留         | 屏蔽均值池化        |
-| Shuffled-MSTC | Transformer | 正弦位置编码 | 置乱         | 屏蔽均值池化        |
-| MSTC          | Transformer | 正弦位置编码 | 保留         | 屏蔽均值池化        |
+| 模型名称      | 序列编码器  | 位置编码     | 顺序信息使用方式 | 池化方式       |
+| ------------- | ----------- | ------------ | ---------------- | -------------- |
+| Attn-Pool     | 无          | 无           | 不显式利用       | 全局注意力池化 |
+| NoPos-MSTC    | Transformer | 无           | 不显式利用       | 屏蔽均值池化   |
+| Shuffled-MSTC | Transformer | 正弦位置编码 | 置乱后编码       | 屏蔽均值池化   |
+| MSTC          | Transformer | 正弦位置编码 | 真实顺序编码     | 屏蔽均值池化   |
 
 表 4-5 与图 4-5 共同报告了各场景下的实验结果，同样取五次实验结果的算术平均值：
 
@@ -766,13 +766,13 @@ MDL 模型的结构特点是：
 
 对五次独立重复实验的进一步观察发现，在绝大多数随机种子下 MSTC 均在 Accuracy、AUC 和 F1-score 上保持领先。针对实验中出现的极少数性能回落，分析显示其呈现出明显的非系统性特征：Accuracy、AUC 和 F1-score 分别在不同的随机种子节点上出现了微幅波动，这种分散且偶发的数值浮动通常归因于验证集与测试集分布的随机差异，而非模型架构或特征引入导致的系统性偏差。举例而言，在随机种子为 44 的实验中，虽然 MSTC 的 Accuracy 略低，但其 AUC 与 F1-score 仍优于基准。该现象说明视觉密度属性并未削弱模型的整体判别能力；相反，更高的 AUC 证明模型对样本的排序能力依然更强。Accuracy 的局部回落可能是由于该划分下存在更多分类边界样本，对单一阈值更为敏感所致。因此，结合五次实验平均结果来看，这种局部波动不改变模型在实际应用中的整体稳定性与有效性。
 
-从全局视角来看，MSTC 模型在绝大多数实验轮次中保持领先，且在平均性能上取得稳健提升。尽管预训练模型本身已具备极强的语义表征能力，加入视觉密度属性在数值上的绝对增幅较小，但在不同随机种子的测试轮次中，物理属性的引入仍能在高基准之上实现稳健的边际收益。这种跨实验的一致性表现，有力地排除了指标提升源于随机偏差的可能性，从统计意义上证实了视觉密度特征对于提升预测精度的实质性贡献。
+从全局视角来看，MSTC 模型在绝大多数实验轮次中保持领先，且在平均性能上取得稳健提升。尽管预训练模型本身已具备极强的语义表征能力，加入视觉密度属性在数值上的绝对增幅较小，但在不同随机种子的测试轮次中，物理属性的引入仍能在高基准之上实现稳健的边际收益。这种跨实验的一致性表现，有力地排除了指标提升源于随机偏差的可能性，证实了视觉密度特征对于提升预测精度的实质性贡献。
 
 综上所述，实验结果验证了本研究的理论假设，即模型通过将物理属性注入 Token 序列，成功捕捉到了内容语义与页面视觉节奏之间的交互关系。这种对叙事传输过程的量化模拟，使得模型能够更准确地识别出那些内容充实、排版符合投资者认知加工习惯的成功项目。
 
 ## 4.5 本章小结
 
-本章通过一系列对比实验与消融实验，对本研究提出的统一序列建模范式（MSTC）进行了系统的性能评估。在已完成的对比实验中，MSTC 模型在 Accuracy、F1-score 以及 AUC 等核心评价指标上均显著优于传统的全局特征聚合、卷积融合及晚期融合范式，体现出以下优势：
+本章通过一系列对比实验与消融实验，对本研究提出的统一序列建模范式（MSTC）进行了系统的性能评估。在已完成的对比实验中，MSTC 模型在 Accuracy、F1-score 以及 AUC 等核心评价指标上均优于传统的全局特征聚合、卷积融合及晚期融合范式，体现出以下优势：
 
 (1) 早期融合的性能优势：本研究提出的统一序列范式优于传统的晚期融合范式，说明跨模态 Token 级交互与统一序列组织方式能够带来额外收益，在特征提取早期进行图文融合能有效减少语义信息在压缩过程中的损失。
 
@@ -792,7 +792,7 @@ MDL 模型的结构特点是：
 
 首先，本研究立足叙事传输理论，设计了基于统一序列建模范式的多模态深度学习模型 MSTC，实现了对众筹界面内容呈现结构这一维度的量化建模。该模型摒弃了传统研究中将模态视为孤立集合的局限，利用 HTML DOM 树解析技术还原页面真实的物理展示顺序。在底层表征上，模型中的 Token 编码器融合了 CLIP 语义嵌入、区分不同模态的类型向量和表征认知负荷的视觉密度属性，实现了对内容块的多维信息封装。通过正弦位置编码的注入，Token 序列被赋予了感知真实页面浏览顺序的能力，进而使得 Transformer 序列编码器可以利用多头自注意力机制模拟读者认知行为，捕捉图文交织中所蕴含的叙事逻辑与视觉节奏。为了提升模型在众筹数据高噪声、分布不均等复杂场景下的性能，本研究系统性地应用了标签平滑、指数滑动平均（EMA）以及动态阈值寻优等一系列稳健性策略，显著增强了预测结果的泛化能力与评估稳定性。
 
-其次，基于 Kickstarter 真实数据集的实验结果证明，统一序列建模范式在众筹结果预测任务上具有显著性能优势。在与多种主流多模态融合范式的对比中，本研究提出的 MSTC 模型在准确率、F1 分数以及 AUC 等核心指标上均表现最优，且在精确率与召回率之间取得了最佳平衡。这种性能增益源于模型 Token 级的跨模态交互建模，该机制允许模型在特征提取早期捕获图文间的对齐关系，尽可能减少了特征压缩过程中的语义损失。消融实验结果进一步支持了本研究的核心假设，即图文内容呈现结构是影响众筹成败的关键判别变量，众筹页面吸引潜在投资者的能力不仅源于发起人“说了什么”，更取决于发起人“是如何说的”。消融实验显示，引入正弦位置编码并遵循众筹页面中真实的图文展示顺序，能为模型带来显著且可复现的性能增益；视觉密度特征是语义信息之外的重要补充，能够稳定提升模型对复杂页面信息的判别能力。
+其次，基于 Kickstarter 真实数据集的实验结果证明，统一序列建模范式在众筹结果预测任务上具有性能优势。在与多种主流多模态融合范式的对比中，本研究提出的 MSTC 模型在准确率、F1 分数以及 AUC 等核心指标上均表现最优，且在精确率与召回率之间取得了最佳平衡。这种性能增益源于模型 Token 级的跨模态交互建模，该机制允许模型在特征提取早期捕获图文间的对齐关系，尽可能减少了特征压缩过程中的语义损失。消融实验结果进一步支持了本研究的核心假设，即图文内容呈现结构是影响众筹成败的关键判别变量，众筹页面吸引潜在投资者的能力不仅源于发起人“说了什么”，更取决于发起人“是如何说的”。消融实验显示，引入正弦位置编码并遵循众筹页面中真实的图文展示顺序，能为模型带来显著且可复现的性能增益；视觉密度特征是语义信息之外的重要补充，能够稳定提升模型对复杂页面信息的判别能力。
 
 综上所述，本研究不仅提升了深度学习模型进行众筹成功性预测的性能，更从实证角度揭示了图文内容呈现结构在奖励式众筹这一金融模式中的重要地位，为平台优化资源配置和发起人改进项目设计提供了科学的决策依据。
 
